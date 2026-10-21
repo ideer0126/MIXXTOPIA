@@ -1,0 +1,48 @@
+# CodeRabbit AI 评审配置 —— MIXXTOPIA
+# 生效于合并到 main 之后；仅使用稳定配置键，避免 schema 告警。
+# 参考：https://docs.coderabbit.ai/guides/configure-coderabbit
+
+# 评审语言：简体中文
+language: "zh-CN"
+
+reviews:
+  # 评审风格：chill（温和）| assertive（严格）；沿用当前 CHILL
+  profile: "chill"
+
+  # 不强制「Request Changes」工作流，评审意见以评论形式给出
+  request_changes_workflow: false
+
+  # 每次评审生成高层摘要
+  high_level_summary: true
+
+  # 在 PR 中显示评审状态
+  review_status: true
+
+  # 折叠逐文件走查（保持 PR 界面清爽）
+  collapse_walkthrough: false
+
+  # 新 PR / 新提交自动触发评审；草稿 PR 不评审
+  auto_review:
+    enabled: true
+    drafts: false
+
+  # 针对不同路径的评审指令
+  path_instructions:
+    - path: "docs/**"
+      instructions: |
+        评审中文游戏设计文档（GAME_DESIGN.md），重点检查：
+        1. 各章节数据一致性：星星总数（25）、每关星数、NPC 出场清单、机制字典与 data.js 示例字段
+        2. 对话节点 id 与 speaker 字典（lily/haewon/sullyoon/bae/jiwoo/kyujin/byeori/dj/sheep/nar/all）引用完整
+        3. Markdown 表格结构完整、列数对齐
+        4. 中文标点、错别字与术语统一（愿望之星、传送门、许愿蛋糕等）
+    - path: "js/**"
+      instructions: |
+        评审纯前端 JavaScript：零依赖约束、Canvas 渲染规格（320×224、16px 瓦片、pixelated）、
+        与 docs/GAME_DESIGN.md 中 data.js 数据规格的一致性、localStorage 存档键 mixxtopia.save.v1。
+    - path: "tools/**"
+      instructions: |
+        评审校验脚本：是否覆盖 docs/GAME_DESIGN.md §11 的 10 条校验规则，错误信息需指明具体关卡与实体 id。
+
+# 在 PR 评论中 @coderabbitai 提问时自动回复
+chat:
+  auto_reply: true
