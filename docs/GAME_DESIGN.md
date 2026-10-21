@@ -177,7 +177,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 ### 5.4 关 4 · Sing to the Moon（月夜湖畔）
 
 - **氛围**：月光下的湖面、浮桥、倒影；Sullyoon 与 Bae 在湖边。
-- **机制**：**月相开关（MOONSWITCH）** 切换水位「高/低」：
+- **机制**：**月相开关（MOONSWITCH）** 切换水位「高/低」；本关所有 WATER 实体初始 `waterLevel:'high'`，任意月相开关互动时同步翻转本关所有 WATER 的 `waterLevel`（`high`↔`low`）：
   - 高水位：浮桥石（STEPSTONE）浮现，可走到湖心岛；
   - 低水位：浅滩路露出，可走到新的开关处。
   - 落水不受伤：自动传送回本岸，已收集星星保留。
@@ -195,11 +195,11 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 |---|---|---|
 | 月相开关 MOONSWITCH | 3 | 任意一个被按下 → 全体水位翻转（高↔低） |
 | 浮桥石 STEPSTONE | 8 | 高水位实体化可站立，低水位隐没 |
-| 水面 WATER（地砖） | 若干 | 低水位时部分水砖变为浅滩路 |
+| 水面 WATER | 若干 | 每个 `~` 水砖对应一个 WATER 实体；低水位时仅 `shallow:true` 的格子变为浅滩路 |
 | NPC（六人全员 + Byeori + 黑羊） | 8 | 主对话 Sullyoon、Bae；其余成员各一句氛围台词（§8.5） |
 | 传送门 | 1 | 集齐 4 星激活 |
 
-**地形符号**：`#` `·` `~` 水（月相开关/浮桥石/传送门/告示牌均为实体层）。
+**地形符号**：`#` `·` `~` 水（`~` 只标记水域地形；水位状态在 WATER 实体中，月相开关/浮桥石/传送门/告示牌也均为实体层）。
 **验收**：4 星全收集（水位翻转逻辑正确）、传送门激活、落水复位无卡死。
 
 ### 5.5 关 5 · Hot 'n Unbothered（炎热沙漠绿洲）
@@ -261,7 +261,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 
 ## 6. 机制字典（engine 与 data.js 通用）
 
-> **层次约定**：有状态 / 有引用的元素（星星、开关、门、灯柱、灯油、单向门、浮桥石、绿洲、风带、风车、蛋糕、NPC、黑羊、传送门、告示牌、触发器）一律放**实体层** `entities`；地砖层 `tiles` 只承担通行性与装饰（`#` 墙、`·` 地面、`~` 水等）。§5 的地图符号用于关卡草稿标注，落数据时按实体层表示。
+> **层次约定**：有状态 / 有引用的元素（星星、开关、门、灯柱、灯油、单向门、水面、浮桥石、绿洲、风带、风车、蛋糕、NPC、黑羊、传送门、告示牌、触发器）一律放**实体层** `entities`；地砖层 `tiles` 只承担基础通行性与装饰（`#` 墙、`·` 地面、`~` 水等），最终通行性结合实体状态判定。§5 的地图符号用于关卡草稿标注，落数据时按实体层表示。
 
 | 符号/类型 | 名称 | 行为 | 交互 | 数据字段 | 使用关卡 |
 |---|---|---|---|---|---|
@@ -275,19 +275,21 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | LAMP | 灯柱 | 未燃/已燃；点燃后开启 target 指定的门 | 携油互动点燃 | `{type:'lamp',id,target,lit:false}` | 2 |
 | OIL | 灯油 | 拾取后跟随玩家（一次一罐） | 接触拾取；点燃灯柱时消耗 | `{type:'oil'}` | 2 |
 | ONEWAY | 单向门 | 仅指示方向可通行 | 反方向视为墙 | `{type:'oneway',dir}` | 3、6 |
-| MOONSWITCH | 月相开关 | 全体水位翻转 | 互动 | `{type:'moonswitch',id}` | 4 |
-| WATER | 水面 | 高水位不可通行、落水回岸；低水位部分变浅滩 | — | tile + 水位态 | 4 |
-| STEPSTONE | 浮桥石 | 高水位实体化可站立 | — | `{type:'stepstone'}` | 4 |
+| MOONSWITCH | 月相开关 | 同步翻转本关所有 WATER 实体的 `waterLevel`（`high`↔`low`） | 互动 | `{type:'moonswitch',id}` | 4 |
+| WATER | 水面 | 初始高水位；无浮桥石时高水位不可站立、落水回岸；低水位仅 `shallow:true` 可走 | — | `{type:'water',waterLevel:'high',shallow:false}`（`shallow` 必填布尔值，浅滩填 true） | 4 |
+| STEPSTONE | 浮桥石 | 与 WATER 同格；读取该 WATER 的 `waterLevel`，高水位实体化可站立、低水位隐没并按下方 WATER 判定通行 | — | `{type:'stepstone'}` | 4 |
 | HEAT | 清凉条 | 本关 HUD，100s 递减 | 见底回起点重试 | `heat:100`（关卡属性，仅关 5） | 5 |
 | OASIS | 绿洲 | 范围内持续回复清凉 | 站立 | `{type:'oasis',r}` | 5 |
 | WIND | 风带 | 持续向指定方向推动玩家 | 站立 | `{type:'wind',dir}` | 6 |
 | WINDSWITCH | 风车开关 | 全体风向 N→E→S→W 循环 | 互动 | `{type:'windswitch'}` | 6 |
 | CAKE | 许愿蛋糕 | 25 星集齐后触发结局演出 | 自动触发 | `{type:'cake'}` | 6 |
 | NPC | 角色 | 静止待机 | 互动进入对话 | `{type:'npc',id,dialogue}` | 全部 |
-| SHEEP | 黑羊彩蛋 | 每关一只 | 互动给一句谜语，计数 6/6 | `{type:'sheep',line}` | 全部 |
+| SHEEP | 黑羊彩蛋 | 每关一只 | 互动播放绑定谜语节点，仅首次计数 +1，集齐 6/6 | `{type:'sheep',id,dialogue}` | 全部 |
 | SIGN | 告示牌 | 操作提示 | 互动显示文字 | `{type:'sign',text}` | 全部（每关 1–3 块） |
 | TRIGGER | 区域触发 | 进入 rect 范围自动播放 dialogue 指定的剧情节点（一次性） | 自动 | `{type:'trigger',id,rect:{x,y,w,h},dialogue}` | 全部 |
 | SPAWN | 玩家出生点 | 每关唯一 | — | `{type:'spawn'}` | 全部 |
+
+关 4 的每个 `~` 格必须在 `entities` 中有且仅有一个同坐标 WATER（含 `x,y`），所有 WATER 的 `waterLevel` 初始均为 `high`、运行时始终一致；`shallow` 是固定地形属性。高水位 STEPSTONE 的站立效果覆盖同格水面；低水位时 `shallow:false` 的水面仍不可站立。切换水位后若玩家脚下不再可站立，按 §5.4 落水回本岸、保留已收集星星处理。
 
 > 战斗相关（敌人 ENEMY、攻击判定等）不在本表，见 §12 预留（Issue #18）。
 
@@ -310,8 +312,10 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | sheep | 黑羊互动 | true | 计数 sheep +1，如 `l1.sheep` |
 | cutscene | 关卡加载 / TRIGGER / CAKE 自动 | true | 序章 `p0.*`、结局 `l6.end.*` |
 
-- **`trigger` 取值约定**（与上表触发来源一一对应，规则 7 校验）：NPC 互动 → `npc:<speaker>`（首次/此后由节点类型决定）；收集星星 → `star:<星id>`；过关 → `clear`；黑羊 → `sheep`；关卡加载 → `load`；TRIGGER 区域 → `trigger:<trigger实体id>`；蛋糕 → `cake`。
+- **`trigger` 取值约定**（与上表触发来源一一对应，规则 7 校验）：NPC 互动 → `npc:<speaker>`（首次/此后由节点类型决定）；收集星星 → `star:<星id>`；过关 → `clear:<scopeId>`；黑羊 → `sheep:<黑羊实体id>`；关卡 / 场景加载 → `load:<scopeId>`；TRIGGER 区域 → `trigger:<trigger实体id>`；蛋糕 → `cake`。
 - **字段约束**：每个节点必填 `type`（上表 8 种之一）与 `trigger`（按取值约定），二者冗余声明、不可矛盾（如 `type:'check'` 配 `trigger:'npc:dj'`）。
+- **自动对话作用域**：trigger 为 `clear:<scopeId>` / `load:<scopeId>` 的节点另须填写所属关卡或场景的 `scopeId`，其字符串形式必须等于 trigger 的后缀：关卡节点 `lN.*` 的 `scopeId` 必须为 N（如 `scopeId:1` 对应 `clear:1`），序章节点 `p0` 的 `scopeId` 必须为 `'p0'`（对应 `load:p0`）。关卡 ID 来自 `GAME.levels[].id`，独立场景 ID 来自 `GAME.scenes` 的键（见 §11），二者字符串形式不得重名；`clear` 仅用于关卡。每个已配置的「作用域 + 事件类型」恰有一个 `entry:true` 入口，事件仅调度该入口；同一演出的后续节点保留相同 `scopeId` 与 `trigger`、设 `entry:false`（缺省 false），由 `next` 串联且均须从入口可达，不能再次注册为自动入口。
+- **黑羊绑定**：关 N 的黑羊实体使用全局唯一 `id:'sheepN'`、`dialogue:'lN.sheep'`（N = 1–6），对应节点为 `type:'sheep'`、`trigger:'sheep:sheepN'`、`once:true`。互动只播放该实体绑定的节点，首次播放计数 +1；保留每关一句、集齐 6 句追加结局画面的行为。
 
 - `next` 指向的节点必须存在（§11 规则 7 校验）。
 - **对话期间**：玩家定身；关 5 清凉条计时暂停；战斗接入后敌人生成暂停（#18）。
@@ -326,6 +330,20 @@ dialogue: {
     once: true,
     lines: [ { s: 'lily', t: 'NSWER！生日夜能在这里见到你……' }, ... ],  // 即 §8.2 的 l1.intro.1–5
     next: 'l1.lily.hint'          // 结束后将 NPC 互动指向 hint 节点
+  },
+  'l1.clear': {
+    type: 'clear', scopeId: 1, trigger: 'clear:1', entry: true,
+    once: true,
+    lines: [ { s: 'lily', t: '三颗愿望之星全部归位。传送门，开门！' }, ... ]
+  },
+  'p0': {
+    type: 'cutscene', scopeId: 'p0', trigger: 'load:p0', entry: true,
+    once: true,
+    lines: [ { s: 'nar', t: '生日夜的钟声，敲过第十二下。' }, ... ]
+  },
+  'l1.sheep': {
+    type: 'sheep', trigger: 'sheep:sheep1', once: true,
+    lines: [ { s: 'sheep', t: '第一个愿望，是让蜡烛永远为过生日的人点亮。' } ]
   },
   'l3.dj.check': {
     type: 'check',
@@ -533,6 +551,7 @@ dialogue: {
 ```js
 const GAME = {
   meta: { version: '1.0', tile: 16, viewport: { w: 20, h: 14 } },
+  scenes: { p0: { title: '生日夜的房间' } },  // 独立场景作用域；序章入口 trigger 为 load:p0
   characters: {
     lily: { name: 'Lily', color: '#7FB8E6' },
     dj: { name: '街头DJ', color: '#FF5D8F' },
@@ -553,6 +572,7 @@ const GAME = {
       entities: [
         { type: 'spawn', x: 2, y: 26 },
         { type: 'npc', id: 'lily', x: 20, y: 14, dialogue: 'l1.intro' },
+        { type: 'sheep', id: 'sheep1', x: 6, y: 24, dialogue: 'l1.sheep' },
         { type: 'star', id: 's1', x: 8, y: 20 },
         { type: 'switch', id: 'sw1', x: 30, y: 12, target: 'gate1' },
         { type: 'gate', id: 'gate1', x: 34, y: 12, open: false },
@@ -574,14 +594,21 @@ const GAME = {
 
 **校验规则（tools/validate.js 必须覆盖）**：
 1. 地图尺寸 ≥ 40×28，行数 = h、每行长度 = w；
-2. tile 字符全部存在于该关 legend；实体（星星/机关/NPC）不得落在不可通行瓦片上；
+2. tile 字符全部存在于该关 legend；实体（星星/机关/NPC）不得落在墙等永久不可通行瓦片上；WATER、STEPSTONE 及浅滩星允许按 §6 叠放在水域，动态通行性由规则 9 校验；
 3. 每关 starCount 与 entities 中 star 数量一致，且在 3–5 之间；总星数 = 25；star id 全局唯一；
-4. spawn 恰好 1 个；关 1–5 portal 恰好 1 个；关 6 cake 恰好 1 个；
+4. spawn 恰好 1 个；关 1–5 portal 恰好 1 个；关 6 cake 恰好 1 个；每个 portal.to 必须引用已存在的关卡 ID，且按线性流程等于当前关卡 `id + 1`；
 5. switch.target 与 lamp.target 引用的 gate 存在；trigger.rect 完整落在地图范围内（0 ≤ x 且 x+w ≤ 地图宽，0 ≤ y 且 y+h ≤ 地图高）；关 2 灯柱数 = 灯油数 = 门数 = 3；
-6. oneway.dir ∈ {N,E,S,W}；wind.dir 同理；
-7. npc.dialogue 与 trigger.dialogue 引用的对话节点存在；dialogue.next、option.goto 指向的节点存在；每个对话节点必有 `type` ∈ {intro,hint,npc,check,star,clear,sheep,cutscene} 与 `trigger`（§7 取值约定），且 trigger 引用的实体存在（`npc:<speaker>` 的 speaker、`star:<星id>` 的星、`trigger:<id>` 的 trigger 实体）；每条对话行的 speaker（`lines[].s`）在 characters 字典（id 全集见 §3 对照注，含 `dj`/`sheep`/`nar`/`all`；伪说话人 `nar`/`all` 同样校验，不要求有对应 NPC 实体）；
+6. oneway.dir ∈ {N,E,S,W}；wind.dir 同理；关 4 每个 `~` 格恰有一个同坐标 WATER，每个 WATER 必在 `~` 上，`shallow` 为布尔值，初始 `waterLevel` 均为 `high`（运行时仅允许 `high` / `low`）；每个 STEPSTONE 必须与 WATER 同格；
+7. 对话引用、触发来源与作用域：
+   - npc.dialogue、sheep.dialogue 与 trigger.dialogue 引用的对话节点存在；dialogue.next、option.goto 指向的节点存在；每个对话节点必有 `type` ∈ {intro,hint,npc,check,star,clear,sheep,cutscene} 与 `trigger`，且符合 §7 的类型与触发来源约定；trigger 引用的实体存在（`npc:<speaker>` 的 NPC、`star:<星id>` 的星、`trigger:<id>` 的 trigger 实体）；
+   - 每个黑羊实体必有全局唯一 ID，`sheep.dialogue` 指向的节点必须为 `type:'sheep'`、`once:true`，trigger 必为 `sheep:<该实体id>`；反向检查每个 `sheep:<id>` 引用的黑羊实体存在且其 `dialogue` 指回此节点，实体所属关卡与节点 `lN.sheep` 的关卡一致；
+   - `clear:<scopeId>` / `load:<scopeId>` 的后缀必须与节点 `scopeId` 的字符串形式一致，并引用已存在且无歧义的所属关卡 / 场景 ID（`clear` 仅限关卡）；按 §7 校验节点 ID 所属关卡 / 场景与 scopeId 一致；同一作用域与事件类型恰有一个 `entry:true` 入口，其余节点非入口且由该入口通过 `next` 可达，链内 `scopeId` 与 trigger 相同；
+   - 每条对话行的 speaker（`lines[].s`）在 characters 字典（id 全集见 §3 对照注，含 `dj`/`sheep`/`nar`/`all`；伪说话人 `nar`/`all` 同样校验，不要求有对应 NPC 实体）；
 8. 每关 NPC 出场与 §5 出场表一致；黑羊每关 1 只；
-9. 地图连通性（flood fill）可覆盖全部星星与传送门（预留自动校验）；
+9. 可达性按合法机制状态与状态转换校验（预留自动校验）：
+   - `GATE.open:false` 阻挡、`true` 可通行；ONEWAY 的进入与离开移动方向均须等于其 `dir`，反向与侧向均不可穿过；WATER 高水位仅同格有 STEPSTONE 时可站立，低水位 STEPSTONE 隐没且仅 `shallow:true` 可站立，其余水面落水回本岸（保留已收集星星），不可当作跨湖路径；
+   - 从 spawn 与初始状态（门关闭、灯柱未燃、水位 high）出发搜索有向状态图；状态至少包含玩家 / 箱子位置、门 / 灯柱 / 灯油状态、水位、风向、剧情解锁条件与已收集星集合，以及落水复位所需的本岸位置。边仅允许 §5 / §6 定义的合法移动、推箱、踩开关、携油点灯、可互动位置的水位 / 风向切换、对话选项等操作；不得直接假设门已开或远处开关已按下。必须存在同一次游玩中集齐本关所有星星并到达已激活传送门的路径（关 6 为集齐总计 25 星后到达蛋糕），不能仅合并互不兼容状态下的可达区域；
+   - 普通 flood fill 仅作固定机制状态下的地形连通辅助，不能代替上述校验。场景须覆盖：关 1 / 2 的合法开门前后路径；关 3 的单向门禁止逆行及 DJ 两条分支同关内收齐星；关 4 从初始高水位经可达开关切至低水位走浅滩、再切回高水位走两组浮桥并到达传送门，以及桥消失后的落水复位；关 6 的开门 / 单向门与风向切换组合；
 10. UI/存档文案无「玻璃碎片」等遗留占位。
 
 ---
