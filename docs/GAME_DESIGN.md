@@ -315,10 +315,10 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 
 ```js
 dialogue: {
-  'l1.lily.intro': {
+  'l1.intro': {
     once: true,
-    lines: [ { s: 'lily', t: 'NSWER！生日夜能在这里见到你……' }, ... ],
-    next: 'l1.lily.hint'          // 结束后将 NPC 互动指向 hint
+    lines: [ { s: 'lily', t: 'NSWER！生日夜能在这里见到你……' }, ... ],  // 即 §8.2 的 l1.intro.1–5
+    next: 'l1.lily.hint'          // 结束后将 NPC 互动指向 hint 节点
   },
   'l3.dj.check': {
     once: false,
@@ -336,6 +336,7 @@ dialogue: {
 ## 8. 对话稿（完整）
 
 > 说话人缩写：`lily` `haewon` `sullyoon` `bae` `jiwoo` `kyujin` `byeori` `dj`（街头DJ）`sheep`（黑羊）`nar`（旁白）`all`（全员合唱，仅 `l6.end.3`）。韩语点缀为氛围用，不要求游戏内支持韩语输入。
+> 表格「节点」列写作 **`节点id.行号`**：如 `l1.intro.1` = 节点 `l1.intro` 的第 1 行（数据中一个节点 = 一个 `lines` 数组）；单行节点直接写节点 id，如 `l1.lily.hint`、`l1.star1`。
 
 ### 8.1 序章（自动演出）
 
@@ -536,7 +537,7 @@ const GAME = {
       },
       entities: [
         { type: 'spawn', x: 2, y: 26 },
-        { type: 'npc', id: 'lily', x: 20, y: 14, dialogue: 'l1.lily.intro' },
+        { type: 'npc', id: 'lily', x: 20, y: 14, dialogue: 'l1.intro' },
         { type: 'star', id: 's1', x: 8, y: 20 },
         { type: 'switch', id: 'sw1', x: 30, y: 12, target: 'gate1' },
         { type: 'gate', id: 'gate1', x: 34, y: 12 },
