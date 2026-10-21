@@ -57,7 +57,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | 角色 | 定位 | 性格与说话风格 | 姓名框色 | 主要出场 |
 |---|---|---|---|---|
 | NSWER（玩家） | 生日夜的主角 | 无直接台词；内心独白以旁白呈现 | `#FFFFFF` | 全程 |
-| Byeori（별이） | 星星引导精灵 | 规则说明担当，爱用拟声词「딩동댕!」，每关传送门旁待机 | `#FFD700` | 序章 + 每关结算 |
+| Byeori（별이） | 星星引导精灵 | 规则说明担当，爱用拟声词「딩동댕!」，关 1–5 传送门旁待机，关 6 在蛋糕旁（终章区域）待机 | `#FFD700` | 序章 + 每关结算 |
 | Lily | 温暖大姐 | 语气暖、爱鼓励；口头禅「응답하라 NSWER!」 | `#7FB8E6` | 序章引导、关 1、关 6 |
 | Haewon | 机灵解说 | 爱打趣 + 专业吐槽，负责机制讲解 | `#FFB14E` | 关 1、关 5、关 6 |
 | Sullyoon | 文静诗感 | 短句、意象美，像在念诗 | `#B49BFF` | 关 4、关 6 |
@@ -251,7 +251,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | 风车开关 WINDSWITCH | 3 | 按下 → 全体风向循环切换一次 |
 | 压力开关/门/单向门 | 2/2/2 | 复用关 1、关 3 机制 |
 | 蛋糕 CAKE | 1 | 25 星集齐后激活结局演出 |
-| NPC（六人全员 + Byeori + 黑羊） | 8 | 终章台词 |
+| NPC（六人全员 + Byeori + 黑羊） | 8 | 终章台词；Byeori 在蛋糕旁待机（§3） |
 | 传送门 | — | 关 6 无传送门，结局由蛋糕触发 |
 
 **地形符号**：`#` `·`（风带/风车开关/开关/门/单向门/蛋糕/告示牌均为实体层）。
@@ -278,7 +278,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | MOONSWITCH | 月相开关 | 全体水位翻转 | 互动 | `{type:'moonswitch',id}` | 4 |
 | WATER | 水面 | 高水位不可通行、落水回岸；低水位部分变浅滩 | — | tile + 水位态 | 4 |
 | STEPSTONE | 浮桥石 | 高水位实体化可站立 | — | `{type:'stepstone'}` | 4 |
-| HEAT | 清凉条 | 本关 HUD，100s 递减 | 见底回起点重试 | 关卡属性 | 5 |
+| HEAT | 清凉条 | 本关 HUD，100s 递减 | 见底回起点重试 | `heat:100`（关卡属性，仅关 5） | 5 |
 | OASIS | 绿洲 | 范围内持续回复清凉 | 站立 | `{type:'oasis',r}` | 5 |
 | WIND | 风带 | 持续向指定方向推动玩家 | 站立 | `{type:'wind',dir}` | 6 |
 | WINDSWITCH | 风车开关 | 全体风向 N→E→S→W 循环 | 互动 | `{type:'windswitch'}` | 6 |
@@ -286,7 +286,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | NPC | 角色 | 静止待机 | 互动进入对话 | `{type:'npc',id,dialogue}` | 全部 |
 | SHEEP | 黑羊彩蛋 | 每关一只 | 互动给一句谜语，计数 6/6 | `{type:'sheep',line}` | 全部 |
 | SIGN | 告示牌 | 操作提示 | 互动显示文字 | `{type:'sign',text}` | 全部（每关 1–3 块） |
-| TRIGGER | 区域触发 | 进入范围触发剧情 | 自动 | `{type:'trigger',id}` | 全部 |
+| TRIGGER | 区域触发 | 进入 rect 范围自动播放 dialogue 指定的剧情节点（一次性） | 自动 | `{type:'trigger',id,rect:{x,y,w,h},dialogue}` | 全部 |
 | SPAWN | 玩家出生点 | 每关唯一 | — | `{type:'spawn'}` | 全部 |
 
 > 战斗相关（敌人 ENEMY、攻击判定等）不在本表，见 §12 预留（Issue #18）。
@@ -310,6 +310,9 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | sheep | 黑羊互动 | true | 计数 sheep +1，如 `l1.sheep` |
 | cutscene | 关卡加载 / TRIGGER / CAKE 自动 | true | 序章 `p0.*`、结局 `l6.end.*` |
 
+- **`trigger` 取值约定**（与上表触发来源一一对应，规则 7 校验）：NPC 互动 → `npc:<speaker>`（首次/此后由节点类型决定）；收集星星 → `star:<星id>`；过关 → `clear`；黑羊 → `sheep`；关卡加载 → `load`；TRIGGER 区域 → `trigger:<trigger实体id>`；蛋糕 → `cake`。
+- **字段约束**：每个节点必填 `type`（上表 8 种之一）与 `trigger`（按取值约定），二者冗余声明、不可矛盾（如 `type:'check'` 配 `trigger:'npc:dj'`）。
+
 - `next` 指向的节点必须存在（§11 规则 7 校验）。
 - **对话期间**：玩家定身；关 5 清凉条计时暂停；战斗接入后敌人生成暂停（#18）。
 - **快进**：按住互动键加速打字；整段跳过 = 双击翻页键（预留）。
@@ -318,11 +321,15 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 ```js
 dialogue: {
   'l1.intro': {
+    type: 'intro',               // 节点类型（§7 上表 8 种之一，必填）
+    trigger: 'npc:lily',         // 触发来源：与 Lily 首次互动（§7 取值约定，必填）
     once: true,
     lines: [ { s: 'lily', t: 'NSWER！生日夜能在这里见到你……' }, ... ],  // 即 §8.2 的 l1.intro.1–5
     next: 'l1.lily.hint'          // 结束后将 NPC 互动指向 hint 节点
   },
   'l3.dj.check': {
+    type: 'check',
+    trigger: 'npc:dj',           // 互动街头 DJ，可重复挑战
     once: false,
     lines: [ { s: 'dj', t: '这条街最酷的人是谁？' } ],
     options: [
@@ -548,12 +555,17 @@ const GAME = {
         { type: 'npc', id: 'lily', x: 20, y: 14, dialogue: 'l1.intro' },
         { type: 'star', id: 's1', x: 8, y: 20 },
         { type: 'switch', id: 'sw1', x: 30, y: 12, target: 'gate1' },
-        { type: 'gate', id: 'gate1', x: 34, y: 12 },
+        { type: 'gate', id: 'gate1', x: 34, y: 12, open: false },
         { type: 'portal', x: 38, y: 10, to: 2 }
       ],
       starCount: 3
-    }
-    /* …6 关 */
+    },
+    /* …关 2–4 */
+    {
+      id: 5, title: "Hot 'n Unbothered", heat: 100,   // HEAT 清凉条初始值（§5.5），仅关 5
+      /* …entities、starCount: 5 */
+    },
+    /* …关 6 */
   ],
   dialogue: { /* §8 全部台词，格式见 §7 */ },
   saveKey: 'mixxtopia.save.v1'
@@ -565,9 +577,9 @@ const GAME = {
 2. tile 字符全部存在于该关 legend；实体（星星/机关/NPC）不得落在不可通行瓦片上；
 3. 每关 starCount 与 entities 中 star 数量一致，且在 3–5 之间；总星数 = 25；star id 全局唯一；
 4. spawn 恰好 1 个；关 1–5 portal 恰好 1 个；关 6 cake 恰好 1 个；
-5. switch.target 与 lamp.target 引用的 gate 存在；关 2 灯柱数 = 灯油数 = 门数 = 3；
+5. switch.target 与 lamp.target 引用的 gate 存在；trigger.rect 完整落在地图范围内（0 ≤ x 且 x+w ≤ 地图宽，0 ≤ y 且 y+h ≤ 地图高）；关 2 灯柱数 = 灯油数 = 门数 = 3；
 6. oneway.dir ∈ {N,E,S,W}；wind.dir 同理；
-7. npc.dialogue 引用的对话节点存在；dialogue.next 指向的节点存在；每条对话行的 speaker（`lines[].s`）在 characters 字典（id 全集见 §3 对照注，含 `dj`/`sheep`/`nar`/`all`；伪说话人 `nar`/`all` 同样校验，不要求有对应 NPC 实体）；option.goto 存在；
+7. npc.dialogue 与 trigger.dialogue 引用的对话节点存在；dialogue.next、option.goto 指向的节点存在；每个对话节点必有 `type` ∈ {intro,hint,npc,check,star,clear,sheep,cutscene} 与 `trigger`（§7 取值约定），且 trigger 引用的实体存在（`npc:<speaker>` 的 speaker、`star:<星id>` 的星、`trigger:<id>` 的 trigger 实体）；每条对话行的 speaker（`lines[].s`）在 characters 字典（id 全集见 §3 对照注，含 `dj`/`sheep`/`nar`/`all`；伪说话人 `nar`/`all` 同样校验，不要求有对应 NPC 实体）；
 8. 每关 NPC 出场与 §5 出场表一致；黑羊每关 1 只；
 9. 地图连通性（flood fill）可覆盖全部星星与传送门（预留自动校验）；
 10. UI/存档文案无「玻璃碎片」等遗留占位。
@@ -591,7 +603,7 @@ const GAME = {
 |---|---|---|---|
 | 4 | Sing to the Moon | 全员（6 人 NPC 均在场） | Sullyoon、Bae |
 | 5 | Hot 'n Unbothered | 全员 | Haewon、Jiwoo |
-| 6 | WHIP | 全员（终章集结） | 六人轮换 + Byeori |
+| 6 | WHIP | 全员（终章集结） | Lily、Haewon、Kyujin + Byeori |
 
 - 若后续确认真实小分队名单：仅需替换对应关的**出场侧重与对话 speaker**，地图、谜题、星数、机制零改动。
 - 参考来源：NMIXX 小分队曲相关公开报道（[sports.donga.com](https://sports.donga.com/news/article/all/20260921/134710534/1)、[m.news.nate.com](https://m.news.nate.com/view/20260921n24632) 等，详情页需浏览器打开）。
