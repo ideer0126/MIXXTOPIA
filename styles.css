@@ -1,0 +1,27 @@
+/* styles.css —— MIXXTOPIA 样式（Issue #6 会扩充完整 UI 样式） */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #0b0b1e;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 像素风格缩放：整数倍放大 + nearest 采样，无模糊（引擎也通过 JS 兜底设置） */
+#game {
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  background: #0b0b1e;
+}
+
+.hidden {
+  display: none !important;
+}
