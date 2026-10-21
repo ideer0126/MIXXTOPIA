@@ -16,3 +16,6 @@ node_modules/
 # 本地临时
 *.local
 .env.local
+
+# Pages 部署产物（CI 内生成）
+_site/
