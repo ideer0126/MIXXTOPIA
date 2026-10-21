@@ -458,6 +458,7 @@
       this._released = new Set();                // 自上次 endFrame 以来的松开边沿
       this._subs = { press: [], release: [] };
       this._touchHandlers = [];                  // [element, type, fn] 三元组，供解绑
+      this._touchButtons = [];                   // 已绑定虚拟按键元素，供 _clearAll/destroy 清除 pressed 样式
       this._bound = {
         keydown: (e) => this._onKey(e, true),
         keyup: (e) => this._onKey(e, false),
@@ -574,6 +575,11 @@
         if (typeof el.removeEventListener === 'function') el.removeEventListener(type, fn);
       }
       this._touchHandlers = [];
+      for (let i = 0; i < this._touchButtons.length; i++) {
+        const btn = this._touchButtons[i];
+        if (btn && btn.classList) btn.classList.remove('pressed');
+      }
+      this._touchButtons = [];
       this._keys.clear();
       this._touchPtr.clear();
       this._pressed.clear();
@@ -584,25 +590,29 @@
 
     /* ── 内部：键盘 ── */
 
+    /** 键盘事件入口：keydown 记录按键并产生按下边沿，keyup 释放并产生松开边沿 */
     _onKey(e, down) {
       if (!this.enabled) return;
-      // 带修饰键的组合（Ctrl/⌘/Alt+键，如 Ctrl+W 关标签页）不当作游戏按键
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // 带修饰键的组合（Ctrl/⌘/Alt+键，如 Ctrl+W 关标签页）仅在按下时过滤：
+      // keyup 不过滤，保证按住期间再按修饰键也能正常释放，避免按键卡死
+      if (down && (e.ctrlKey || e.metaKey || e.altKey)) return;
       const key = String(e.key == null ? '' : e.key).toLowerCase();
       const action = this._actionForKey(key);
       if (!action) return;
       if (down) {
+        // 先于 repeat 判断调用：长按自动重复事件同样要阻止方向键/空格滚动页面
+        if (typeof e.preventDefault === 'function') e.preventDefault();
         if (e.repeat) return; // 长按自动重复不产生按下边沿
-        if (typeof e.preventDefault === 'function') e.preventDefault(); // 阻止方向键/空格滚动页面
         const held = this.isDown(action);
         this._keys.add(key);
         if (!held) this._pressEdge(action);
       } else {
-        this._keys.delete(key);
+        if (!this._keys.delete(key)) return; // 从未按住的键不产生虚假 release
         if (!this.isDown(action)) this._releaseEdge(action);
       }
     }
 
+    /** 物理键（小写 e.key）→ 动作名；未绑定返回 null */
     _actionForKey(key) {
       for (let i = 0; i < ACTION_LIST.length; i++) {
         const action = ACTION_LIST[i];
@@ -613,6 +623,7 @@
 
     /* ── 内部：触屏虚拟按键 ── */
 
+    /** 绑定虚拟按键的指针事件（pointerdown/up/cancel/lostpointercapture/contextmenu） */
     _setupTouch() {
       if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
       const buttons = Array.prototype.slice.call(document.querySelectorAll('[data-key]'));
@@ -621,6 +632,7 @@
         const btn = buttons[i];
         const action = TOUCH_ACTIONS[btn.getAttribute('data-key')];
         if (!action) continue;
+        this._touchButtons.push(btn); // 供 _clearAll/destroy 清理 pressed 样式
         const pointerIdOf = (e) => (typeof e.pointerId === 'number' ? e.pointerId : -1);
         const down = (e) => {
           if (typeof e.preventDefault === 'function') e.preventDefault(); // 防聚焦/合成点击
@@ -648,6 +660,7 @@
       }
     }
 
+    /** 虚拟按键按下：记录 pointerId、产生按下边沿并添加 pressed 样式 */
     _touchDown(action, pointerId, btn) {
       if (!this.enabled) return;
       const held = this.isDown(action);
@@ -658,6 +671,7 @@
       if (!held) this._pressEdge(action);
     }
 
+    /** 虚拟按键松开：移除该 pointerId，全部抬起后产生松开边沿并移除 pressed 样式 */
     _touchUp(action, pointerId, btn) {
       const ids = this._touchPtr.get(action);
       if (!ids || !ids.delete(pointerId)) return;
@@ -666,11 +680,13 @@
       if (!this.isDown(action)) this._releaseEdge(action);
     }
 
+    /** 按粗指针检测结果切换 #touch-controls 的 .touch-on 类 */
     _syncTouchClass(on) {
       const el = this._touchEl();
       if (el && el.classList) el.classList.toggle('touch-on', on);
     }
 
+    /** 返回 #touch-controls 元素；非浏览器/桩环境返回 null */
     _touchEl() {
       return (typeof document !== 'undefined' && typeof document.getElementById === 'function')
         ? document.getElementById('touch-controls') : null;
@@ -678,16 +694,19 @@
 
     /* ── 内部：边沿与清理 ── */
 
+    /** 记录按下边沿并通知 press 订阅者 */
     _pressEdge(action) {
       this._pressed.add(action);
       this._emit('press', action);
     }
 
+    /** 记录松开边沿并通知 release 订阅者 */
     _releaseEdge(action) {
       this._released.add(action);
       this._emit('release', action);
     }
 
+    /** 向订阅者分发边沿事件；单个回调异常不阻断其余分发 */
     _emit(event, action) {
       const subs = this._subs[event];
       for (let i = 0; i < subs.length; i++) {
@@ -703,6 +722,11 @@
       }
       this._keys.clear();
       this._touchPtr.clear();
+      // 同步移除虚拟按键的 pressed 样式，避免视觉状态卡住
+      for (let i = 0; i < this._touchButtons.length; i++) {
+        const btn = this._touchButtons[i];
+        if (btn && btn.classList) btn.classList.remove('pressed');
+      }
       for (let i = 0; i < held.length; i++) this._releaseEdge(held[i]);
     }
   }
@@ -711,6 +735,7 @@
 
   const DEMO_LEVEL = buildDemoLevel();
 
+  /** 构建演示关卡：边界墙 + 梦幻湖等静态地形（data.js 就位前的占位内容） */
   function buildDemoLevel() {
     const w = 40;
     const h = 28;

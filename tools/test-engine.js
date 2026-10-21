@@ -169,6 +169,7 @@ global.removeEventListener = (type, fn) => {
   const i = list.indexOf(fn);
   if (i >= 0) list.splice(i, 1);
 };
+/** 派发 window 事件（keydown/keyup/blur 等）给全部已注册监听器 */
 function fireWindow(type, ev) {
   for (const fn of (windowListeners[type] || []).slice()) fn(ev);
 }
@@ -492,6 +493,7 @@ function fakeButton(key) {
   };
 }
 
+/** 构造带 preventDefault 的键盘事件桩，extra 可补充 repeat/ctrlKey 等属性 */
 function keyEvent(key, extra) {
   return Object.assign({ key, preventDefault() {} }, extra || {});
 }
@@ -570,6 +572,9 @@ test('键盘：按下边沿一次有效、endFrame 清空、自动重复与同�
   let prevented = 0;
   fireWindow('keydown', { key: ' ', preventDefault() { prevented++; } });
   assert.strictEqual(prevented, 1, '游戏键应阻止页面默认行为');
+  fireWindow('keydown', { key: ' ', repeat: true, preventDefault() { prevented++; } });
+  assert.strictEqual(prevented, 2, '长按自动重复事件同样应阻止页面默认行为');
+  assert.strictEqual(input.wasPressed('confirm'), true, '重复事件不产生新按下边沿');
   input.destroy();
 });
 
@@ -588,6 +593,24 @@ test('键盘：带修饰键组合不触发、松开边沿事件、失焦清空�
   fireWindow('blur', {});
   assert.strictEqual(input.isDown('left'), false, '失焦清空按住');
   assert.deepStrictEqual(released, ['right', 'left']);
+  input.destroy();
+});
+
+test('键盘：keyup 带修饰键仍释放；被过滤按键不产生虚假 release', () => {
+  const input = engine.createInput();
+  const released = [];
+  input.on('release', (a) => released.push(a));
+  // 按住期间再按修饰键：keyup 不过滤修饰键，应正常释放
+  fireWindow('keydown', keyEvent('w'));
+  assert.strictEqual(input.isDown('up'), true);
+  fireWindow('keyup', keyEvent('w', { ctrlKey: true }));
+  assert.strictEqual(input.isDown('up'), false, 'keyup 带修饰键仍释放');
+  assert.deepStrictEqual(released, ['up']);
+  // keydown 被修饰键过滤（从未按住）：后续 keyup 不得产生虚假 release
+  fireWindow('keydown', keyEvent('d', { ctrlKey: true }));
+  fireWindow('keyup', keyEvent('d'));
+  assert.strictEqual(input.wasReleased('right'), false, '被过滤按键无虚假 release');
+  assert.deepStrictEqual(released, ['up']);
   input.destroy();
 });
 
@@ -643,6 +666,33 @@ test('触屏：pointercancel 与 lostpointercapture 等效松开；未知 data-k
   ghost._fire('pointerdown', { pointerId: 8, preventDefault() {} });
   assert.strictEqual(input.getAxis().x, 0, '未知 data-key 不产生输入');
   input.destroy();
+  document.querySelectorAll = savedQSA;
+});
+
+test('触屏：失焦清空与销毁同步移除虚拟按键 pressed 样式', () => {
+  const savedQSA = document.querySelectorAll;
+  const up = fakeButton('up');
+  const action = fakeButton('action');
+  document.querySelectorAll = () => [up, action];
+  const input = engine.createInput();
+  up._fire('pointerdown', { pointerId: 1, preventDefault() {} });
+  action._fire('pointerdown', { pointerId: 2, preventDefault() {} });
+  assert.strictEqual(up.classList.contains('pressed'), true);
+  assert.strictEqual(action.classList.contains('pressed'), true);
+  fireWindow('blur', {});
+  assert.strictEqual(input.isDown('up'), false);
+  assert.strictEqual(input.isDown('confirm'), false);
+  assert.strictEqual(up.classList.contains('pressed'), false, '失焦清空十字键 pressed 样式');
+  assert.strictEqual(action.classList.contains('pressed'), false, '失焦清空 A 键 pressed 样式');
+  const released = [];
+  input.on('release', (a) => released.push(a));
+  up._fire('pointerup', { pointerId: 1 });
+  assert.deepStrictEqual(released, [], '清空后残余 pointerup 无虚假 release');
+  // destroy 同样清理 pressed 样式
+  up._fire('pointerdown', { pointerId: 5, preventDefault() {} });
+  assert.strictEqual(up.classList.contains('pressed'), true);
+  input.destroy();
+  assert.strictEqual(up.classList.contains('pressed'), false, 'destroy 清空 pressed 样式');
   document.querySelectorAll = savedQSA;
 });
 
