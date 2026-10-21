@@ -6,7 +6,7 @@
 
 - 🕹️ **玩法**：俯视角探索 + NPC 对话 + 解谜收集，6 关对应 6 首曲目
 - 🧱 **技术**：纯 HTML/CSS/JavaScript（Canvas），零依赖
-- 🚀 **在线试玩**：<https://ieer040126.github.io/MIXXTOPIA/>（开发中）
+- 🚀 **在线试玩**：<https://ideer0126.github.io/MIXXTOPIA/>（开发中）
 
 ## 开发状态
 

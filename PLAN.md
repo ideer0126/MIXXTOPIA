@@ -30,7 +30,7 @@ NSWER 在生日夜被一道星光带入梦境世界 **MIXXTOPIA**。六位缪斯
 
 | 关 | 曲目 | 区域主题 | 出场成员 | 机制重点 |
 |---|---|---|---|---|
-| 1 | Birthday Wish (긴 소원) | 生日烛光梦境 | 全员登场 | 教学：移动/对话/收集 |
+| 1 | Birthday Wish (긴 소원) | 生日烛光梦境 | 全员登场 | 教学：移动/对话/收集/推箱/开关 |
 | 2 | Kerosene | 灯油与火焰 | Jiwoo | 开关解谜（点燃灯柱） |
 | 3 | RudE TaLK | 霓虹态度街头 | Kyujin | 单向门 + 路径推理 |
 | 4 | Sing to the Moon (너는 달) | 月夜湖畔 | 小分队 A* | 水面/浮桥解谜 |
@@ -138,7 +138,7 @@ MIXXTOPIA/
 
 - **Milestones**：M0–M5 六项（与 §5 一一对应）。
 - **Labels**：`chore` `docs` `feat` `content` `art` `audio` `test` `release`（按角色/领域）。
-- **Issues**：§6 表格中 17 个任务，全部关联 Milestone、标注 Label、指派给 `ieer040126`。
+- **Issues**：§6 表格中 18 个任务，全部关联 Milestone、标注 Label、指派给 `ideer0126`。
 - **看板**：使用 Milestone 进度页 + Issue 勾选清单作为轻量看板，不额外引入 Project 复杂度。
 
 ---
