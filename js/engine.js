@@ -220,17 +220,6 @@
     ],
   };
 
-  // 未知瓦片：半透明棋盘格警示（数据校验 #16 应提前拦截，此处兜底防崩）
-  const UNKNOWN_TILE = (function () {
-    const g = [];
-    for (let y = 0; y < TILE; y++) {
-      let row = '';
-      for (let x = 0; x < TILE; x++) row += (x + y) % 2 ? '2' : '.';
-      g.push(row);
-    }
-    return g;
-  })();
-
   const DEFAULT_LEGEND = { '#': 'wall', '·': 'floor', '~': 'water' };
 
   /* ════════════════════════ 瓦片集注册表 ════════════════════════ */
@@ -361,8 +350,9 @@
      * camera：Camera 实例（世界坐标平移）。
      */
     renderLevel(level, camera) {
-      const palette = resolvePalette(level && level.palette);
-      const atlas = this.getTileAtlas((level && level.tileset) || 'builtin', palette);
+      if (!level) throw new TypeError('renderLevel: level 不能为空');
+      const palette = resolvePalette(level.palette);
+      const atlas = this.getTileAtlas(level.tileset || 'builtin', palette);
       const map = level.map;
       const ctx = this.ctx;
 
