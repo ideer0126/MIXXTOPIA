@@ -17,6 +17,9 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
 
 /* ─────────────────── Canvas 2D 极简桩 ─────────────────── */
 
@@ -212,6 +215,19 @@ test('内置瓦片网格格式：16×16、字符 ∈ {. 0 1 2 3}', () => {
   }
 });
 
+test('页面脚本顺序：sprites.js 执行时引擎已可注册瓦片', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  const sandbox = vm.createContext({});
+  for (const [, src] of html.matchAll(/<script src="([^"]+)"/g)) {
+    vm.runInContext(fs.readFileSync(path.join(repoRoot, src), 'utf8'), sandbox, { filename: src });
+    if (src === 'js/sprites.js') {
+      vm.runInContext("MIXX.engine.registerTileset('sprites-test', { floor: ['1'] })", sandbox);
+    }
+  }
+  assert.strictEqual(sandbox.MIXX.engine._tilesets['sprites-test'].floor[0], '1');
+});
+
 /* ─────────────────── 2. 瓦片图集缓存 ─────────────────── */
 
 test('图集缓存：同「瓦片集+调色板」复用同一图集，异调色板重建', () => {
@@ -226,6 +242,38 @@ test('图集缓存：同「瓦片集+调色板」复用同一图集，异调色�
   assert.deepStrictEqual(a1.index, { wall: 0, floor: 1, water: 2 });
   assert.strictEqual(a1.sheet.width, 16 * 3);
   assert.strictEqual(a1.sheet.height, 16);
+});
+
+test('合并瓦片后刷新所有渲染器和调色板的缓存，保留未覆盖瓦片', () => {
+  const renderers = [engine.createRenderer(new FakeCanvas()), engine.createRenderer(new FakeCanvas())];
+  const palettes = [engine.resolvePalette(), engine.resolvePalette({ gold: '#123456' })];
+  engine.registerTileset('cache-test', { floor: ['1'], wall: ['0'] });
+  const originals = renderers.map(renderer => palettes.map(palette => renderer.getTileAtlas('cache-test', palette)));
+  const builtin = renderers[0].getTileAtlas('builtin', palettes[0]);
+
+  engine.registerTileset('cache-test', { floor: ['2'], water: ['3'] });
+  renderers.forEach((renderer, r) => palettes.forEach((palette, p) => {
+    const atlas = renderer.getTileAtlas('cache-test', palette);
+    assert.notStrictEqual(atlas, originals[r][p]);
+    assert.deepStrictEqual(atlas.index, { floor: 0, wall: 1, water: 2 });
+    assert.deepStrictEqual(px(atlas.sheet, 0, 0), [...palette.slots[2], 255]);
+    assert.deepStrictEqual(px(atlas.sheet, 16, 0), [...palette.slots[0], 255]);
+    assert.deepStrictEqual(px(atlas.sheet, 32, 0), [...palette.slots[3], 255]);
+    assert.strictEqual(renderer.getTileAtlas('cache-test', palette), atlas);
+  }));
+  assert.strictEqual(renderers[0].getTileAtlas('builtin', palettes[0]), builtin);
+});
+
+test('缺失瓦片集复用 builtin；随后注册时不得复用兜底图集或模板', () => {
+  const renderer = engine.createRenderer(new FakeCanvas());
+  const palette = engine.resolvePalette();
+  const fallback = renderer.getTileAtlas('late-test', palette);
+  assert.strictEqual(fallback, renderer.getTileAtlas('builtin', palette));
+  engine.registerTileset('late-test', { wall: ['2'] });
+  const atlas = renderer.getTileAtlas('late-test', palette);
+  assert.notStrictEqual(atlas, fallback);
+  assert.deepStrictEqual(atlas.index, { wall: 0 });
+  assert.deepStrictEqual(px(atlas.sheet, 0, 0), [...palette.slots[2], 255]);
 });
 
 /* ─────────────────── 3. 调色板换色 ─────────────────── */
@@ -361,6 +409,44 @@ test('整数倍放大：1280×720 窗口 → k=3；640 宽 → k=1；无拉伸�
   assert.strictEqual(renderer.canvas.style.width, '320px');
   assert.strictEqual(renderer.canvas.style.imageRendering, 'pixelated');
   global.innerWidth = 1280;
+});
+
+test('设备像素整数缩放：高密度、分数 DPR、非法 DPR 与小窗口兜底', () => {
+  const saved = { width: global.innerWidth, height: global.innerHeight, dpr: global.devicePixelRatio };
+  try {
+    const canvas = new FakeCanvas();
+    const renderer = engine.createRenderer(canvas);
+    for (const [dpr, scale] of [[1, 3], [1.25, 3], [1.5, 4], [2, 6], [0.75, 2]]) {
+      global.devicePixelRatio = dpr;
+      assert.strictEqual(renderer.resize(), scale);
+      assert.strictEqual(renderer.scale, scale);
+      assert.strictEqual(canvas.style.width, 320 * scale / dpr + 'px');
+      assert.strictEqual(canvas.style.height, 224 * scale / dpr + 'px');
+      assert.strictEqual(canvas.width, 320);
+      assert.strictEqual(canvas.height, 224);
+      assert.strictEqual(canvas.style.imageRendering, 'pixelated');
+      assert.strictEqual(renderer.ctx.imageSmoothingEnabled, false);
+    }
+    for (const dpr of [undefined, 0, -1, NaN, Infinity]) {
+      global.devicePixelRatio = dpr;
+      assert.strictEqual(renderer.resize(), 3);
+      assert.strictEqual(canvas.style.width, '960px');
+      assert.strictEqual(canvas.style.height, '672px');
+    }
+    global.devicePixelRatio = 2;
+    for (const size of [10, undefined]) {
+      global.innerWidth = global.innerHeight = size;
+      assert.strictEqual(renderer.resize(), 1);
+      assert.strictEqual(canvas.style.width, '160px');
+      assert.strictEqual(canvas.style.height, '112px');
+    }
+    renderer.destroy();
+  } finally {
+    global.innerWidth = saved.width;
+    global.innerHeight = saved.height;
+    if (saved.dpr === undefined) delete global.devicePixelRatio;
+    else global.devicePixelRatio = saved.dpr;
+  }
 });
 
 /* ─────────────────── 汇总 ─────────────────── */

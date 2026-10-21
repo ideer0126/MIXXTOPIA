@@ -6,7 +6,7 @@
  * 渲染规格（PLAN.md §3 / GAME_DESIGN.md §11）：
  *   - 逻辑分辨率 320×224（20×14 瓦片 × 16px）
  *   - 整数倍放大 + `image-rendering: pixelated`，像素风格缩放无模糊
- *   - 16px 瓦片图集缓存：同一「瓦片集 + 调色板」只构建一次，整屏 drawImage 直取
+ *   - 16px 瓦片图集缓存：同一「瓦片集版本 + 调色板」只构建一次，整屏 drawImage 直取
  *   - 调色板换色：素材以 4 槽模板色绘制，按关卡调色板逐像素重映射
  *   - 摄像机：目标跟随 + 地图边界钳制 + 小地图居中
  *
@@ -236,10 +236,12 @@
   /* ════════════════════════ 瓦片集注册表 ════════════════════════ */
 
   const tilesets = { builtin: BUILTIN_TILES };
+  const tilesetVersions = new Map([['builtin', 0]]);
 
   /** 注册/合并瓦片集（Issue #13 美术落地后按关注册主题瓦片） */
   function registerTileset(id, sources) {
     tilesets[id] = Object.assign({}, tilesets[id] || {}, sources);
+    tilesetVersions.set(id, (tilesetVersions.get(id) || 0) + 1);
   }
 
   const _warned = new Set();
@@ -288,8 +290,8 @@
       canvas.height = VIEW_H;
       this.ctx = canvas.getContext('2d');
       if ('imageSmoothingEnabled' in this.ctx) this.ctx.imageSmoothingEnabled = false;
-      this.atlasCache = new Map();    // 瓦片图集缓存：key = tileset|paletteKey
-      this.templateCache = new Map(); // 模板色素材缓存：key = tileset/type
+      this.atlasCache = new Map();    // 瓦片图集缓存：key = [tilesetId, version, paletteKey]
+      this.templateCache = new Map(); // 模板色素材缓存：key = [tilesetId, version, type]
       this.scale = 1;
       this._onResize = () => this.resize();
       if (typeof root.addEventListener === 'function') {
@@ -298,18 +300,20 @@
       this.resize();
     }
 
-    /** 整数倍放大：取恰好装入窗口的最大整数 k（≥1），配合 CSS pixelated 无模糊 */
+    /** 设备像素整数倍放大：取恰好装入窗口的最大整数 k（≥1），配合 CSS pixelated 无模糊 */
     resize() {
-      const availW = (root.innerWidth || 0) - 24;
-      const availH = (root.innerHeight || 0) - 24;
+      const dpr = Number.isFinite(root.devicePixelRatio) && root.devicePixelRatio > 0
+        ? root.devicePixelRatio : 1;
+      const availW = ((root.innerWidth || 0) - 24) * dpr;
+      const availH = ((root.innerHeight || 0) - 24) * dpr;
       const k = Math.max(
         1,
         Math.min(Math.floor(availW / VIEW_W), Math.floor(availH / VIEW_H))
       );
       this.scale = k;
       const st = this.canvas.style;
-      st.width = VIEW_W * k + 'px';
-      st.height = VIEW_H * k + 'px';
+      st.width = VIEW_W * k / dpr + 'px';
+      st.height = VIEW_H * k / dpr + 'px';
       st.imageRendering = 'pixelated';
       return k;
     }
@@ -320,18 +324,20 @@
       }
     }
 
-    /** 取瓦片图集：同一「瓦片集 + 调色板」只构建一次（缓存命中直接复用） */
+    /** 取瓦片图集：同一「瓦片集版本 + 调色板」只构建一次（缓存命中直接复用） */
     getTileAtlas(tilesetId, palette) {
-      const key = tilesetId + '|' + palette.key;
+      tilesetId = tilesetVersions.has(tilesetId) ? tilesetId : 'builtin';
+      const version = tilesetVersions.get(tilesetId);
+      const key = JSON.stringify([tilesetId, version, palette.key]);
       const hit = this.atlasCache.get(key);
       if (hit) return hit;
-      const set = tilesets[tilesetId] || tilesets.builtin;
+      const set = tilesets[tilesetId];
       const types = Object.keys(set);
       const sheet = makeCanvas(TILE * types.length, TILE);
       const sctx = sheet.getContext('2d');
       const index = {};
       types.forEach((type, i) => {
-        const tpl = this._templateCanvas(tilesetId, type, set[type]);
+        const tpl = this._templateCanvas(tilesetId, version, type, set[type]);
         const colored = remapCanvas(tpl, palette.slots); // 调色板换色
         sctx.drawImage(colored, i * TILE, 0);
         index[type] = i;
@@ -341,8 +347,8 @@
       return atlas;
     }
 
-    _templateCanvas(tilesetId, type, grid) {
-      const k = tilesetId + '/' + type;
+    _templateCanvas(tilesetId, version, type, grid) {
+      const k = JSON.stringify([tilesetId, version, type]);
       if (!this.templateCache.has(k)) {
         this.templateCache.set(k, gridToCanvas(grid, TEMPLATE_RGB));
       }

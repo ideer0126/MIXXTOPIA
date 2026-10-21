@@ -5,7 +5,8 @@
  * 实现方式（与 js/engine.js 约定）：
  *   - 素材以 16×16 模板槽色像素网格定义：'.' 透明，'0'–'3' 对应槽位
  *     （0 品红 #ff00ff 暗面 · 1 青 #00ffff 主色 · 2 黄 #ffff00 强调一 · 3 橙 #ff8000 强调二）；
- *   - 瓦片集通过 MIXX.engine.registerTileset(id, { type: grid, ... }) 注册，
+ *   - index.html 在 engine.js 之后加载本文件，确保 MIXX.engine 已就绪；
+ *     瓦片集通过 MIXX.engine.registerTileset(id, { type: grid, ... }) 注册，
  *     运行时由引擎按关卡调色板自动换色并缓存图集；
  *   - 角色精灵后续由实体渲染（Issue #6/#9）接入。
  */
