@@ -90,15 +90,15 @@
       <button id="btn-ending" class="menu-btn">↻ 再来一次</button>
     </div>
 
-    <!-- 手机虚拟按键 -->
-    <div id="touch-controls" class="hidden">
+    <!-- 手机虚拟按键：仅 pointer:coarse 设备显示（styles.css 媒体查询 + engine.js 检测兜底） -->
+    <div id="touch-controls">
       <div id="dpad">
-        <button class="tbtn" data-key="up">▲</button>
-        <button class="tbtn" data-key="left">◀</button>
-        <button class="tbtn" data-key="down">▼</button>
-        <button class="tbtn" data-key="right">▶</button>
+        <button type="button" class="tbtn" data-key="up" aria-label="上">▲</button>
+        <button type="button" class="tbtn" data-key="left" aria-label="左">◀</button>
+        <button type="button" class="tbtn" data-key="down" aria-label="下">▼</button>
+        <button type="button" class="tbtn" data-key="right" aria-label="右">▶</button>
       </div>
-      <button id="tbtn-a" class="tbtn a" data-key="action">A</button>
+      <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
     </div>
   </div>
 

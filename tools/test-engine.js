@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * tools/test-engine.js —— js/engine.js 渲染管线验证（Issue #4 验收辅助）
+ * tools/test-engine.js —— js/engine.js 渲染管线验证（Issue #4/#5 验收辅助）
  *
  * 零依赖：Node 内置 assert + 极简 Canvas 2D 桩。
  * 运行：node tools/test-engine.js
@@ -13,6 +13,7 @@
  *   5. 静态地图渲染像素级断言（背景 / 墙 / 地 / 水）
  *   6. 整数倍放大计算与 imageSmoothingEnabled 关闭
  *   7. 未知地形符号不崩溃
+ *   8. 输入系统（Issue #5）：键盘绑定/边沿/轴向量、触屏虚拟按键、粗指针检测、开关与销毁
  */
 'use strict';
 
@@ -157,8 +158,23 @@ global.document = {
 };
 global.innerWidth = 1280;
 global.innerHeight = 720;
-global.addEventListener = () => {};
-global.removeEventListener = () => {};
+// 事件注册表：供输入系统测试派发 window 事件（渲染器等仅注册不触发，行为不变）
+const windowListeners = {};
+global.addEventListener = (type, fn) => {
+  (windowListeners[type] || (windowListeners[type] = [])).push(fn);
+};
+global.removeEventListener = (type, fn) => {
+  const list = windowListeners[type];
+  if (!list) return;
+  const i = list.indexOf(fn);
+  if (i >= 0) list.splice(i, 1);
+};
+function fireWindow(type, ev) {
+  for (const fn of (windowListeners[type] || []).slice()) fn(ev);
+}
+// pointer 媒体查询桩：测试通过 matchMediaStates 控制匹配结果
+const matchMediaStates = new Map();
+global.matchMedia = (query) => ({ matches: !!matchMediaStates.get(query), media: query });
 const _warn = console.warn;
 console.warn = () => {}; // 测试期间静音引擎告警
 
@@ -447,6 +463,231 @@ test('设备像素整数缩放：高密度、分数 DPR、非法 DPR 与小窗�
     if (saved.dpr === undefined) delete global.devicePixelRatio;
     else global.devicePixelRatio = saved.dpr;
   }
+});
+
+/* ─────────────────── 7. 输入系统（Issue #5） ─────────────────── */
+
+/** 极简按钮桩：模拟 #touch-controls 里带 data-key 的虚拟按键 */
+function fakeButton(key) {
+  const listeners = {};
+  const classes = new Set();
+  return {
+    dataset: { key },
+    getAttribute: (name) => (name === 'data-key' ? key : null),
+    classList: {
+      add: (c) => classes.add(c),
+      remove: (c) => classes.delete(c),
+      contains: (c) => classes.has(c),
+      toggle: (c, v) => (v ? classes.add(c) : classes.delete(c)),
+    },
+    addEventListener: (type, fn) => { (listeners[type] || (listeners[type] = [])).push(fn); },
+    removeEventListener: (type, fn) => {
+      const l = listeners[type];
+      if (!l) return;
+      const i = l.indexOf(fn);
+      if (i >= 0) l.splice(i, 1);
+    },
+    setPointerCapture: () => {},
+    _fire: (type, ev) => { for (const fn of (listeners[type] || []).slice()) fn(ev || {}); },
+  };
+}
+
+function keyEvent(key, extra) {
+  return Object.assign({ key, preventDefault() {} }, extra || {});
+}
+
+test('输入 API：createInput 暴露、初始状态、动作常量', () => {
+  assert.strictEqual(typeof engine.createInput, 'function');
+  assert.strictEqual(typeof engine.detectCoarsePointer, 'function');
+  const input = engine.createInput();
+  assert.strictEqual(input.enabled, true);
+  assert.strictEqual(input.coarse, false);
+  assert.deepStrictEqual(input.getAxis(), { x: 0, y: 0 });
+  assert.strictEqual(input.isDown('up'), false);
+  assert.strictEqual(input.wasPressed('confirm'), false);
+  assert.strictEqual(input.wasReleased('mute'), false);
+  assert.deepStrictEqual(Object.keys(engine.KEY_BINDINGS),
+    ['up', 'down', 'left', 'right', 'confirm', 'pause', 'mute']);
+  input.destroy();
+});
+
+test('键盘：WASD/方向键移动、轴向量、同动作双键分源释放', () => {
+  const input = engine.createInput();
+  fireWindow('keydown', keyEvent('w'));
+  assert.strictEqual(input.isDown('up'), true);
+  assert.deepStrictEqual(input.getAxis(), { x: 0, y: -1 });
+  fireWindow('keydown', keyEvent('ArrowLeft'));
+  assert.deepStrictEqual(input.getAxis(), { x: -1, y: -1 });
+  fireWindow('keyup', keyEvent('w'));
+  assert.deepStrictEqual(input.getAxis(), { x: -1, y: 0 });
+  // 同动作双键：W 与 ArrowUp 同按，松开其一仍按住
+  fireWindow('keydown', keyEvent('w'));
+  fireWindow('keydown', keyEvent('ArrowUp'));
+  fireWindow('keyup', keyEvent('ArrowUp'));
+  assert.strictEqual(input.isDown('up'), true);
+  fireWindow('keyup', keyEvent('w'));
+  assert.strictEqual(input.isDown('up'), false);
+  fireWindow('keyup', keyEvent('ArrowLeft'));
+  assert.deepStrictEqual(input.getAxis(), { x: 0, y: 0 });
+  input.destroy();
+});
+
+test('键盘：E/空格确认、Esc 暂停、M 静音绑定与大小写归一', () => {
+  const input = engine.createInput();
+  fireWindow('keydown', keyEvent('E'));
+  assert.strictEqual(input.wasPressed('confirm'), true);
+  fireWindow('keyup', keyEvent('E'));
+  input.endFrame();
+  fireWindow('keydown', keyEvent(' '));
+  assert.strictEqual(input.wasPressed('confirm'), true);
+  fireWindow('keyup', keyEvent(' '));
+  input.endFrame();
+  fireWindow('keydown', keyEvent('Escape'));
+  assert.strictEqual(input.wasPressed('pause'), true);
+  fireWindow('keyup', keyEvent('Escape'));
+  input.endFrame();
+  fireWindow('keydown', keyEvent('m'));
+  assert.strictEqual(input.wasPressed('mute'), true);
+  fireWindow('keyup', keyEvent('m'));
+  input.destroy();
+});
+
+test('键盘：按下边沿一次有效、endFrame 清空、自动重复与同动作第二键不产生边沿、游戏键 preventDefault', () => {
+  const input = engine.createInput();
+  fireWindow('keydown', keyEvent('e'));
+  assert.strictEqual(input.wasPressed('confirm'), true);
+  assert.strictEqual(input.wasPressed('confirm'), true, '未 endFrame 前边沿保持');
+  input.endFrame();
+  assert.strictEqual(input.wasPressed('confirm'), false);
+  fireWindow('keydown', keyEvent('e', { repeat: true }));
+  assert.strictEqual(input.wasPressed('confirm'), false, '长按自动重复忽略');
+  // E 仍按住时按空格：同动作已按住，不重复产生边沿
+  fireWindow('keydown', keyEvent(' '));
+  assert.strictEqual(input.wasPressed('confirm'), false, '同动作第二键无新边沿');
+  fireWindow('keyup', keyEvent('e'));
+  fireWindow('keyup', keyEvent(' '));
+  input.endFrame();
+  let prevented = 0;
+  fireWindow('keydown', { key: ' ', preventDefault() { prevented++; } });
+  assert.strictEqual(prevented, 1, '游戏键应阻止页面默认行为');
+  input.destroy();
+});
+
+test('键盘：带修饰键组合不触发、松开边沿事件、失焦清空按住状态', () => {
+  const input = engine.createInput();
+  const released = [];
+  input.on('release', (a) => released.push(a));
+  fireWindow('keydown', keyEvent('w', { ctrlKey: true }));
+  assert.strictEqual(input.isDown('up'), false, 'Ctrl+W 不触发');
+  fireWindow('keydown', keyEvent('d'));
+  assert.strictEqual(input.isDown('right'), true);
+  fireWindow('keyup', keyEvent('d'));
+  assert.strictEqual(input.wasReleased('right'), true);
+  assert.deepStrictEqual(released, ['right']);
+  fireWindow('keydown', keyEvent('a'));
+  fireWindow('blur', {});
+  assert.strictEqual(input.isDown('left'), false, '失焦清空按住');
+  assert.deepStrictEqual(released, ['right', 'left']);
+  input.destroy();
+});
+
+test('事件订阅：press/release 回调收到动作名，可退订', () => {
+  const input = engine.createInput();
+  const seen = [];
+  const onPress = (a) => seen.push('press:' + a);
+  input.on('press', onPress);
+  fireWindow('keydown', keyEvent('m'));
+  input.off('press', onPress);
+  fireWindow('keyup', keyEvent('m'));
+  fireWindow('keydown', keyEvent('p'));
+  assert.deepStrictEqual(seen, ['press:mute']);
+  input.destroy();
+});
+
+test('触屏虚拟按键：十字键移动 + A 键确认，与键盘等价，多指同键安全', () => {
+  const savedQSA = document.querySelectorAll;
+  const up = fakeButton('up');
+  const action = fakeButton('action');
+  document.querySelectorAll = (sel) => (sel === '[data-key]' ? [up, action] : []);
+  const input = engine.createInput();
+  up._fire('pointerdown', { pointerId: 1, preventDefault() {} });
+  assert.strictEqual(input.isDown('up'), true);
+  assert.deepStrictEqual(input.getAxis(), { x: 0, y: -1 });
+  action._fire('pointerdown', { pointerId: 2, preventDefault() {} });
+  assert.strictEqual(input.wasPressed('confirm'), true, 'A 键 = 确认');
+  assert.strictEqual(action.classList.contains('pressed'), true);
+  up._fire('pointerup', { pointerId: 1 });
+  assert.strictEqual(input.isDown('up'), false);
+  // 同一按钮双指按下，抬一指仍按住
+  up._fire('pointerdown', { pointerId: 3, preventDefault() {} });
+  up._fire('pointerdown', { pointerId: 4, preventDefault() {} });
+  up._fire('pointerup', { pointerId: 3 });
+  assert.strictEqual(input.isDown('up'), true);
+  up._fire('pointerup', { pointerId: 4 });
+  assert.strictEqual(input.isDown('up'), false);
+  assert.strictEqual(up.classList.contains('pressed'), false);
+  input.destroy();
+  document.querySelectorAll = savedQSA;
+});
+
+test('触屏：pointercancel 与 lostpointercapture 等效松开；未知 data-key 忽略', () => {
+  const savedQSA = document.querySelectorAll;
+  const right = fakeButton('right');
+  const ghost = fakeButton('ghost');
+  document.querySelectorAll = () => [right, ghost];
+  const input = engine.createInput();
+  right._fire('pointerdown', { pointerId: 7, preventDefault() {} });
+  assert.strictEqual(input.isDown('right'), true);
+  right._fire('pointercancel', { pointerId: 7 });
+  assert.strictEqual(input.isDown('right'), false);
+  ghost._fire('pointerdown', { pointerId: 8, preventDefault() {} });
+  assert.strictEqual(input.getAxis().x, 0, '未知 data-key 不产生输入');
+  input.destroy();
+  document.querySelectorAll = savedQSA;
+});
+
+test('粗指针检测：pointer/any-pointer 媒体查询与触摸能力兜底', () => {
+  assert.strictEqual(engine.detectCoarsePointer(), false);
+  matchMediaStates.set('(pointer: coarse)', true);
+  assert.strictEqual(engine.detectCoarsePointer(), true);
+  matchMediaStates.set('(pointer: coarse)', false);
+  matchMediaStates.set('(any-pointer: coarse)', true);
+  assert.strictEqual(engine.detectCoarsePointer(), true);
+  matchMediaStates.clear();
+  const savedMM = global.matchMedia;
+  delete global.matchMedia;
+  global.ontouchstart = function () {};
+  assert.strictEqual(engine.detectCoarsePointer(), true, '无媒体查询时 ontouchstart 兜底');
+  delete global.ontouchstart;
+  global.matchMedia = savedMM;
+});
+
+test('输入开关：禁用冻结轴/按住并发出松开，恢复后可用', () => {
+  const input = engine.createInput();
+  fireWindow('keydown', keyEvent('s'));
+  assert.strictEqual(input.isDown('down'), true);
+  input.setEnabled(false);
+  assert.strictEqual(input.isDown('down'), false, '禁用清空按住');
+  assert.deepStrictEqual(input.getAxis(), { x: 0, y: 0 });
+  fireWindow('keydown', keyEvent('w'));
+  assert.strictEqual(input.isDown('up'), false, '禁用期间忽略新输入');
+  input.setEnabled(true);
+  fireWindow('keydown', keyEvent('w'));
+  assert.strictEqual(input.isDown('up'), true);
+  input.destroy();
+});
+
+test('销毁：解绑后键盘与触屏不再产生输入', () => {
+  const savedQSA = document.querySelectorAll;
+  const up = fakeButton('up');
+  document.querySelectorAll = () => [up];
+  const input = engine.createInput();
+  input.destroy();
+  fireWindow('keydown', keyEvent('w'));
+  assert.strictEqual(input.isDown('up'), false);
+  up._fire('pointerdown', { pointerId: 9, preventDefault() {} });
+  assert.strictEqual(input.isDown('up'), false);
+  document.querySelectorAll = savedQSA;
 });
 
 /* ─────────────────── 汇总 ─────────────────── */
