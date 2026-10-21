@@ -25,3 +25,94 @@ body {
 .hidden {
   display: none !important;
 }
+
+/* ── 触屏虚拟按键（Issue #5）：pointer:coarse 设备显示十字键 + A 键 ── */
+
+#touch-controls {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 0 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  pointer-events: none; /* 容器穿透，仅按键自身响应 */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 粗指针（触屏/混合）设备默认显示；.touch-on 为 JS 检测兜底（旧浏览器无 pointer 媒体查询）；
+   .touch-off 供主状态机在菜单/对话界面强制隐藏 */
+@media (pointer: coarse), (any-pointer: coarse) {
+  #touch-controls:not(.touch-off) {
+    display: flex;
+  }
+}
+
+#touch-controls.touch-on:not(.touch-off) {
+  display: flex;
+}
+
+#touch-controls.touch-off {
+  display: none !important;
+}
+
+#dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows: repeat(3, 52px);
+  grid-template-areas:
+    ". up ."
+    "left . right"
+    ". down .";
+  gap: 4px;
+  pointer-events: auto;
+}
+
+#dpad [data-key="up"] { grid-area: up; }
+#dpad [data-key="left"] { grid-area: left; }
+#dpad [data-key="down"] { grid-area: down; }
+#dpad [data-key="right"] { grid-area: right; }
+
+.tbtn {
+  width: 52px;
+  height: 52px;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Press Start 2P", monospace;
+  font-size: 16px;
+  line-height: 1;
+  color: #f0e6d2;
+  background: rgba(11, 11, 30, 0.6);
+  border: 2px solid #ffc857;
+  border-radius: 8px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+  touch-action: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+}
+
+.tbtn.pressed {
+  background: rgba(255, 200, 87, 0.45);
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+
+#tbtn-a {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border-color: #ff8fa3;
+  background: rgba(255, 143, 163, 0.55);
+  color: #ffffff;
+  font-size: 20px;
+  pointer-events: auto;
+}
+

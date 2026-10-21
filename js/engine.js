@@ -2,6 +2,7 @@
  * js/engine.js —— MIXXTOPIA 引擎
  *
  * Issue #4：Canvas 渲染引擎（瓦片图集、调色板、摄像机、缩放）
+ * Issue #5：输入系统（键盘 + 触屏虚拟按键）
  *
  * 渲染规格（PLAN.md §3 / GAME_DESIGN.md §11）：
  *   - 逻辑分辨率 320×224（20×14 瓦片 × 16px）
@@ -10,12 +11,17 @@
  *   - 调色板换色：素材以 4 槽模板色绘制，按关卡调色板逐像素重映射
  *   - 摄像机：目标跟随 + 地图边界钳制 + 小地图居中
  *
+ * 输入规格（Issue #5）：
+ *   - 键盘：方向键/WASD 移动、E/空格确认、Esc 暂停、M 静音
+ *   - 触屏：pointer:coarse 设备显示虚拟十字键与 A 键，与键盘输入等价
+ *   - Input 管理器（engine.createInput）统一两路输入，供演示与 main.js 使用
+ *
  * 后续 Issue 在本文件内追加（勿新建渲染文件）：
- *   #5 输入系统  ·  #9 碰撞与机制  ·  #15 粒子
+ *   #9 碰撞与机制  ·  #15 粒子
  *
  * 演示模式说明：
- *   js/data.js 与 js/main.js 就位前，本文件内置演示（默认地图 + 方向键移动）
- *   用于验收静态地图渲染与摄像机跟随/钳制；二者落地后由 main.js 设置
+ *   js/data.js 与 js/main.js 就位前，本文件内置演示（默认地图 + 输入系统驱动小人移动）
+ *   用于验收静态地图渲染、摄像机跟随/钳制与输入系统；data/main 落地后由 main.js 接管
  *   `window.MIXX_NO_DEMO = true` 停用演示，无需改动本文件。
  */
 'use strict';
@@ -388,10 +394,348 @@
     }
   }
 
+  /* ════════════════════════ 输入系统（Issue #5） ════════════════════════ */
+
+  /**
+   * 键盘绑定：动作名 → 按键（e.key 小写）。
+   * 方向键/WASD 移动、E/空格确认、Esc 暂停、M 静音。
+   */
+  const KEY_BINDINGS = {
+    up: ['arrowup', 'w'],
+    down: ['arrowdown', 's'],
+    left: ['arrowleft', 'a'],
+    right: ['arrowright', 'd'],
+    confirm: ['e', ' ', 'enter'],
+    pause: ['escape'],
+    mute: ['m'],
+  };
+
+  const ACTION_LIST = Object.keys(KEY_BINDINGS);
+
+  /** 触屏按钮 data-key → 动作名（A 键 = 确认；B 键留给 #18 战斗） */
+  const TOUCH_ACTIONS = { up: 'up', down: 'down', left: 'left', right: 'right', action: 'confirm' };
+
+  /** 粗指针（触屏）设备检测：pointer 媒体查询优先，触摸能力兜底 */
+  function detectCoarsePointer() {
+    if (typeof root.matchMedia === 'function') {
+      try {
+        if (root.matchMedia('(pointer: coarse)').matches) return true;
+        if (root.matchMedia('(any-pointer: coarse)').matches) return true;
+      } catch (e) { /* 媒体查询异常时走触摸能力兜底 */ }
+    }
+    if ('ontouchstart' in root) return true;
+    const nav = root.navigator;
+    return !!(nav && typeof nav.maxTouchPoints === 'number' && nav.maxTouchPoints > 0);
+  }
+
+  /**
+   * 输入管理器：统一键盘与触屏虚拟按键，键盘/触屏双输入等价。
+   *
+   * 动作名（isDown / wasPressed / wasReleased / getAxis 使用）：
+   *   up / down / left / right —— 移动（WASD 或方向键，或虚拟十字键）
+   *   confirm —— E / 空格 / Enter / 触屏 A 键
+   *   pause   —— Esc
+   *   mute    —— M
+   *
+   * 用法（游戏循环内轮询，每帧结束调用 endFrame 清空边沿缓冲）：
+   *   const input = engine.createInput();
+   *   const axis = input.getAxis();
+   *   if (input.wasPressed('confirm')) { … }
+   *   input.endFrame();
+   * 也可订阅边沿事件：input.on('press', action => …) / input.on('release', …)。
+   * main.js（#6）可用 setEnabled(false) 在对话/暂停时冻结输入，
+   * setTouchVisible(false) 在菜单界面隐藏虚拟按键。
+   */
+  class Input {
+    constructor(opts) {
+      opts = opts || {};
+      this.target = opts.target || root;
+      this.enabled = true;
+      this.coarse = detectCoarsePointer();       // 当前设备是否为触屏（粗指针）
+      this._keys = new Set();                    // 当前按住的物理键（小写 e.key）
+      this._touchPtr = new Map();                // 动作 → 按住的 pointerId 集合
+      this._pressed = new Set();                 // 自上次 endFrame 以来的按下边沿
+      this._released = new Set();                // 自上次 endFrame 以来的松开边沿
+      this._subs = { press: [], release: [] };
+      this._touchHandlers = [];                  // [element, type, fn] 三元组，供解绑
+      this._touchButtons = [];                   // 已绑定虚拟按键元素，供 _clearAll/destroy 清除 pressed 样式
+      this._bound = {
+        keydown: (e) => this._onKey(e, true),
+        keyup: (e) => this._onKey(e, false),
+        blur: () => this._clearAll(),
+        visibility: () => {
+          if (typeof document !== 'undefined' && document.hidden) this._clearAll();
+        },
+      };
+      if (typeof this.target.addEventListener === 'function') {
+        this.target.addEventListener('keydown', this._bound.keydown);
+        this.target.addEventListener('keyup', this._bound.keyup);
+        this.target.addEventListener('blur', this._bound.blur);
+        if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+          document.addEventListener('visibilitychange', this._bound.visibility);
+        }
+      }
+      if (opts.autoTouch !== false) this._setupTouch();
+    }
+
+    /* ── 状态查询 ── */
+
+    /** 动作当前是否被按住（键盘或触屏任一来源） */
+    isDown(action) {
+      if (!this.enabled) return false;
+      const keys = KEY_BINDINGS[action];
+      if (keys) {
+        for (let i = 0; i < keys.length; i++) {
+          if (this._keys.has(keys[i])) return true;
+        }
+      }
+      const ptr = this._touchPtr.get(action);
+      return !!ptr && ptr.size > 0;
+    }
+
+    /** 自上次 endFrame 以来是否发生按下边沿 */
+    wasPressed(action) {
+      return this.enabled && this._pressed.has(action);
+    }
+
+    /** 自上次 endFrame 以来是否发生松开边沿 */
+    wasReleased(action) {
+      return this.enabled && this._released.has(action);
+    }
+
+    /** 移动轴向量 { x, y } ∈ {-1,0,1}（右/下为正，不做对角归一化） */
+    getAxis() {
+      if (!this.enabled) return { x: 0, y: 0 };
+      return {
+        x: (this.isDown('right') ? 1 : 0) - (this.isDown('left') ? 1 : 0),
+        y: (this.isDown('down') ? 1 : 0) - (this.isDown('up') ? 1 : 0),
+      };
+    }
+
+    /** 帧尾调用：清空按下/松开边沿缓冲 */
+    endFrame() {
+      this._pressed.clear();
+      this._released.clear();
+    }
+
+    /* ── 事件订阅 ── */
+
+    /** 订阅边沿事件：'press' | 'release'，回调收到动作名 */
+    on(event, fn) {
+      if (this._subs[event] && typeof fn === 'function') this._subs[event].push(fn);
+      return this;
+    }
+
+    /** 退订边沿事件 */
+    off(event, fn) {
+      const list = this._subs[event];
+      if (list) {
+        const i = list.indexOf(fn);
+        if (i >= 0) list.splice(i, 1);
+      }
+      return this;
+    }
+
+    /* ── 控制 ── */
+
+    /** 全局输入开关：禁用时清空已按住的键/触屏并忽略新输入（对话/暂停期间使用） */
+    setEnabled(v) {
+      this.enabled = !!v;
+      if (!this.enabled) {
+        this._pressed.clear();
+        this._released.clear();
+        this._clearAll();
+      }
+    }
+
+    /**
+     * 显示/隐藏虚拟按键（main.js 在菜单/对话界面控制）。
+     * 隐藏通过给 #touch-controls 加 .touch-off 实现，不改变设备检测结果。
+     */
+    setTouchVisible(v) {
+      const el = this._touchEl();
+      if (el && el.classList) el.classList.toggle('touch-off', !v);
+    }
+
+    /** 解绑全部监听，释放后不再产生任何输入 */
+    destroy() {
+      const t = this.target;
+      if (typeof t.removeEventListener === 'function') {
+        t.removeEventListener('keydown', this._bound.keydown);
+        t.removeEventListener('keyup', this._bound.keyup);
+        t.removeEventListener('blur', this._bound.blur);
+      }
+      if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+        document.removeEventListener('visibilitychange', this._bound.visibility);
+      }
+      for (let i = 0; i < this._touchHandlers.length; i++) {
+        const el = this._touchHandlers[i][0];
+        const type = this._touchHandlers[i][1];
+        const fn = this._touchHandlers[i][2];
+        if (typeof el.removeEventListener === 'function') el.removeEventListener(type, fn);
+      }
+      this._touchHandlers = [];
+      for (let i = 0; i < this._touchButtons.length; i++) {
+        const btn = this._touchButtons[i];
+        if (btn && btn.classList) btn.classList.remove('pressed');
+      }
+      this._touchButtons = [];
+      this._keys.clear();
+      this._touchPtr.clear();
+      this._pressed.clear();
+      this._released.clear();
+      this._subs.press = [];
+      this._subs.release = [];
+    }
+
+    /* ── 内部：键盘 ── */
+
+    /** 键盘事件入口：keydown 记录按键并产生按下边沿，keyup 释放并产生松开边沿 */
+    _onKey(e, down) {
+      if (!this.enabled) return;
+      // 带修饰键的组合（Ctrl/⌘/Alt+键，如 Ctrl+W 关标签页）仅在按下时过滤：
+      // keyup 不过滤，保证按住期间再按修饰键也能正常释放，避免按键卡死
+      if (down && (e.ctrlKey || e.metaKey || e.altKey)) return;
+      const key = String(e.key == null ? '' : e.key).toLowerCase();
+      const action = this._actionForKey(key);
+      if (!action) return;
+      if (down) {
+        // 先于 repeat 判断调用：长按自动重复事件同样要阻止方向键/空格滚动页面
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        if (e.repeat) return; // 长按自动重复不产生按下边沿
+        const held = this.isDown(action);
+        this._keys.add(key);
+        if (!held) this._pressEdge(action);
+      } else {
+        if (!this._keys.delete(key)) return; // 从未按住的键不产生虚假 release
+        if (!this.isDown(action)) this._releaseEdge(action);
+      }
+    }
+
+    /** 物理键（小写 e.key）→ 动作名；未绑定返回 null */
+    _actionForKey(key) {
+      for (let i = 0; i < ACTION_LIST.length; i++) {
+        const action = ACTION_LIST[i];
+        if (KEY_BINDINGS[action].indexOf(key) >= 0) return action;
+      }
+      return null;
+    }
+
+    /* ── 内部：触屏虚拟按键 ── */
+
+    /** 绑定虚拟按键的指针事件（pointerdown/up/cancel/lostpointercapture/contextmenu） */
+    _setupTouch() {
+      if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
+      const buttons = Array.prototype.slice.call(document.querySelectorAll('[data-key]'));
+      if (this.coarse) this._syncTouchClass(true);
+      for (let i = 0; i < buttons.length; i++) {
+        const btn = buttons[i];
+        const action = TOUCH_ACTIONS[btn.getAttribute('data-key')];
+        if (!action) continue;
+        this._touchButtons.push(btn); // 供 _clearAll/destroy 清理 pressed 样式
+        const pointerIdOf = (e) => (typeof e.pointerId === 'number' ? e.pointerId : -1);
+        const down = (e) => {
+          if (typeof e.preventDefault === 'function') e.preventDefault(); // 防聚焦/合成点击
+          if (typeof btn.setPointerCapture === 'function' && typeof e.pointerId === 'number') {
+            try { btn.setPointerCapture(e.pointerId); } catch (err) { /* 桩环境忽略 */ }
+          }
+          this._touchDown(action, pointerIdOf(e), btn);
+        };
+        const up = (e) => this._touchUp(action, pointerIdOf(e), btn);
+        const menu = (e) => {
+          if (typeof e.preventDefault === 'function') e.preventDefault(); // 禁长按菜单
+        };
+        btn.addEventListener('pointerdown', down);
+        btn.addEventListener('pointerup', up);
+        btn.addEventListener('pointercancel', up);
+        btn.addEventListener('lostpointercapture', up);
+        btn.addEventListener('contextmenu', menu);
+        this._touchHandlers.push(
+          [btn, 'pointerdown', down],
+          [btn, 'pointerup', up],
+          [btn, 'pointercancel', up],
+          [btn, 'lostpointercapture', up],
+          [btn, 'contextmenu', menu]
+        );
+      }
+    }
+
+    /** 虚拟按键按下：记录 pointerId、产生按下边沿并添加 pressed 样式 */
+    _touchDown(action, pointerId, btn) {
+      if (!this.enabled) return;
+      const held = this.isDown(action);
+      let ids = this._touchPtr.get(action);
+      if (!ids) this._touchPtr.set(action, ids = new Set());
+      ids.add(pointerId);
+      if (btn && btn.classList) btn.classList.add('pressed');
+      if (!held) this._pressEdge(action);
+    }
+
+    /** 虚拟按键松开：移除该 pointerId，全部抬起后产生松开边沿并移除 pressed 样式 */
+    _touchUp(action, pointerId, btn) {
+      const ids = this._touchPtr.get(action);
+      if (!ids || !ids.delete(pointerId)) return;
+      if (ids.size === 0) this._touchPtr.delete(action);
+      if (btn && btn.classList) btn.classList.remove('pressed');
+      if (!this.isDown(action)) this._releaseEdge(action);
+    }
+
+    /** 按粗指针检测结果切换 #touch-controls 的 .touch-on 类 */
+    _syncTouchClass(on) {
+      const el = this._touchEl();
+      if (el && el.classList) el.classList.toggle('touch-on', on);
+    }
+
+    /** 返回 #touch-controls 元素；非浏览器/桩环境返回 null */
+    _touchEl() {
+      return (typeof document !== 'undefined' && typeof document.getElementById === 'function')
+        ? document.getElementById('touch-controls') : null;
+    }
+
+    /* ── 内部：边沿与清理 ── */
+
+    /** 记录按下边沿并通知 press 订阅者 */
+    _pressEdge(action) {
+      this._pressed.add(action);
+      this._emit('press', action);
+    }
+
+    /** 记录松开边沿并通知 release 订阅者 */
+    _releaseEdge(action) {
+      this._released.add(action);
+      this._emit('release', action);
+    }
+
+    /** 向订阅者分发边沿事件；单个回调异常不阻断其余分发 */
+    _emit(event, action) {
+      const subs = this._subs[event];
+      for (let i = 0; i < subs.length; i++) {
+        try { subs[i](action); } catch (err) { warnOnce('input ' + event + ' 订阅回调异常: ' + err.message); }
+      }
+    }
+
+    /** 失焦/切后台时清空全部按住状态，避免按键卡死 */
+    _clearAll() {
+      const held = [];
+      for (let i = 0; i < ACTION_LIST.length; i++) {
+        if (this.isDown(ACTION_LIST[i])) held.push(ACTION_LIST[i]);
+      }
+      this._keys.clear();
+      this._touchPtr.clear();
+      // 同步移除虚拟按键的 pressed 样式，避免视觉状态卡住
+      for (let i = 0; i < this._touchButtons.length; i++) {
+        const btn = this._touchButtons[i];
+        if (btn && btn.classList) btn.classList.remove('pressed');
+      }
+      for (let i = 0; i < held.length; i++) this._releaseEdge(held[i]);
+    }
+  }
+
   /* ════════════════════════ 演示模式（data.js / main.js 就位前） ════════════════════════ */
 
   const DEMO_LEVEL = buildDemoLevel();
 
+  /** 构建演示关卡：边界墙 + 梦幻湖等静态地形（data.js 就位前的占位内容） */
   function buildDemoLevel() {
     const w = 40;
     const h = 28;
@@ -434,35 +778,22 @@
     };
   }
 
-  /** 演示驱动：方向键/WASD 移动小人，验证摄像机跟随与边界钳制（碰撞为演示简化版，#9 接手） */
+  /**
+   * 演示驱动：统一走输入系统（Issue #5）——方向键/WASD 移动、E/空格/A 确认、
+   * Esc 暂停、M 静音，触屏设备显示虚拟十字键与 A 键。
+   * 验证摄像机跟随与边界钳制（碰撞为演示简化版，#9 接手）。
+   */
   function bootDemo(canvas) {
     const renderer = new Renderer(canvas);
     const camera = new Camera();
     const level = DEMO_LEVEL;
     const solid = { '#': true, '~': true };
     const player = { x: 2 * TILE + 2, y: 2 * TILE + 2 };
-    const keys = new Set();
+    const input = engine.createInput(); // 输入系统（键盘 + 触屏虚拟按键）
     const SPEED = 80; // px/s
-
-    const KEY_DIR = {
-      arrowup: 'up', w: 'up',
-      arrowdown: 'down', s: 'down',
-      arrowleft: 'left', a: 'left',
-      arrowright: 'right', d: 'right',
-    };
-
-    if (typeof root.addEventListener === 'function') {
-      root.addEventListener('keydown', (e) => {
-        const dir = KEY_DIR[(e.key || '').toLowerCase()];
-        if (!dir) return;
-        keys.add(dir);
-        if (e.preventDefault) e.preventDefault();
-      });
-      root.addEventListener('keyup', (e) => {
-        const dir = KEY_DIR[(e.key || '').toLowerCase()];
-        if (dir) keys.delete(dir);
-      });
-    }
+    let paused = false; // Esc 暂停（正式暂停菜单由 #6 接管）
+    let muted = false;  // M 静音（音频落地 #14 后由 audio.js 接管）
+    let flash = 0;      // 确认键演示闪光（剩余秒数）
 
     // 目标 AABB 四角所在瓦片是否实心（演示碰撞，#9 提供正式碰撞与滑动）
     function blockedAt(px, py) {
@@ -485,19 +816,24 @@
       const dt = Math.min(0.05, (ts - last) / 1000 || 0.016);
       last = ts;
 
-      // 分轴移动：撞墙该轴回退，另一轴可滑动
-      const dx = (keys.has('right') ? 1 : 0) - (keys.has('left') ? 1 : 0);
-      const dy = (keys.has('down') ? 1 : 0) - (keys.has('up') ? 1 : 0);
-      if (dx) {
-        const nx = player.x + dx * SPEED * dt;
-        if (!blockedAt(nx, player.y)) player.x = nx;
-      }
-      if (dy) {
-        const ny = player.y + dy * SPEED * dt;
-        if (!blockedAt(player.x, ny)) player.y = ny;
-      }
+      if (input.wasPressed('pause')) paused = !paused;
+      if (input.wasPressed('mute')) muted = !muted;
+      if (input.wasPressed('confirm')) flash = 0.6;
 
-      camera.follow(player.x + 8, player.y + 8, level.map.w * TILE, level.map.h * TILE);
+      if (!paused) {
+        // 分轴移动：撞墙该轴回退，另一轴可滑动
+        const axis = input.getAxis();
+        if (axis.x) {
+          const nx = player.x + axis.x * SPEED * dt;
+          if (!blockedAt(nx, player.y)) player.x = nx;
+        }
+        if (axis.y) {
+          const ny = player.y + axis.y * SPEED * dt;
+          if (!blockedAt(player.x, ny)) player.y = ny;
+        }
+        camera.follow(player.x + 8, player.y + 8, level.map.w * TILE, level.map.h * TILE);
+      }
+      if (flash > 0) flash -= dt;
       renderer.renderLevel(level, camera);
 
       // 演示小人
@@ -514,13 +850,43 @@
       ctx.fillRect(px + 5, py + 5, 3, 3);
       ctx.fillRect(px + 10, py + 5, 3, 3);
 
-      // HUD 提示条
+      // HUD 提示条：第一行标题，第二行绑定说明 + 当前状态
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0, 0, VIEW_W, 12);
+      ctx.fillRect(0, 0, VIEW_W, 24);
       ctx.fillStyle = 'rgb(255,255,255)';
       ctx.font = '8px monospace';
       ctx.textBaseline = 'top';
-      ctx.fillText('ENGINE DEMO · 方向键/WASD 移动 · ' + level.title, 4, 3);
+      ctx.fillText('ENGINE DEMO · ' + level.title, 4, 3);
+      ctx.fillStyle = 'rgb(255,200,87)';
+      ctx.fillText(
+        'WASD/方向键移动 · E/空格确认 · M静音 ' + (muted ? '♪关' : '♪开') + ' · Esc暂停'
+        + (input.coarse ? ' · 触屏十字键+A' : ''),
+        4, 14
+      );
+
+      // 暂停遮罩
+      if (paused) {
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+        ctx.fillStyle = 'rgb(255,255,255)';
+        ctx.font = '16px monospace';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.fillText('已暂停', VIEW_W / 2, VIEW_H / 2 - 8);
+        ctx.font = '8px monospace';
+        ctx.fillText('Esc 继续', VIEW_W / 2, VIEW_H / 2 + 8);
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'top';
+      }
+
+      // 确认键闪光
+      if (flash > 0) {
+        ctx.fillStyle = 'rgb(255,255,255)';
+        ctx.font = '8px monospace';
+        ctx.fillText('确认 ✓', 4, VIEW_H - 14);
+      }
+
+      input.endFrame();
 
       // 冒烟标志：供无头浏览器验收
       if (!booted) {
@@ -533,7 +899,38 @@
     root.requestAnimationFrame(frame);
   }
 
-  // 自动演示：仅在浏览器环境、且 data.js/main.js 未接管时运行
+  /* ════════════════════════ 公开 API ════════════════════════ */
+
+  const engine = {
+    VERSION: '0.2.0',
+    TILE: TILE,
+    VIEW_W: VIEW_W,
+    VIEW_H: VIEW_H,
+    VIEW_COLS: VIEW_COLS,
+    VIEW_ROWS: VIEW_ROWS,
+    TEMPLATE_HEX: TEMPLATE_HEX,
+    Camera: Camera,
+    Renderer: Renderer,
+    Input: Input,
+    createRenderer: (canvas) => new Renderer(canvas),
+    createCamera: () => new Camera(),
+    createInput: (opts) => new Input(opts),
+    KEY_BINDINGS: KEY_BINDINGS,
+    detectCoarsePointer: detectCoarsePointer,
+    registerTileset: registerTileset,
+    resolvePalette: resolvePalette,
+    gridToCanvas: gridToCanvas,
+    remapCanvas: remapCanvas,
+    color: { hexToRgb: hexToRgb, shade: shade, rgbStr: rgbStr },
+    demoLevel: DEMO_LEVEL,
+    _tilesets: tilesets, // 供测试/调试读取内置瓦片网格
+  };
+
+  root.MIXX = root.MIXX || {};
+  root.MIXX.engine = engine;
+
+  // 自动演示：仅在浏览器环境、且 data.js/main.js 未接管时运行。
+  // 置于公开 API 之后，保证 bootDemo 引用的 engine 已初始化。
   if (typeof document !== 'undefined') {
     const boot = () => {
       const canvas = document.getElementById('game');
@@ -550,30 +947,4 @@
       boot();
     }
   }
-
-  /* ════════════════════════ 公开 API ════════════════════════ */
-
-  const engine = {
-    VERSION: '0.1.0',
-    TILE: TILE,
-    VIEW_W: VIEW_W,
-    VIEW_H: VIEW_H,
-    VIEW_COLS: VIEW_COLS,
-    VIEW_ROWS: VIEW_ROWS,
-    TEMPLATE_HEX: TEMPLATE_HEX,
-    Camera: Camera,
-    Renderer: Renderer,
-    createRenderer: (canvas) => new Renderer(canvas),
-    createCamera: () => new Camera(),
-    registerTileset: registerTileset,
-    resolvePalette: resolvePalette,
-    gridToCanvas: gridToCanvas,
-    remapCanvas: remapCanvas,
-    color: { hexToRgb: hexToRgb, shade: shade, rgbStr: rgbStr },
-    demoLevel: DEMO_LEVEL,
-    _tilesets: tilesets, // 供测试/调试读取内置瓦片网格
-  };
-
-  root.MIXX = root.MIXX || {};
-  root.MIXX.engine = engine;
 })(typeof window !== 'undefined' ? window : globalThis);

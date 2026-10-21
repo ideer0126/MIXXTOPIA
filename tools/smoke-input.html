@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MIXXTOPIA · 输入系统冒烟测试</title>
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+  <!--
+    tools/smoke-input.html —— 输入系统（Issue #5）浏览器冒烟测试
+    运行：任意静态服务器 + 无头浏览器 dump-dom，断言 <body data-smoke="ok">。
+    覆盖真实浏览器环境下的 KeyboardEvent / PointerEvent / 粗指针检测链路。
+  -->
+  <div id="touch-controls">
+    <div id="dpad">
+      <button type="button" class="tbtn" data-key="up" aria-label="上">▲</button>
+      <button type="button" class="tbtn" data-key="left" aria-label="左">◀</button>
+      <button type="button" class="tbtn" data-key="down" aria-label="下">▼</button>
+      <button type="button" class="tbtn" data-key="right" aria-label="右">▶</button>
+    </div>
+    <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
+  </div>
+  <pre id="results"></pre>
+  <script>window.MIXX_NO_DEMO = true;</script>
+  <script src="../js/engine.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var results = [];
+      function ok(name, cond) { results.push((cond ? 'PASS' : 'FAIL') + ' ' + name); }
+      function key(type, k, extra) {
+        window.dispatchEvent(new KeyboardEvent(type, Object.assign(
+          { key: k, bubbles: true, cancelable: true }, extra || {})));
+      }
+      function ptr(btn, type, id) {
+        btn.dispatchEvent(new PointerEvent(type, { pointerId: id, bubbles: true, cancelable: true }));
+      }
+
+      var engine = window.MIXX.engine;
+      ok('engine 就绪', !!engine && typeof engine.createInput === 'function');
+
+      // 1) 键盘：WASD 移动 / Esc 暂停 / M 静音 / E·空格 确认
+      var input = engine.createInput();
+      key('keydown', 'w');
+      ok('W 按住 → up + 轴(0,-1)', input.isDown('up') && input.getAxis().y === -1 && input.getAxis().x === 0);
+      key('keydown', 'd');
+      ok('W+D → 轴(1,-1)', input.getAxis().x === 1 && input.getAxis().y === -1);
+      key('keyup', 'w');
+      key('keyup', 'd');
+      ok('松开后轴归零', input.getAxis().x === 0 && input.getAxis().y === 0);
+      key('keydown', 'Escape');
+      ok('Esc → pause 按下边沿', input.wasPressed('pause'));
+      key('keyup', 'Escape');
+      input.endFrame();
+      key('keydown', 'm');
+      ok('M → mute 按下边沿', input.wasPressed('mute'));
+      key('keyup', 'm');
+      input.endFrame();
+      key('keydown', ' ');
+      ok('空格 → confirm 按下边沿', input.wasPressed('confirm'));
+      key('keyup', ' ');
+      input.endFrame();
+
+      // 2) 触屏虚拟按键：十字键移动 + A 键确认（真实 PointerEvent）
+      var dpad = document.querySelector('#dpad [data-key="up"]');
+      var aBtn = document.getElementById('tbtn-a');
+      ptr(dpad, 'pointerdown', 1);
+      ok('虚拟十字键 ↑ → 轴(0,-1)', input.getAxis().y === -1);
+      ptr(aBtn, 'pointerdown', 2);
+      ok('A 键 → confirm 按下边沿', input.wasPressed('confirm'));
+      ptr(dpad, 'pointerup', 1);
+      ptr(aBtn, 'pointerup', 2);
+      ok('触屏松开后轴归零', input.getAxis().x === 0 && input.getAxis().y === 0);
+      input.destroy();
+
+      // 3) 粗指针显示链路：JS 检测 → .touch-on → CSS 显示（真实 styles.css）
+      var realMM = window.matchMedia.bind(window);
+      window.matchMedia = function (q) {
+        return { matches: q.indexOf('coarse') >= 0, media: q, addListener: function () {}, removeListener: function () {} };
+      };
+      var touchInput = engine.createInput();
+      var tc = document.getElementById('touch-controls');
+      ok('模拟触屏 → coarse=true', touchInput.coarse === true);
+      ok('虚拟按键容器显示', getComputedStyle(tc).display !== 'none');
+      touchInput.setTouchVisible(false);
+      ok('setTouchVisible(false) → 隐藏', getComputedStyle(tc).display === 'none');
+      touchInput.setTouchVisible(true);
+      ok('setTouchVisible(true) → 恢复显示', getComputedStyle(tc).display !== 'none');
+      touchInput.destroy();
+      window.matchMedia = realMM;
+
+      var pre = document.getElementById('results');
+      pre.textContent = results.join('\n');
+      document.body.setAttribute('data-smoke',
+        results.every(function (l) { return l.indexOf('PASS') === 0; }) ? 'ok' : 'fail');
+    })();
+  </script>
+</body>
+</html>
