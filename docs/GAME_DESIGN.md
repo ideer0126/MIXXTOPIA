@@ -65,11 +65,13 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | Jiwoo | 元气小狗 | 拟声词多、热情高涨 | `#FFE066` | 关 2、关 5、关 6 |
 | Kyujin | 酷拽心软 | 短句、傲娇，外冷内热 | `#5EE6B8` | 关 3、关 6 |
 | 街头DJ（dj） | 关 3 捷径守门人 | 街头腔、爱抬杠 | `#FF5D8F` | 关 3 |
-| 旁白（nar） | 叙事 | 不显示姓名标签，画面下沿居中淡出文字 | `#C0C0C0` | 序章、结局 |
+| 旁白（nar） | 叙事（伪说话人） | 不显示姓名标签，画面下沿居中淡出文字 | `#C0C0C0`（文字色） | 序章、结局 |
+| 全员合唱（all） | 六位缪斯合声（伪说话人） | 使用底部对话框，显示「全员」姓名标签 | `#FFFFFF` | 关 6 结局 `l6.end.3` |
 | 黑羊（검은 양） | 彩蛋 NPC | 每关一句神话谜语，语气神秘 | `#B8A8E0` | 关 1–6 各一只 |
 
 > 姓名框色为同人原创设定，供对话 UI 使用；成员罗马字以 Lily / Haewon / Sullyoon / Bae / Jiwoo / Kyujin 为准。
 > **对话 speaker id 对照**：Lily→`lily`、Haewon→`haewon`、Sullyoon→`sullyoon`、Bae→`bae`、Jiwoo→`jiwoo`、Kyujin→`kyujin`、Byeori→`byeori`、黑羊→`sheep`、街头DJ→`dj`、旁白→`nar`、全员合唱→`all`（仅关 6 结局合唱行使用，显示「全员」标签）。
+> **特殊说话人约定**：`dj` 是实体 NPC，姓名标签显示「街头DJ」；`nar`、`all` 是仅用于对话显示的伪说话人，不创建地图实体、不计入 §5 的 NPC 数量。三者均须在 `characters` 中建档（见 §11 示例），按规则 7 校验字典成员资格，无 speaker 校验例外；`nar.name` 为空字符串，渲染时隐藏姓名标签，`nar.color` 用于旁白文字。
 
 ---
 
@@ -293,7 +295,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 
 ## 7. 对话系统规范
 
-- **样式**：底部对话框 + 姓名标签（§3 角色色）；打字机 25ms/字；E/空格/点击翻页；选项用 ↑↓ 移动 + 确认键。
+- **样式**：底部对话框 + 姓名标签（§3 角色色；`nar` 使用 §3 旁白样式）；打字机 25ms/字；E/空格/点击翻页；选项用 ↑↓ 移动 + 确认键。
 - **触发**：靠近 NPC 按互动；TRIGGER 区域自动触发；`once` 节点只播一次，`repeat` 节点可反复（提示类）。
 - **节点类型 × 触发来源**（#12 转录时每个节点必须挂一种类型）：
 
@@ -486,7 +488,7 @@ dialogue: {
 |---|---|
 | 标题 | 沿用 index.html 结构；副标题 Strange Muse；菜单：开始/继续/选关/操作说明/声音 |
 | HUD | 左上：关名 + 星数「★ 2/3」；关 5 追加清凉条；关 6 追加总进度「★ x/25」 |
-| 对话 | 底部框 + 姓名标签（§3 色）+ 打字机；翻页提示「▼ E / 空格」；选项列表 ↑↓ 选择 |
+| 对话 | 底部框 + 姓名标签（§3 色；`nar` 使用 §3 旁白样式）+ 打字机；翻页提示「▼ E / 空格」；选项列表 ↑↓ 选择 |
 | 结算 | 星星 x/y + 通关用时；按钮「下一关」（关 6 为「见证结局」） |
 | 暂停 | 继续 / 重玩本关 / 回标题 |
 | 结局 | 星星雨粒子 + 台词滚动 +「再来一次」 |
@@ -524,7 +526,13 @@ dialogue: {
 ```js
 const GAME = {
   meta: { version: '1.0', tile: 16, viewport: { w: 20, h: 14 } },
-  characters: { lily: { name: 'Lily', color: '#7FB8E6' }, /* …§3 全表 */ },
+  characters: {
+    lily: { name: 'Lily', color: '#7FB8E6' },
+    dj: { name: '街头DJ', color: '#FF5D8F' },
+    nar: { name: '', color: '#C0C0C0' },  // 隐藏姓名标签，color 为旁白文字色
+    all: { name: '全员', color: '#FFFFFF' },
+    /* …§3 其余 speaker 条目 */
+  },
   levels: [
     {
       id: 1, title: 'Birthday Wish', region: '生日烛光梦境',
@@ -559,7 +567,7 @@ const GAME = {
 4. spawn 恰好 1 个；关 1–5 portal 恰好 1 个；关 6 cake 恰好 1 个；
 5. switch.target 与 lamp.target 引用的 gate 存在；关 2 灯柱数 = 灯油数 = 门数 = 3；
 6. oneway.dir ∈ {N,E,S,W}；wind.dir 同理；
-7. npc.dialogue 引用的对话节点存在；dialogue.next 指向的节点存在；对话 speaker 在 characters 字典（id 全集见 §3 对照注，含 `dj`/`sheep`/`nar`/`all`）；option.goto 存在；
+7. npc.dialogue 引用的对话节点存在；dialogue.next 指向的节点存在；每条对话行的 speaker（`lines[].s`）在 characters 字典（id 全集见 §3 对照注，含 `dj`/`sheep`/`nar`/`all`；伪说话人 `nar`/`all` 同样校验，不要求有对应 NPC 实体）；option.goto 存在；
 8. 每关 NPC 出场与 §5 出场表一致；黑羊每关 1 只；
 9. 地图连通性（flood fill）可覆盖全部星星与传送门（预留自动校验）；
 10. UI/存档文案无「玻璃碎片」等遗留占位。
