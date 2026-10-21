@@ -30,14 +30,14 @@ NSWER 在生日夜被一道星光带入梦境世界 **MIXXTOPIA**。六位缪斯
 
 | 关 | 曲目 | 区域主题 | 出场成员 | 机制重点 |
 |---|---|---|---|---|
-| 1 | Birthday Wish (긴 소원) | 生日烛光梦境 | 全员登场 | 教学：移动/对话/收集 |
+| 1 | Birthday Wish (긴 소원) | 生日烛光梦境 | 全员登场 | 教学：移动/对话/收集/推箱/开关 |
 | 2 | Kerosene | 灯油与火焰 | Jiwoo | 开关解谜（点燃灯柱） |
 | 3 | RudE TaLK | 霓虹态度街头 | Kyujin | 单向门 + 路径推理 |
 | 4 | Sing to the Moon (너는 달) | 月夜湖畔 | 小分队 A* | 水面/浮桥解谜 |
 | 5 | Hot 'n Unbothered | 炎热沙漠绿洲 | 小分队 B* | 迷宫 + 限时收集 |
 | 6 | WHIP (휙) | 疾风终章 | 小分队 C* + 全员 | 综合谜题 + 结局演出 |
 
-> \* 三首小分队曲的人员构成待查证确认（见 §9 待确认项），确认后写入 GAME_DESIGN.md。
+> \* 三首小分队曲的人员构成已按 §9 预案处理（GAME_DESIGN.md §13：全员登场 + 主对话成员）。
 
 ### 2.3 核心循环
 
@@ -49,6 +49,12 @@ NSWER 在生日夜被一道星光带入梦境世界 **MIXXTOPIA**。六位缪斯
 - 每关 3–5 颗愿望之星；集齐后传送门开启。
 - 对话为线性文本 + 打字机效果；部分节点有选项。
 - 进度通过 localStorage 存档（当前关、已收集、已解锁关卡）。
+
+### 2.4 战斗系统（已立项，设计后置）
+
+- 轻量战斗元素：玩家武器为 **NMIXX 二代应援棒**（挥击 / 蓄力 / 兼作光源），敌人为梦境侵蚀生物，终章一个 Boss。
+- 需求已立项 [Issue #18](https://github.com/ideer0126/MIXXTOPIA/issues/18)；详细设计（机制 / 数值 / 敌人表 / 升级线）后续单独成文，评审后并入 GAME_DESIGN.md。
+- 定位：剧情与解谜为主、战斗为点缀，粉丝向休闲难度。
 
 ---
 
@@ -124,6 +130,7 @@ MIXXTOPIA/
 | 15 | 表现打磨：粒子、过场演出、结算动画 | 程序 | js/engine.js 粒子 | M4 | #9 #13 |
 | 16 | QA：地图校验、浏览器冒烟测试、移动端适配 | QA | 测试报告 | M5 | #11–15 |
 | 17 | 发布：Pages 上线验证、README 图文 | 发布 | 线上可玩 + README | M5 | #16 |
+| 18 | 战斗系统立项：二代应援棒武器（设计后置，详见 Issue #18） | 策划+程序 | 战斗设计文档（并入 GAME_DESIGN.md） | M2 | #3 #9 |
 
 ---
 
@@ -131,7 +138,7 @@ MIXXTOPIA/
 
 - **Milestones**：M0–M5 六项（与 §5 一一对应）。
 - **Labels**：`chore` `docs` `feat` `content` `art` `audio` `test` `release`（按角色/领域）。
-- **Issues**：§6 表格中 17 个任务，全部关联 Milestone、标注 Label、指派给 `ieer040126`。
+- **Issues**：§6 表格中 18 个任务，全部关联 Milestone、标注 Label、指派给 `ideer0126`。
 - **看板**：使用 Milestone 进度页 + Issue 勾选清单作为轻量看板，不额外引入 Project 复杂度。
 
 ---
@@ -141,9 +148,9 @@ MIXXTOPIA/
 **今天（M0，不出成品）**
 - [x] 修正 index.html 主题为 Strange Muse
 - [x] PLAN.md 工作流程与任务分配
-- [ ] 仓库基建文件（README/LICENSE/.gitignore/pages.yml）
-- [ ] GitHub 仓库创建与推送
-- [ ] Milestones + Labels + Issues 落地
+- [x] 仓库基建文件（README/LICENSE/.gitignore/pages.yml）
+- [x] GitHub 仓库创建与推送
+- [x] Milestones + Labels + Issues 落地
 
 **明天起**：按 M1 → M5 顺序推进，每个任务一条分支、一个 PR、一次冒烟测试；里程碑完成即向用户演示。
 
@@ -153,7 +160,7 @@ MIXXTOPIA/
 
 | 项 | 状态 | 处理 |
 |---|---|---|
-| 三首小分队曲人员构成 | 待查证 | M1 前查证并写入 GAME_DESIGN.md；查不到则以全员登场处理 |
+| 三首小分队曲人员构成 | 已按预案处理 | 图文源不可直接访问、未获确切名单；GAME_DESIGN.md §13 按「全员登场 + 主对话成员」落地，确认名单后仅替换出场侧重或对话 speaker（地图、谜题、星数、机制不变） |
 | 音乐版权 | 不使用原曲音频 | 全部为原创 8-bit 音效/BGM，避免侵权 |
 | 移动端操作 | 待测试 | M4 虚拟按键 + M5 真机/仿真验证 |
 | Google Fonts 离线 | 有风险 | 提供 monospace 回退字体，不影响可玩性 |
