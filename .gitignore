@@ -1,0 +1,18 @@
+# 系统
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/
+
+# 日志
+*.log
+npm-debug.log*
+
+# 依赖（本项目零依赖，若未来引入构建再调整）
+node_modules/
+
+# 本地临时
+*.local
+.env.local

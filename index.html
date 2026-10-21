@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="description" content="MIXXTOPIA —— 以 NMIXX《Strange Muse》概念为主题的像素剧情冒险小游戏" />
+  <title>MIXXTOPIA · Strange Muse</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>💙</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 游戏画布 -->
+    <canvas id="game" width="320" height="224"></canvas>
+
+    <!-- 顶部 HUD -->
+    <div id="hud" class="hidden">
+      <span id="hud-level"></span>
+      <span id="hud-shards"></span>
+    </div>
+
+    <!-- 标题界面 -->
+    <div id="title-screen" class="screen">
+      <div class="title-glow">
+        <h1 class="title-main">MIXXTOPIA</h1>
+        <p class="title-sub">Strange Muse</p>
+        <p class="title-flavor">生日夜许下的愿望化作星星散落梦境 —— 与六位缪斯一起把它们找回来</p>
+      </div>
+      <div class="menu">
+        <button id="btn-start" class="menu-btn">▶ 开始游戏</button>
+        <button id="btn-continue" class="menu-btn hidden">↻ 继续冒险</button>
+        <button id="btn-levels" class="menu-btn">★ 选择关卡</button>
+        <button id="btn-help" class="menu-btn">? 操作说明</button>
+        <button id="btn-sound" class="menu-btn">♪ 声音：开</button>
+      </div>
+      <p class="footer-note">粉丝自制同人小游戏 · 非官方 · 灵感来自 NMIXX《Strange Muse》</p>
+    </div>
+
+    <!-- 选关界面 -->
+    <div id="level-screen" class="screen hidden">
+      <h2 class="screen-title">选择关卡</h2>
+      <div id="level-grid" class="level-grid"></div>
+      <button id="btn-back" class="menu-btn small">← 返回</button>
+    </div>
+
+    <!-- 帮助界面 -->
+    <div id="help-screen" class="screen hidden">
+      <h2 class="screen-title">操作说明</h2>
+      <div class="help-body">
+        <p><b>移动</b>　WASD / 方向键　（手机：屏幕方向键）</p>
+        <p><b>对话 / 确认</b>　E 或 空格　（手机：A 键）</p>
+        <p><b>暂停</b>　Esc</p>
+        <p><b>声音</b>　M 键开关</p>
+        <p><b>目标</b>　收集全部玻璃碎片，点亮传送门，前往下一关</p>
+      </div>
+      <button id="btn-help-back" class="menu-btn small">← 返回</button>
+    </div>
+
+    <!-- 对话框 -->
+    <div id="dialog" class="hidden">
+      <div id="dialog-name"></div>
+      <div id="dialog-text"></div>
+      <div id="dialog-hint">▼ E / 空格</div>
+    </div>
+
+    <!-- 暂停菜单 -->
+    <div id="pause-screen" class="screen hidden">
+      <h2 class="screen-title">已暂停</h2>
+      <div class="menu">
+        <button id="btn-resume" class="menu-btn">▶ 继续</button>
+        <button id="btn-restart" class="menu-btn">↻ 重玩本关</button>
+        <button id="btn-quit" class="menu-btn">✖ 回到标题</button>
+      </div>
+    </div>
+
+    <!-- 过关结算 -->
+    <div id="clear-screen" class="screen hidden">
+      <h2 class="screen-title">✦ 关卡完成 ✦</h2>
+      <p id="clear-text" class="clear-text"></p>
+      <button id="btn-next" class="menu-btn">▶ 下一关</button>
+    </div>
+
+    <!-- 结局界面（预留） -->
+    <div id="ending-screen" class="screen hidden">
+      <h2 class="screen-title">❤ 世界复原了</h2>
+      <div id="ending-body" class="ending-body"></div>
+      <button id="btn-ending" class="menu-btn">↻ 再来一次</button>
+    </div>
+
+    <!-- 手机虚拟按键 -->
+    <div id="touch-controls" class="hidden">
+      <div id="dpad">
+        <button class="tbtn" data-key="up">▲</button>
+        <button class="tbtn" data-key="left">◀</button>
+        <button class="tbtn" data-key="down">▼</button>
+        <button class="tbtn" data-key="right">▶</button>
+      </div>
+      <button id="tbtn-a" class="tbtn a" data-key="action">A</button>
+    </div>
+  </div>
+
+  <script src="js/sprites.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
