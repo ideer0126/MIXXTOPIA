@@ -157,4 +157,58 @@ MIXXTOPIA/
 | 音乐版权 | 不使用原曲音频 | 全部为原创 8-bit 音效/BGM，避免侵权 |
 | 移动端操作 | 待测试 | M4 虚拟按键 + M5 真机/仿真验证 |
 | Google Fonts 离线 | 有风险 | 提供 monospace 回退字体，不影响可玩性 |
-| Pages 域名 | 待确认 | 默认 `ieer040126.github.io/MIXXTOPIA`，可后续绑定自定义域名 |
+| Pages 域名 | 已上线 | 正式地址 `https://ideer0126.github.io/MIXXTOPIA/`，可绑定自定义域名（见 §10） |
+
+---
+
+## 10. 发布与部署策略
+
+> 决策结论：**不买服务器、不强制买域名**，纯静态游戏用 GitHub Pages 免费托管即可公开发布。
+
+### 10.1 总体原则
+
+1. **免费优先**：纯 HTML/CSS/JS、零后端 → 静态托管免费方案完全够用（GitHub Pages 每月 100GB 流量）。
+2. **版权合规**：同人、非商用、不使用原曲音频与官方素材；页面与 README 保留非官方声明。
+3. **随时可升级**：域名、镜像、统计都是后期加配置的事，不阻塞开发。
+
+### 10.2 部署架构
+
+```
+玩家 ──→ GitHub Pages（https://ideer0126.github.io/MIXXTOPIA/）
+             │  全球 CDN + 免费 HTTPS + 自动部署（push main 触发）
+             └── 可选：自定义域名 / Cloudflare 镜像（大陆加速）
+```
+
+### 10.3 自定义域名（可选，约 ¥50–80/年）
+
+1. 在任意注册商购买域名（如 `mixxtopia.com`）。
+2. 注册商处添加 DNS 记录：`www` → CNAME → `ideer0126.github.io`。
+3. 仓库 Settings → Pages → Custom domain 填入域名。
+4. 仓库根目录新增 `CNAME` 文件，内容为域名（防止每次部署被覆盖）。
+5. 等待 DNS 生效（几分钟至 48 小时），GitHub 自动签发 HTTPS 证书。
+6. 裸域（不带 www）需注册商支持 ALIAS/ANAME 记录，否则只发布 `www` 子域。
+
+### 10.4 大陆访问加速（按需）
+
+| 方案 | 成本 | 说明 |
+|---|---|---|
+| 默认 github.io | 免费 | 大陆访问可能慢/不稳定 |
+| Cloudflare Pages 镜像 | 免费 | 域名 NS 托管到 Cloudflare，绑定域名后效果最佳 |
+| Gitee Pages 镜像 | 免费 | 需实名认证、审核较严 |
+| 自有域名 + Cloudflare CDN 回源 | 域名费 | 兼顾品牌与速度 |
+
+决策时间点：**M5 发布后实测大陆可达性再选**，开发期不处理。
+
+### 10.5 数据与统计（可选）
+
+- 访问统计：Cloudflare Web Analytics（免费、无 Cookie）。
+- 存档在玩家浏览器 localStorage，无服务器数据；未来若做排行榜：Supabase/Firebase 免费额度起步。
+
+### 10.6 发布检查清单（M5 执行，对应 Issue #17）
+
+- [ ] README 免责声明与玩法截图齐备
+- [ ] 游戏内 footer 非官方声明（index.html 已具备）
+- [ ] 桌面 + 移动端冒烟测试通过
+- [ ] 大陆可达性抽测，决定是否加镜像
+- [ ] 决定是否购买/绑定自定义域名
+- [ ] 打 GitHub Release tag，随链接一起分享
