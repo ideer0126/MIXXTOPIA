@@ -1,5 +1,6 @@
 # CodeRabbit AI 评审配置 —— MIXXTOPIA
-# 生效于合并到 main 之后；仅使用稳定配置键，避免 schema 告警。
+# 对全仓库生效（评审哪些基分支由 reviews.auto_review.base_branches 控制）；
+# 仅使用稳定配置键，避免 schema 告警。
 # 参考：https://docs.coderabbit.ai/guides/configure-coderabbit
 
 # 评审语言：简体中文
@@ -22,9 +23,17 @@ reviews:
   collapse_walkthrough: false
 
   # 新 PR / 新提交自动触发评审；草稿 PR 不评审
+  # CodeRabbit 默认只评审 base 为默认分支（main）的 PR；
+  # 显式列出全部基分支（支持正则），使堆叠 PR（base 为 feat/* 等）同样被评审
   auto_review:
     enabled: true
     drafts: false
+    base_branches:
+      - "main"
+      - "feat/.*"
+      - "fix/.*"
+      - "docs/.*"
+      - "release/.*"
 
   # 针对不同路径的评审指令
   path_instructions:
