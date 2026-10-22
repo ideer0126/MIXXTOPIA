@@ -86,8 +86,8 @@ class FakeContext {
     const c = [Number(m[1]), Number(m[2]), Number(m[3])];
     const x0 = Math.max(0, Math.floor(x + this._tx));
     const y0 = Math.max(0, Math.floor(y + this._ty));
-    const x1 = Math.min(this.canvas.width, Math.ceil(x0 + w));
-    const y1 = Math.min(this.canvas.height, Math.ceil(y0 + h));
+    const x1 = Math.min(this.canvas.width, Math.ceil(x + this._tx + w));
+    const y1 = Math.min(this.canvas.height, Math.ceil(y + this._ty + h));
     for (let py = y0; py < y1; py++) {
       for (let px = x0; px < x1; px++) {
         const i = (py * this.canvas.width + px) * 4;
