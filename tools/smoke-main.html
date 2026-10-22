@@ -8,9 +8,10 @@
 </head>
 <body>
   <!--
-    tools/smoke-main.html —— 游戏状态机（Issue #6）浏览器冒烟测试
+    tools/smoke-main.html —— 游戏状态机（Issue #6）+ 对话系统（Issue #7）浏览器冒烟测试
     运行：静态服务器或 file:// + 无头浏览器 dump-dom，断言 <body data-smoke="ok">。
-    覆盖真实浏览器环境下六态往返（标题/游玩/对话/暂停/结算/结局）与无状态泄漏。
+    覆盖真实浏览器环境下六态往返（标题/游玩/对话/暂停/结算/结局）与无状态泄漏，
+    以及打字机逐字显示、点按快进、翻页退出（Issue #7）。
     UI 骨架与 index.html 一致（main.js 按 id 接线）。
   -->
   <canvas id="game" width="320" height="224"></canvas>
@@ -112,15 +113,24 @@
       ok('HUD 关名', text('hud-level') === '占位关卡 · 烛光梦境');
       ok('HUD 星数 0/3', text('hud-shards') === '★ 0/3');
 
-      // 3) 对话往返
+      // 3) 对话往返（Issue #7：打字机逐字 + 点按快进 + 翻页）
       tp(10, 15);
       frame();
       press('e');
       frame();
       ok('→ dialogue', game.state === 'dialogue' && shown('dialog') && text('dialog-name') === 'Byeori');
-      press('e'); frame();
-      press('e'); frame();
-      press('e'); frame();
+      var fullLine = 'NSWER！欢迎来到 MIXXTOPIA！我是星星精灵 Byeori。';
+      frame(); frame(); frame(); frame(); // 4 × 16ms = 64ms → 2 字（25ms/字）
+      ok('打字机逐字', text('dialog-text').length >= 2 && text('dialog-text').length < fullLine.length
+        && fullLine.indexOf(text('dialog-text')) === 0);
+      press('e'); frame(); // 点按 → 快进本行全文
+      ok('点按快进', text('dialog-text') === fullLine);
+      press('e'); frame(); // 翻页 → 第 2 行
+      press('e'); frame(); // 快进第 2 行
+      press('e'); frame(); // 翻页 → 第 3 行（旁白，姓名框隐藏）
+      ok('旁白姓名框隐藏', !shown('dialog-name'));
+      press('e'); frame(); // 快进第 3 行
+      press('e'); frame(); // 翻页 → 退出
       ok('dialogue → playing 清空', game.state === 'playing' && !shown('dialog') && text('dialog-text') === '');
 
       // 4) 暂停往返
