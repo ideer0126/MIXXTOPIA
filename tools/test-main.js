@@ -368,6 +368,42 @@ test('对话头像位（#28）：按说话人加载立绘、nar 隐藏、退出�
   game.destroy();
 });
 
+test('对话头像加载失败：同路径换行保持隐藏、切换其他路径正常显示', () => {
+  const game = makeGame();
+  game.dialogue = {
+    'test.portrait-error': {
+      lines: ['byeori', 'byeori', 'nar', 'byeori', 'lily', 'byeori'].map(
+        (s) => ({ s, t: '头像加载失败测试' })
+      ),
+    },
+  };
+  elt('btn-start').click();
+  game._enterDialogue('test.portrait-error');
+  const img = elt('dialog-portrait');
+  const failedSrc = img.src;
+  assert.ok(shown('dialog-portrait'));
+  assert.strictEqual(typeof img.onerror, 'function');
+  img.onerror(); // 模拟首次加载失败
+  assert.ok(hidden('dialog-portrait'));
+  assert.ok(!elt('dialog').classList.contains('has-portrait'));
+
+  for (let i = 1; i <= 5; i++) {
+    press('e'); tick(game);
+    if (i === 4) {
+      assert.strictEqual(img.src, 'assets/characters/lily/art/lily-portrait.png');
+      assert.ok(shown('dialog-portrait'), '其他头像路径仍正常显示');
+      assert.ok(elt('dialog').classList.contains('has-portrait'));
+    } else {
+      assert.ok(hidden('dialog-portrait'), '失败路径与旁白保持隐藏，行 ' + i);
+      assert.ok(!elt('dialog').classList.contains('has-portrait'));
+      if (i === 1) assert.strictEqual(img.src, failedSrc);
+    }
+  }
+  press('e'); tick(game);
+  assert.strictEqual(game.state, STATE.PLAYING, '加载失败不影响对话结束');
+  game.destroy();
+});
+
 test('对话中 Esc 不切换暂停（输入被对话占用）', () => {
   const game = makeGame();
   elt('btn-start').click();

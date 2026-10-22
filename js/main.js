@@ -187,6 +187,7 @@
       this._dialog = null;     // 对话进行态 { lines, idx }，离开对话态即清空
       this._pendingNextIsEnding = false; // 结算按钮指向结局（最后一关）
       this._portraitSrc = null;          // 头像当前 src 缓存（避免重复赋值导致闪动）
+      this._failedPortraits = new Set(); // 加载失败的路径，后续渲染保持隐藏
 
       this._last = 0;          // 上一帧时间戳（ms）
       this._raf = null;        // rAF 句柄，防重复启动
@@ -609,10 +610,17 @@
         return;
       }
       const src = PORTRAIT_BASE + speaker + '/art/' + speaker + '-portrait.png';
+      if (this._failedPortraits.has(src)) {
+        this._hidePortrait();
+        return;
+      }
       this._show(img);
       const dialog = this._ui.dialog;
       if (dialog && dialog.classList) dialog.classList.add('has-portrait');
-      img.onerror = () => this._hidePortrait();
+      img.onerror = () => {
+        this._failedPortraits.add(src);
+        this._hidePortrait();
+      };
       if (this._portraitSrc !== src) {
         this._portraitSrc = src;
         img.src = src;

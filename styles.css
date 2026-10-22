@@ -305,6 +305,7 @@ body {
   right: 8px;
   width: 56px;
   height: 56px;
+  image-rendering: pixelated;
   object-fit: cover;
   background: #1a1033;
   border: 2px solid #ffc857;
