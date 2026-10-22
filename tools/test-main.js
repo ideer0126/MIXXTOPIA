@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * tools/test-main.js —— 游戏状态机与 UI 接线验证（Issue #6 验收辅助）
+ * tools/test-main.js —— 游戏状态机与 UI 接线验证（Issue #6）+ 对话系统（Issue #7）
  *
  * 零依赖：Node 内置 assert + vm + tools/stub-canvas.js 的 Canvas 2D 桩。
  * 运行：node tools/test-main.js
@@ -14,6 +14,8 @@
  *      关卡数据只读（重玩不残留收集标记）
  *   5. 状态守卫：错误状态下的按钮/按键不生效；destroy 后全部解绑
  *   6. index.html 存量文案更正（无「玻璃碎片」）与选关按钮暂隐
+ *   7. 对话系统（Issue #7）：打字机 25ms/字、按住加速、点按快进、E/空格/Enter/点击
+ *      翻页、旁白姓名框隐藏、对话期间玩家锁定与计时暂停、提示文案切换
  */
 'use strict';
 
@@ -303,7 +305,7 @@ test('游玩：方向键移动生效、撞墙分轴滑动', () => {
 
 /* ─────────────────── 4. 游玩 ⇄ 对话 ─────────────────── */
 
-test('对话往返：进入/翻页/旁白样式/退出清空无残留', () => {
+test('对话往返：打字机进入/快进/翻页/旁白样式/退出清空无残留', () => {
   const game = makeGame();
   elt('btn-start').click();
   teleport(game, 10, 15); // NPC 旁
@@ -314,17 +316,26 @@ test('对话往返：进入/翻页/旁白样式/退出清空无残留', () => {
   assert.ok(shown('dialog'));
   assert.ok(shown('hud'), '对话中 HUD 保持可见');
   assert.strictEqual(text('dialog-name'), 'Byeori');
+  assert.strictEqual(text('dialog-text'), '', '打字机从空文本开始（首帧不足 25ms）');
+  // 点按快进 → 本行全文
+  press('e');
+  tick(game);
   assert.strictEqual(text('dialog-text'), 'NSWER！欢迎来到 MIXXTOPIA！我是星星精灵 Byeori。');
-  // 翻页
+  // 翻页 → 第 2 行（重新打字）
+  press('e');
+  tick(game);
+  assert.strictEqual(text('dialog-text'), '', '翻页后新行从空文本开始');
   press('e');
   tick(game);
   assert.ok(text('dialog-text').indexOf('占位演示') >= 0);
-  // 旁白行：姓名标签隐藏、文字灰色
+  // 翻页 → 旁白行：姓名标签隐藏、文字灰色
   press('e');
   tick(game);
   assert.ok(hidden('dialog-name'), '旁白不显示姓名标签');
   assert.strictEqual(elt('dialog-text').style.color, '#C0C0C0');
-  // 最后一行退出
+  press('e');
+  tick(game);
+  // 最后一行翻页退出
   press('e');
   tick(game);
   assert.strictEqual(game.state, STATE.PLAYING);
@@ -358,6 +369,173 @@ test('无 NPC 附近按确认：不进入对话', () => {
   press('e');
   tick(game);
   assert.strictEqual(game.state, STATE.PLAYING);
+  game.destroy();
+});
+
+/* ─────────────────── 4.5 对话系统（Issue #7） ─────────────────── */
+
+test('打字机：25ms/字逐字显示、始终为全文前缀、提示文案切换', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 10, 15);
+  tick(game);
+  press('e');
+  tick(game);
+  const full = 'NSWER！欢迎来到 MIXXTOPIA！我是星星精灵 Byeori。';
+  assert.strictEqual(game.state, STATE.DIALOGUE);
+  assert.strictEqual(text('dialog-text'), '', '首帧 16ms 不足一个字');
+  assert.strictEqual(text('dialog-hint'), '▸▸ 快进', '打字中提示快进');
+  tick(game, 25); // 第 1 字
+  assert.strictEqual(text('dialog-text'), full.slice(0, 1));
+  tick(game, 50); // 第 2–3 字
+  assert.strictEqual(text('dialog-text'), full.slice(0, 3));
+  for (let i = 0; i < 40 && text('dialog-text') !== full; i++) {
+    tick(game, 25);
+    assert.strictEqual(full.indexOf(text('dialog-text')), 0, '任意时刻均为全文前缀');
+  }
+  assert.strictEqual(text('dialog-text'), full, '自然显示到全文');
+  assert.strictEqual(text('dialog-hint'), '▼ E / 空格', '显示完切换翻页提示');
+  game.destroy();
+});
+
+test('点按快进：打字中点按 E 立即显示本行全文，不跳行', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 10, 15);
+  tick(game);
+  press('e');
+  tick(game);
+  tick(game, 25);
+  const partial = text('dialog-text');
+  assert.ok(partial.length > 0 && partial.length < 21, '处于打字中途');
+  press('e');
+  tick(game);
+  assert.strictEqual(text('dialog-text'), 'NSWER！欢迎来到 MIXXTOPIA！我是星星精灵 Byeori。');
+  assert.strictEqual(game.state, STATE.DIALOGUE, '点按只快进本行，不翻页');
+  game.destroy();
+});
+
+test('按住加速：按住 E 打字显著加快，长按松开不跳行，点按才跳行', () => {
+  const saved = sandbox.GAME;
+  const long = '一二三四五六七八九十'.repeat(12); // 120 字，保证 300ms 按住不足以打完
+  sandbox.GAME = {
+    levels: [{
+      id: 1,
+      title: 'T',
+      palette: { bg: '#1A1033', cream: '#F7E8C8', gold: '#FFC857', pink: '#FF8FA3' },
+      map: engine.demoLevel.map,
+      entities: [
+        { type: 'spawn', x: 2, y: 26 },
+        { type: 'npc', id: 'byeori', x: 10, y: 15, dialogue: 'boot.hi' },
+      ],
+    }],
+    characters: {},
+    dialogue: { 'boot.hi': { lines: [{ s: 'byeori', t: long }] } },
+  };
+  try {
+    const game = makeGame();
+    elt('btn-start').click();
+    teleport(game, 10, 15);
+    tick(game);
+    press('e');
+    tick(game);
+    // 按住 300ms（帧内 dt 上限 50ms → 6 帧）：6ms/字 → 约 50 字；正常速度 25ms/字仅 12 字
+    key('keydown', 'e');
+    for (let i = 0; i < 6; i++) tick(game, 100);
+    const fastShown = text('dialog-text').length;
+    assert.ok(fastShown >= 40, '按住期间打字显著加速（显示 ' + fastShown + ' 字）');
+    key('keyup', 'e');
+    tick(game);
+    assert.ok(text('dialog-text').length < long.length, '长按（≥250ms）松开不跳行');
+    // 释放后恢复常速：50ms 只加约 2 字
+    const before = text('dialog-text').length;
+    tick(game, 100);
+    assert.ok(text('dialog-text').length - before <= 2, '释放后恢复常速');
+    // 点按完成本行
+    press('e');
+    tick(game);
+    assert.strictEqual(text('dialog-text'), long);
+    game.destroy();
+  } finally {
+    if (saved === undefined) delete sandbox.GAME; else sandbox.GAME = saved;
+  }
+});
+
+test('翻页键等价：E / 空格 / Enter 均可快进与翻页', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 10, 15);
+  tick(game);
+  press('e'); tick(game);          // 进入（E 触发）
+  press(' '); tick(game);          // 空格快进本行
+  assert.ok(text('dialog-text').indexOf('欢迎来到') >= 0);
+  press(' '); tick(game);          // 空格翻页 → 第 2 行
+  press('Enter'); tick(game);      // Enter 快进
+  assert.ok(text('dialog-text').indexOf('占位演示') >= 0);
+  press('Enter'); tick(game);      // Enter 翻页 → 第 3 行（旁白）
+  assert.ok(hidden('dialog-name'));
+  press('e'); tick(game);          // E 快进
+  press(' '); tick(game);          // 空格翻页 → 退出
+  assert.strictEqual(game.state, STATE.PLAYING);
+  game.destroy();
+});
+
+test('点击对话框：打字中点击=快进本行，显示完点击=翻页', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 10, 15);
+  tick(game);
+  press('e');
+  tick(game);
+  assert.strictEqual(game.state, STATE.DIALOGUE);
+  elt('dialog').click(); // 打字中 → 显示全文
+  assert.strictEqual(text('dialog-text'), 'NSWER！欢迎来到 MIXXTOPIA！我是星星精灵 Byeori。');
+  elt('dialog').click(); // 显示完 → 翻页，新行从空开始
+  assert.strictEqual(text('dialog-text'), '');
+  elt('dialog').click(); // 打字中 → 快进
+  assert.ok(text('dialog-text').indexOf('占位演示') >= 0);
+  assert.strictEqual(game.state, STATE.DIALOGUE);
+  game.destroy();
+});
+
+test('对话期间玩家锁定：方向键不移动、计时暂停', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  tick(game, 1000); // 先积累 1s 用时
+  teleport(game, 10, 15);
+  tick(game);
+  press('e');
+  tick(game);
+  assert.strictEqual(game.state, STATE.DIALOGUE);
+  const p0 = [game.player.x, game.player.y];
+  const rt0 = game.runTime;
+  key('keydown', 'a');
+  key('keydown', 'w');
+  for (let i = 0; i < 10; i++) tick(game, 100);
+  key('keyup', 'a');
+  key('keyup', 'w');
+  tick(game);
+  assert.deepStrictEqual([game.player.x, game.player.y], p0, '对话中方向键不移动');
+  assert.strictEqual(game.runTime, rt0, '对话中计时暂停');
+  game.destroy();
+});
+
+test('重复进入对话：打字/按住标记不残留，第二次从空文本开始', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 10, 15);
+  tick(game);
+  press('e');
+  tick(game);
+  for (let i = 0; i < 6; i++) { press('e'); tick(game); } // 快进+翻页 3 行 → 退出
+  assert.strictEqual(game.state, STATE.PLAYING);
+  press('e');
+  tick(game);
+  assert.strictEqual(game.state, STATE.DIALOGUE);
+  assert.strictEqual(text('dialog-text'), '', '第二次进入从空文本开始');
+  press('e');
+  tick(game);
+  assert.strictEqual(text('dialog-text'), 'NSWER！欢迎来到 MIXXTOPIA！我是星星精灵 Byeori。');
   game.destroy();
 });
 
@@ -515,9 +693,7 @@ test('全状态往返无泄漏：完整循环两遍，实例/监听/HUD/对话�
     tick(game);
     press('e'); tick(game);                         // → DIALOGUE
     assert.strictEqual(game.state, STATE.DIALOGUE);
-    press('e'); tick(game);
-    press('e'); tick(game);
-    press('e'); tick(game);                         // → PLAYING
+    for (let i = 0; i < 6; i++) { press('e'); tick(game); } // 快进+翻页 3 行 → PLAYING
     assert.strictEqual(game.state, STATE.PLAYING);
     press('Escape'); tick(game);                    // → PAUSED
     assert.strictEqual(game.state, STATE.PAUSED);

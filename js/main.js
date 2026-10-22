@@ -1,10 +1,17 @@
 /**
- * js/main.js —— 游戏状态机与 UI 接线（Issue #6）
+ * js/main.js —— 游戏状态机与 UI 接线（Issue #6）+ 对话系统（Issue #7）
  *
  * 六态状态机：
  *   TITLE(标题) ⇄ PLAYING(游玩) ⇄ DIALOGUE(对话) ⇄ PLAYING
  *   PLAYING ⇄ PAUSED(暂停) → PLAYING / TITLE
  *   PLAYING → CLEAR(结算) → 下一关 PLAYING / ENDING(结局) → TITLE
+ *
+ * 对话系统（Issue #7，规范见 GAME_DESIGN.md §7）：
+ *   - 面向 NPC 按 E 触发；对话期间玩家定身、计时暂停（状态机隔离，PLAYING 才移动）；
+ *   - 打字机 25ms/字逐字显示（DIALOG_MS），姓名框随行切换（nar 旁白隐藏姓名标签）；
+ *   - 打字中按住互动键加速打字（DIALOG_FAST_MS），按住 <250ms 内松开的「点按」
+ *     立即显示本行全文（快进）；本行显示完后 E/空格/Enter/点击对话框翻页；
+ *   - 末行翻页退出对话，_leaveState 清空对话框与进行态（无状态泄漏）。
  *
  * 状态机约定（「无状态泄漏」的实现要点，测试 tools/test-main.js 逐项验收）：
  *   - 每次切换必经 _setState → _leaveState(旧态清理) → _enterState(新态初始化)，
@@ -19,7 +26,7 @@
  * 数据来源：window.GAME（js/data.js，Issue #11/#12）就位后自动采用；
  * 当前 data.js 为空，内置「占位关卡 ×2」兜底（复用引擎演示地形），
  * 保证六态全部可达、可往返验证。占位实现（碰撞/收集/传送门/角色绘制）
- * 由后续 Issue 接管：#9 机制、#7 对话、#13 美术、#15 演出。
+ * 由后续 Issue 接管：#9 机制、#13 美术、#15 演出（#7 对话已实现）。
  *
  * 启用方式：index.html 在 engine.js 之后加载本文件；本文件立即设置
  * MIXX_NO_DEMO = true 停用引擎演示模式，并在 DOMContentLoaded 后自启动。
@@ -44,6 +51,13 @@
   const MOVE_SPEED = 80;       // px/s
   const INTERACT_RANGE = 24;   // 互动距离（px，#9 接管后细化）
   const SOLID_TILES = { '#': true, '~': true }; // 占位碰撞：墙与水不可通行（#9 接管）
+
+  // ── 对话系统（Issue #7，规格 GAME_DESIGN.md §7）──
+  const DIALOG_MS = 25;           // 打字机逐字间隔（25ms/字）
+  const DIALOG_FAST_MS = 6;       // 按住互动键加速打字间隔（快进）
+  const DIALOG_TAP_MS = 250;      // 按住时长阈值：短于此的「点按」→ 立即显示本行全文
+  const DIALOG_HINT_TYPING = '▸▸ 快进';   // 打字中的提示
+  const DIALOG_HINT_PAGE = '▼ E / 空格'; // 本行显示完、等待翻页的提示
 
   /* ════════════════════════ 状态常量 ════════════════════════ */
 
@@ -180,7 +194,7 @@
       this.collected = [];     // 本关已收集星 id（运行时记录）
       this.runTime = 0;        // 本关用时（秒，仅 PLAYING 累计）
       this.soundOn = true;     // #14 音频落地前仅驱动按钮文案
-      this._dialog = null;     // 对话进行态 { lines, idx }，离开对话态即清空
+      this._dialog = null;     // 对话进行态 { lines, idx, shown, t, typing, holdTyping, holdTime }，离开对话态即清空
       this._pendingNextIsEnding = false; // 结算按钮指向结局（最后一关）
 
       this._last = 0;          // 上一帧时间戳（ms）
@@ -275,7 +289,7 @@
           this.input.setTouchVisible(true);
           break;
         case STATE.DIALOGUE:
-          // HUD 保持可见（对话仍在关卡内）；输入保持启用（confirm 翻页）
+          // HUD 保持可见（对话仍在关卡内）；输入保持启用（confirm 快进/翻页）
           this._show(this._ui.dialog);
           break;
         case STATE.PAUSED:
@@ -337,7 +351,7 @@
           this._updatePlaying(dt);
           break;
         case STATE.DIALOGUE:
-          if (this.input.wasPressed('confirm')) this._advanceDialog();
+          this._updateDialog(dt);
           break;
         case STATE.PAUSED:
           if (this.input.wasPressed('pause')) this._setState(STATE.PLAYING);
@@ -560,20 +574,35 @@
       return BOOT_ENDING;
     }
 
-    /* ── 对话（外壳；打字机/选项由 Issue #7 扩充） ── */
+    /* ── 对话（Issue #7：打字机 + 姓名框 + 翻页；选项列表由 #12 接入） ── */
 
+    /** 进入对话态：读取节点行数据，从第一行开始打字机显示 */
     _enterDialogue(nodeId) {
       const node = this.dialogue[nodeId] || {};
       const lines = Array.isArray(node.lines) ? node.lines : [];
       if (!lines.length) return; // 无内容不进入对话态
-      this._dialog = { lines: lines, idx: 0 };
+      this._dialog = {
+        lines: lines,
+        idx: 0,         // 当前行号
+        shown: 0,       // 当前行已显示字数
+        t: 0,           // 打字机累计时间（ms）
+        typing: true,   // 当前行是否仍在逐字显示
+        holdTyping: false, // 本行打字期间按住互动键的标记（点按快进/长按加速）
+        holdTime: 0,    // 按住时长（ms）
+      };
       this._setState(STATE.DIALOGUE);
-      this._renderDialogLine();
+      this._startDialogLine();
     }
 
-    _renderDialogLine() {
+    /** 进入新行：重置打字机进度，渲染姓名框（nar 旁白隐藏标签）与空文本 */
+    _startDialogLine() {
       const d = this._dialog;
       if (!d) return;
+      d.shown = 0;
+      d.t = 0;
+      d.typing = true;
+      d.holdTyping = false;
+      d.holdTime = 0;
       const line = d.lines[d.idx];
       const ch = this.characters[line.s] || { name: line.s, color: '#FFFFFF' };
       const nameEl = this._ui.dialogName;
@@ -585,26 +614,111 @@
       } else {
         this._hide(nameEl); // nar 旁白：隐藏姓名标签
       }
-      this._text(textEl, line.t);
       if (textEl && textEl.style) {
         textEl.style.color = ch.name ? '' : ch.color; // 旁白文字用角色色
       }
+      this._text(textEl, '');
+      this._text(this._ui.dialogHint, DIALOG_HINT_TYPING);
     }
 
-    _advanceDialog() {
+    /**
+     * 对话态逐帧更新：
+     *   1. 本行显示完时按 confirm → 翻页（末行则退出对话）；
+     *   2. 打字中按 confirm 记录按住起点：<250ms 内松开（点按）→ 立即显示本行全文；
+     *   3. 打字中按住 confirm → 打字加速（DIALOG_FAST_MS），长按松开不跳行。
+     */
+    _updateDialog(dt) {
+      const d = this._dialog;
+      if (!d) { this._setState(STATE.PLAYING); return; } // 防御：无进行态不留在对话态
+      const pressed = this.input.wasPressed('confirm');
+      const released = this.input.wasReleased('confirm');
+
+      // 本行已显示完：按下即翻页（同一按下不再作用于新行，保证一次按键翻一页）
+      if (pressed && !d.typing) {
+        this._advanceDialog();
+        return;
+      }
+      if (pressed) { // 打字中的按下：记录按住起点
+        d.holdTyping = true;
+        d.holdTime = 0;
+      }
+      if (!d.typing) return;
+
+      // 点按快进：按住未超阈值即松开 → 立即显示本行全文
+      if (released && d.holdTyping) {
+        if (d.holdTime < DIALOG_TAP_MS) {
+          this._completeDialogLine();
+          d.holdTyping = false;
+          d.holdTime = 0;
+          return;
+        }
+        d.holdTyping = false;
+        d.holdTime = 0;
+      }
+
+      // 打字推进：按住互动键时加速（快进）
+      const held = d.holdTyping && this.input.isDown('confirm');
+      const rate = held ? DIALOG_FAST_MS : DIALOG_MS;
+      if (held) d.holdTime += dt * 1000;
+      d.t += dt * 1000;
+      const full = String(d.lines[d.idx].t);
+      while (d.t >= rate && d.shown < full.length) {
+        d.t -= rate;
+        d.shown++;
+      }
+      if (d.shown >= full.length) {
+        this._completeDialogLine();
+      } else {
+        this._renderDialogText();
+      }
+    }
+
+    /** 本行打字完成：显示全文并切换翻页提示 */
+    _completeDialogLine() {
       const d = this._dialog;
       if (!d) return;
+      d.shown = String(d.lines[d.idx].t).length; // 立即显示全文（点按快进/自然打完共用）
+      d.typing = false;
+      d.holdTyping = false;
+      d.holdTime = 0;
+      this._renderDialogText();
+      this._text(this._ui.dialogHint, DIALOG_HINT_PAGE);
+    }
+
+    /** 渲染当前行已显示的字符切片 */
+    _renderDialogText() {
+      const d = this._dialog;
+      if (!d) return;
+      const textEl = this._ui.dialogText;
+      if (!textEl) return;
+      this._text(textEl, String(d.lines[d.idx].t).slice(0, d.shown));
+    }
+
+    /** 翻页：本行未显示完不可翻页；末行翻页退出对话态 */
+    _advanceDialog() {
+      const d = this._dialog;
+      if (!d || d.typing) return;
       d.idx++;
       if (d.idx >= d.lines.length) {
         this._setState(STATE.PLAYING); // 离开对话态时 _leaveState 清空对话框与 _dialog
       } else {
-        this._renderDialogLine();
+        this._startDialogLine();
       }
+    }
+
+    /** 点击对话框 = 点按：打字中立即显示全文，显示完则翻页（GAME_DESIGN §7 点击翻页） */
+    _tapDialog() {
+      if (this.state !== STATE.DIALOGUE) return;
+      const d = this._dialog;
+      if (!d) return;
+      if (d.typing) this._completeDialogLine();
+      else this._advanceDialog();
     }
 
     _clearDialog() {
       this._text(this._ui.dialogName, '');
       this._text(this._ui.dialogText, '');
+      this._text(this._ui.dialogHint, DIALOG_HINT_PAGE);
     }
 
     /* ── HUD ── */
@@ -716,6 +830,8 @@
       this._on(ui.btnQuit, 'click', () => this._quitToTitle());
       this._on(ui.btnNext, 'click', () => this._nextFromClear());
       this._on(ui.btnEnding, 'click', () => this._quitToTitle());
+      // 点击对话框翻页（Issue #7；打字中点击=快进本行）
+      this._on(ui.dialog, 'click', () => this._tapDialog());
     }
 
     _on(el, type, fn) {
