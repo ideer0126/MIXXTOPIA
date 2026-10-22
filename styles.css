@@ -1,4 +1,6 @@
-/* styles.css —— MIXXTOPIA 样式（Issue #6 会扩充完整 UI 样式） */
+/* styles.css —— MIXXTOPIA 样式
+ * 触屏虚拟按键（Issue #5）· 屏幕/HUD/对话框/菜单（Issue #6）
+ */
 
 html,
 body {
@@ -9,6 +11,7 @@ body {
 }
 
 #app {
+  position: relative; /* HUD/对话框/屏幕层以窗口为锚定位 */
   height: 100%;
   display: flex;
   align-items: center;
@@ -114,5 +117,217 @@ body {
   color: #ffffff;
   font-size: 20px;
   pointer-events: auto;
+}
+
+/* ── 屏幕层与菜单（Issue #6）── */
+
+/* 全屏覆盖层：标题/帮助/暂停/结算/结局共用；叠在画布之上 */
+.screen {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+  text-align: center;
+  color: #f0e6d2;
+  font-family: "Press Start 2P", monospace;
+  background:
+    radial-gradient(ellipse at 50% 20%, rgba(122, 45, 140, 0.35), transparent 60%),
+    linear-gradient(180deg, #0b0b1e 0%, #1a1033 55%, #0b0b1e 100%);
+}
+
+.screen-title {
+  margin: 0;
+  font-size: 20px;
+  color: #ffc857;
+  letter-spacing: 2px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.menu-btn {
+  margin: 0;
+  padding: 12px 26px;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #f0e6d2;
+  background: #14143a;
+  border: 2px solid #ffc857;
+  border-radius: 6px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+.menu-btn:hover,
+.menu-btn:focus-visible {
+  background: #23235c;
+  outline: none;
+}
+
+.menu-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.menu-btn.small {
+  padding: 8px 18px;
+  font-size: 10px;
+}
+
+/* 标题界面 */
+.title-glow {
+  animation: title-pulse 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes title-pulse {
+  from { opacity: 0.85; }
+  to { opacity: 1; }
+}
+
+.title-main {
+  margin: 0 0 10px;
+  font-size: 34px;
+  color: #ffffff;
+  letter-spacing: 4px;
+  text-shadow: 0 0 14px #ffc857, 2px 2px 0 #7a2d8c;
+}
+
+.title-sub {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: #ff8fa3;
+  letter-spacing: 6px;
+}
+
+.title-flavor {
+  margin: 0;
+  max-width: 440px;
+  font-size: 8px;
+  line-height: 2;
+  color: #c9b8e8;
+}
+
+.footer-note {
+  margin: 6px 0 0;
+  font-size: 8px;
+  color: #6f5f95;
+}
+
+/* 帮助界面 */
+.help-body {
+  max-width: 440px;
+  font-size: 9px;
+  line-height: 2.4;
+  text-align: left;
+  color: #f0e6d2;
+}
+
+.help-body b {
+  color: #ffc857;
+}
+
+/* 结算与结局 */
+.clear-text {
+  font-size: 11px;
+  line-height: 1.9;
+  color: #f0e6d2;
+}
+
+.ending-body {
+  max-width: 420px;
+  font-size: 10px;
+  line-height: 2;
+  color: #f0e6d2;
+}
+
+.ending-body p {
+  margin: 8px 0;
+}
+
+/* ── HUD（Issue #6）：左上角关卡名 + 星数 ── */
+
+#hud {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  z-index: 10;
+  display: flex;
+  gap: 12px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  line-height: 1.6;
+  color: #f0e6d2;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+#hud-level {
+  color: #ffc857;
+}
+
+#hud-shards {
+  color: #ffffff;
+}
+
+/* ── 对话框（Issue #6 外壳；打字机/选项由 Issue #7 扩充）── */
+
+#dialog {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 15;
+  width: min(300px, calc(100% - 20px));
+  padding: 10px 12px;
+  box-sizing: border-box;
+  font-family: "Press Start 2P", monospace;
+  color: #f0e6d2;
+  background: rgba(11, 11, 30, 0.92);
+  border: 2px solid #ffc857;
+  border-radius: 6px;
+}
+
+#dialog-name {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 2px 8px;
+  font-size: 9px;
+  background: #1a1033;
+  border: 1px solid #ffc857;
+}
+
+#dialog-text {
+  min-height: 38px;
+  font-size: 10px;
+  line-height: 1.9;
+}
+
+#dialog-hint {
+  margin-top: 8px;
+  font-size: 8px;
+  color: #c9b8e8;
+  text-align: right;
+  animation: hint-blink 1s steps(2, start) infinite;
+}
+
+@keyframes hint-blink {
+  50% { opacity: 0.35; }
+}
+
+/* 触屏设备：对话框抬高，避开底部虚拟按键 */
+@media (pointer: coarse), (any-pointer: coarse) {
+  #dialog {
+    bottom: 92px;
+  }
 }
 
