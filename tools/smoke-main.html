@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MIXXTOPIA · 状态机冒烟测试</title>
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+  <!--
+    tools/smoke-main.html —— 游戏状态机（Issue #6）浏览器冒烟测试
+    运行：静态服务器或 file:// + 无头浏览器 dump-dom，断言 <body data-smoke="ok">。
+    覆盖真实浏览器环境下六态往返（标题/游玩/对话/暂停/结算/结局）与无状态泄漏。
+    UI 骨架与 index.html 一致（main.js 按 id 接线）。
+  -->
+  <canvas id="game" width="320" height="224"></canvas>
+
+  <div id="hud" class="hidden">
+    <span id="hud-level"></span>
+    <span id="hud-shards"></span>
+  </div>
+
+  <div id="title-screen" class="screen">
+    <button id="btn-start" class="menu-btn">▶ 开始游戏</button>
+    <button id="btn-continue" class="menu-btn hidden">↻ 继续冒险</button>
+    <button id="btn-levels" class="menu-btn hidden">★ 选择关卡</button>
+    <button id="btn-help" class="menu-btn">? 操作说明</button>
+    <button id="btn-sound" class="menu-btn">♪ 声音：开</button>
+  </div>
+
+  <div id="level-screen" class="screen hidden">
+    <div id="level-grid"></div>
+    <button id="btn-back" class="menu-btn small">← 返回</button>
+  </div>
+
+  <div id="help-screen" class="screen hidden">
+    <button id="btn-help-back" class="menu-btn small">← 返回</button>
+  </div>
+
+  <div id="dialog" class="hidden">
+    <div id="dialog-name"></div>
+    <div id="dialog-text"></div>
+    <div id="dialog-hint">▼ E / 空格</div>
+  </div>
+
+  <div id="pause-screen" class="screen hidden">
+    <button id="btn-resume" class="menu-btn">▶ 继续</button>
+    <button id="btn-restart" class="menu-btn">↻ 重玩本关</button>
+    <button id="btn-quit" class="menu-btn">✖ 回到标题</button>
+  </div>
+
+  <div id="clear-screen" class="screen hidden">
+    <p id="clear-text" class="clear-text"></p>
+    <button id="btn-next" class="menu-btn">▶ 下一关</button>
+  </div>
+
+  <div id="ending-screen" class="screen hidden">
+    <div id="ending-body" class="ending-body"></div>
+    <button id="btn-ending" class="menu-btn">↻ 再来一次</button>
+  </div>
+
+  <div id="touch-controls">
+    <div id="dpad"></div>
+    <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
+  </div>
+
+  <pre id="results"></pre>
+
+  <script>window.MIXX_NO_BOOT = true;</script>
+  <script src="../js/engine.js"></script>
+  <script src="../js/main.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var results = [];
+      var errors = [];
+      window.onerror = function (msg) { errors.push(String(msg)); };
+      function ok(name, cond) { results.push((cond ? 'PASS' : 'FAIL') + ' ' + name); }
+      function shown(id) { return !document.getElementById(id).classList.contains('hidden'); }
+      function text(id) { return document.getElementById(id).textContent; }
+
+      var main = window.MIXX.main;
+      ok('main 就绪', !!main && typeof main.Game === 'function');
+      var game = main.boot();
+      ok('boot 成功', !!game);
+      if (!game) {
+        document.body.setAttribute('data-smoke', 'fail');
+        return;
+      }
+      game.stop(); // 手动驱动帧，保证断言确定性
+
+      var now = 0;
+      function frame() { now += 16; game.frame(now); }
+      function press(k) {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+        window.dispatchEvent(new KeyboardEvent('keyup', { key: k, bubbles: true, cancelable: true }));
+      }
+      function tp(tx, ty) { game.player.x = tx * 16; game.player.y = ty * 16; }
+      function collectAll() {
+        game.level.entities.filter(function (e) { return e.type === 'star'; }).forEach(function (e) {
+          tp(e.x, e.y);
+          frame();
+        });
+      }
+
+      // 1) 标题
+      ok('初始 title', game.state === 'title' && shown('title-screen') && !shown('hud'));
+
+      // 2) 开始 → 游玩 + HUD
+      document.getElementById('btn-start').click();
+      ok('start → playing', game.state === 'playing' && !shown('title-screen'));
+      ok('HUD 关名', text('hud-level') === '占位关卡 · 烛光梦境');
+      ok('HUD 星数 0/3', text('hud-shards') === '★ 0/3');
+
+      // 3) 对话往返
+      tp(10, 15);
+      frame();
+      press('e');
+      frame();
+      ok('→ dialogue', game.state === 'dialogue' && shown('dialog') && text('dialog-name') === 'Byeori');
+      press('e'); frame();
+      press('e'); frame();
+      press('e'); frame();
+      ok('dialogue → playing 清空', game.state === 'playing' && !shown('dialog') && text('dialog-text') === '');
+
+      // 4) 暂停往返
+      press('Escape');
+      frame();
+      ok('→ paused', game.state === 'paused' && shown('pause-screen') && !shown('hud'));
+      press('Escape');
+      frame();
+      ok('→ playing', game.state === 'playing' && shown('hud'));
+
+      // 5) 收集 + 结算
+      collectAll();
+      ok('收集 3 星', text('hud-shards') === '★ 3/3');
+      tp(38, 10);
+      frame();
+      ok('→ clear', game.state === 'clear' && shown('clear-screen') && /星星 3\/3/.test(text('clear-text')));
+
+      // 6) 下一关 → 结局 → 标题
+      document.getElementById('btn-next').click();
+      ok('下一关 playing', game.state === 'playing' && text('hud-shards') === '★ 0/2');
+      collectAll();
+      tp(38, 10);
+      frame();
+      ok('末关 clear 按钮文案', game.state === 'clear' && text('btn-next') === '▶ 见证结局');
+      document.getElementById('btn-next').click();
+      ok('→ ending', game.state === 'ending' && shown('ending-screen'));
+      ok('结局文案渲染', document.getElementById('ending-body').innerHTML.indexOf('25 颗愿望之星') >= 0);
+      document.getElementById('btn-ending').click();
+      ok('ending → title', game.state === 'title' && shown('title-screen'));
+
+      // 7) 无泄漏
+      ok('无残留屏幕', !shown('hud') && !shown('dialog') && !shown('pause-screen')
+        && !shown('clear-screen') && !shown('ending-screen'));
+      ok('对话框清空', text('dialog-text') === '' && text('dialog-name') === '');
+      ok('无运行时错误', errors.length === 0);
+
+      var pre = document.getElementById('results');
+      pre.textContent = results.join('\n') + (errors.length ? '\nERRORS: ' + errors.join(' | ') : '');
+      document.body.setAttribute('data-smoke',
+        results.every(function (l) { return l.indexOf('PASS') === 0; }) && errors.length === 0 ? 'ok' : 'fail');
+    })();
+  </script>
+</body>
+</html>
