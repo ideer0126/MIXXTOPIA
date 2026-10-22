@@ -33,7 +33,7 @@ const UI_IDS = [
   'title-screen', 'btn-start', 'btn-continue', 'btn-levels', 'btn-help', 'btn-sound',
   'level-screen', 'level-grid', 'btn-back',
   'help-screen', 'btn-help-back',
-  'dialog', 'dialog-name', 'dialog-text', 'dialog-hint',
+  'dialog', 'dialog-portrait', 'dialog-name', 'dialog-text', 'dialog-hint',
   'pause-screen', 'btn-resume', 'btn-restart', 'btn-quit',
   'clear-screen', 'clear-text', 'btn-next',
   'ending-screen', 'ending-body', 'btn-ending',
@@ -343,6 +343,81 @@ test('对话往返：打字机进入/快进/翻页/旁白样式/退出清空无�
   assert.strictEqual(text('dialog-name'), '', '对话框内容清空');
   assert.strictEqual(text('dialog-text'), '');
   assert.strictEqual(game._dialog, null);
+  game.destroy();
+});
+
+test('对话头像位（#28）：按说话人加载立绘、nar 隐藏、退出清空', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 10, 15);
+  tick(game);
+  press('e');
+  tick(game);
+  assert.strictEqual(game.state, STATE.DIALOGUE);
+  // Byeori 有立绘：src 指向素材目录、头像显示、对话框挂 has-portrait
+  assert.strictEqual(
+    elt('dialog-portrait').src,
+    'assets/characters/byeori/art/byeori-portrait.png'
+  );
+  assert.ok(shown('dialog-portrait'));
+  assert.ok(elt('dialog').classList.contains('has-portrait'));
+  // 同一说话人连续两行：src 缓存不重复赋值（防闪动）
+  const firstSrc = elt('dialog-portrait').src;
+  press('e'); tick(game); // 快进第 1 行
+  press('e'); tick(game);
+  assert.strictEqual(elt('dialog-portrait').src, firstSrc);
+  assert.ok(shown('dialog-portrait'), 'Byeori 第二行头像保持显示');
+  // 旁白行（nar）：无立绘 → 头像位隐藏、移除 has-portrait
+  press('e'); tick(game); // 快进第 2 行
+  press('e'); tick(game);
+  assert.ok(hidden('dialog-portrait'));
+  assert.ok(!elt('dialog').classList.contains('has-portrait'));
+  // 退出对话：src 清空、运行态复位
+  press('e'); tick(game); // 快进旁白行
+  press('e'); tick(game);
+  assert.strictEqual(game.state, STATE.PLAYING);
+  assert.ok(hidden('dialog-portrait'));
+  assert.strictEqual(elt('dialog-portrait').src, '');
+  assert.strictEqual(game._portraitSrc, null);
+  game.destroy();
+});
+
+test('对话头像加载失败：同路径换行保持隐藏、切换其他路径正常显示', () => {
+  const game = makeGame();
+  game.dialogue = {
+    'test.portrait-error': {
+      lines: ['byeori', 'byeori', 'nar', 'byeori', 'lily', 'byeori'].map(
+        (s) => ({ s, t: '头像加载失败测试' })
+      ),
+    },
+  };
+  elt('btn-start').click();
+  game._enterDialogue('test.portrait-error');
+  const img = elt('dialog-portrait');
+  const failedSrc = img.src;
+  assert.ok(shown('dialog-portrait'));
+  assert.strictEqual(typeof img.onerror, 'function');
+  img.onerror(); // 模拟首次加载失败
+  assert.ok(hidden('dialog-portrait'));
+  assert.ok(!elt('dialog').classList.contains('has-portrait'));
+
+  for (let i = 1; i <= 5; i++) {
+    press('e'); tick(game); // 快进当前行，再翻页
+    press('e'); tick(game);
+    assert.strictEqual(game._dialog.idx, i, '翻页进入预期行');
+    if (i === 4) {
+      assert.strictEqual(img.src, 'assets/characters/lily/art/lily-portrait.png');
+      assert.ok(shown('dialog-portrait'), '其他头像路径仍正常显示');
+      assert.ok(elt('dialog').classList.contains('has-portrait'));
+    } else {
+      assert.ok(hidden('dialog-portrait'), '失败路径与旁白保持隐藏，行 ' + i);
+      assert.ok(!elt('dialog').classList.contains('has-portrait'));
+      if (i === 1) assert.strictEqual(img.src, failedSrc);
+    }
+  }
+  press('e'); tick(game); // 快进末行
+  press('e'); tick(game);
+  assert.strictEqual(game.state, STATE.PLAYING, '加载失败不影响对话结束');
   game.destroy();
 });
 

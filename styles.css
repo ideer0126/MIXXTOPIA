@@ -1,5 +1,5 @@
 /* styles.css —— MIXXTOPIA 样式
- * 触屏虚拟按键（Issue #5）· 屏幕/HUD/对话框/菜单（Issue #6）
+ * 触屏虚拟按键（Issue #5）· 屏幕/HUD/对话框/菜单（Issue #6）· 对话框头像位（Issue #28）
  */
 
 html,
@@ -298,6 +298,27 @@ body {
   cursor: pointer;      /* 点击翻页（Issue #7） */
   user-select: none;    /* 连点不选中文本 */
   -webkit-user-select: none;
+}
+
+/* 说话人头像位（Issue #28）：对话框右上方，128×128 原图缩至 56px 显示；
+   缺图时由 main.js 挂 .hidden 隐藏（nar/all 无立绘） */
+#dialog-portrait {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 56px;
+  height: 56px;
+  image-rendering: pixelated;
+  object-fit: cover;
+  background: #1a1033;
+  border: 2px solid #ffc857;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+/* 头像显示时正文让出右侧空间，避免文字压到立绘 */
+#dialog.has-portrait #dialog-text {
+  padding-right: 64px;
 }
 
 #dialog-name {

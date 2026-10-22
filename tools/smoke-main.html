@@ -39,6 +39,7 @@
   </div>
 
   <div id="dialog" class="hidden">
+    <img id="dialog-portrait" alt="" aria-hidden="true" />
     <div id="dialog-name"></div>
     <div id="dialog-text"></div>
     <div id="dialog-hint">▼ E / 空格</div>
@@ -119,6 +120,10 @@
       press('e');
       frame();
       ok('→ dialogue', game.state === 'dialogue' && shown('dialog') && text('dialog-name') === 'Byeori');
+      var portrait = document.getElementById('dialog-portrait');
+      ok('头像 src 指向素材', portrait.getAttribute('src') === 'assets/characters/byeori/art/byeori-portrait.png');
+      ok('头像显示 + has-portrait', !portrait.classList.contains('hidden')
+        && document.getElementById('dialog').classList.contains('has-portrait'));
       var fullLine = 'NSWER！欢迎来到 MIXXTOPIA！我是星星精灵 Byeori。';
       frame(); frame(); frame(); frame(); // 4 × 16ms = 64ms → 2 字（25ms/字）
       ok('打字机逐字', text('dialog-text').length >= 2 && text('dialog-text').length < fullLine.length
@@ -132,6 +137,7 @@
       press('e'); frame(); // 快进第 3 行
       press('e'); frame(); // 翻页 → 退出
       ok('dialogue → playing 清空', game.state === 'playing' && !shown('dialog') && text('dialog-text') === '');
+      ok('退出后头像位复位', portrait.classList.contains('hidden') && portrait.getAttribute('src') === null);
 
       // 4) 暂停往返
       press('Escape');

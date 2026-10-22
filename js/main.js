@@ -52,6 +52,10 @@
   const INTERACT_RANGE = 24;   // 互动距离（px，#9 接管后细化）
   const SOLID_TILES = { '#': true, '~': true }; // 占位碰撞：墙与水不可通行（#9 接管）
 
+  /* 说话人头像位（Issue #28）：素材规范见 assets/characters/README.md */
+  const PORTRAIT_BASE = 'assets/characters/';
+  const PORTRAIT_NO_ART = { nar: true, all: true }; // 伪说话人无立绘（GAME_DESIGN §3）
+
   // ── 对话系统（Issue #7，规格 GAME_DESIGN.md §7）──
   const DIALOG_MS = 25;           // 打字机逐字间隔（25ms/字）
   const DIALOG_FAST_MS = 6;       // 按住互动键加速打字间隔（快进）
@@ -196,6 +200,8 @@
       this.soundOn = true;     // #14 音频落地前仅驱动按钮文案
       this._dialog = null;     // 对话进行态 { lines, idx, shown, t, typing, holdTyping, holdTime }，离开对话态即清空
       this._pendingNextIsEnding = false; // 结算按钮指向结局（最后一关）
+      this._portraitSrc = null;          // 头像当前 src 缓存（避免重复赋值导致闪动）
+      this._failedPortraits = new Set(); // 加载失败的路径，后续渲染保持隐藏
 
       this._last = 0;          // 上一帧时间戳（ms）
       this._raf = null;        // rAF 句柄，防重复启动
@@ -619,6 +625,44 @@
       }
       this._text(textEl, '');
       this._text(this._ui.dialogHint, DIALOG_HINT_TYPING);
+      this._setPortrait(line.s); // 说话人头像位（Issue #28）
+    }
+
+    /**
+     * 说话人头像位（Issue #28）：按 speaker 加载素材立绘。
+     * nar/all 等伪说话人直接隐藏；图片缺失由 onerror 降级隐藏，不影响对话流程。
+     */
+    _setPortrait(speaker) {
+      const img = this._ui.dialogPortrait;
+      if (!img) return;
+      if (!speaker || PORTRAIT_NO_ART[speaker]) {
+        this._hidePortrait();
+        return;
+      }
+      const src = PORTRAIT_BASE + speaker + '/art/' + speaker + '-portrait.png';
+      if (this._failedPortraits.has(src)) {
+        this._hidePortrait();
+        return;
+      }
+      this._show(img);
+      const dialog = this._ui.dialog;
+      if (dialog && dialog.classList) dialog.classList.add('has-portrait');
+      img.onerror = () => {
+        this._failedPortraits.add(src);
+        this._hidePortrait();
+      };
+      if (this._portraitSrc !== src) {
+        this._portraitSrc = src;
+        img.src = src;
+      }
+    }
+
+    /** 隐藏头像位并撤销对话框的 has-portrait 布局态 */
+    _hidePortrait() {
+      const img = this._ui.dialogPortrait;
+      if (img) this._hide(img);
+      const dialog = this._ui.dialog;
+      if (dialog && dialog.classList) dialog.classList.remove('has-portrait');
     }
 
     /**
@@ -719,6 +763,14 @@
       this._text(this._ui.dialogName, '');
       this._text(this._ui.dialogText, '');
       this._text(this._ui.dialogHint, DIALOG_HINT_PAGE);
+      this._hidePortrait();
+      const img = this._ui.dialogPortrait;
+      if (img) {
+        this._portraitSrc = null;
+        if (typeof img.removeAttribute === 'function') img.removeAttribute('src');
+        else img.src = '';
+        img.onerror = null;
+      }
     }
 
     /* ── HUD ── */
@@ -789,6 +841,7 @@
         'help-screen': 'helpScreen',
         'btn-help-back': 'btnHelpBack',
         'dialog': 'dialog',
+        'dialog-portrait': 'dialogPortrait',
         'dialog-name': 'dialogName',
         'dialog-text': 'dialogText',
         'dialog-hint': 'dialogHint',
