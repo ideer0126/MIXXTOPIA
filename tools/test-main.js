@@ -31,7 +31,7 @@ const UI_IDS = [
   'title-screen', 'btn-start', 'btn-continue', 'btn-levels', 'btn-help', 'btn-sound',
   'level-screen', 'level-grid', 'btn-back',
   'help-screen', 'btn-help-back',
-  'dialog', 'dialog-name', 'dialog-text', 'dialog-hint',
+  'dialog', 'dialog-portrait', 'dialog-name', 'dialog-text', 'dialog-hint',
   'pause-screen', 'btn-resume', 'btn-restart', 'btn-quit',
   'clear-screen', 'clear-text', 'btn-next',
   'ending-screen', 'ending-body', 'btn-ending',
@@ -332,6 +332,39 @@ test('对话往返：进入/翻页/旁白样式/退出清空无残留', () => {
   assert.strictEqual(text('dialog-name'), '', '对话框内容清空');
   assert.strictEqual(text('dialog-text'), '');
   assert.strictEqual(game._dialog, null);
+  game.destroy();
+});
+
+test('对话头像位（#28）：按说话人加载立绘、nar 隐藏、退出清空', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 10, 15);
+  tick(game);
+  press('e');
+  tick(game);
+  assert.strictEqual(game.state, STATE.DIALOGUE);
+  // Byeori 有立绘：src 指向素材目录、头像显示、对话框挂 has-portrait
+  assert.strictEqual(
+    elt('dialog-portrait').src,
+    'assets/characters/byeori/art/byeori-portrait.png'
+  );
+  assert.ok(shown('dialog-portrait'));
+  assert.ok(elt('dialog').classList.contains('has-portrait'));
+  // 同一说话人连续两行：src 缓存不重复赋值（防闪动）
+  const firstSrc = elt('dialog-portrait').src;
+  press('e'); tick(game);
+  assert.strictEqual(elt('dialog-portrait').src, firstSrc);
+  assert.ok(shown('dialog-portrait'), 'Byeori 第二行头像保持显示');
+  // 旁白行（nar）：无立绘 → 头像位隐藏、移除 has-portrait
+  press('e'); tick(game);
+  assert.ok(hidden('dialog-portrait'));
+  assert.ok(!elt('dialog').classList.contains('has-portrait'));
+  // 退出对话：src 清空、运行态复位
+  press('e'); tick(game);
+  assert.strictEqual(game.state, STATE.PLAYING);
+  assert.ok(hidden('dialog-portrait'));
+  assert.strictEqual(elt('dialog-portrait').src, '');
+  assert.strictEqual(game._portraitSrc, null);
   game.destroy();
 });
 
