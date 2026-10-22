@@ -279,7 +279,7 @@ body {
   color: #ffffff;
 }
 
-/* ── 对话框（Issue #6 外壳；打字机/选项由 Issue #7 扩充）── */
+/* ── 对话框（Issue #6 外壳；打字机/快进/翻页由 Issue #7 扩充）── */
 
 #dialog {
   position: absolute;
@@ -295,6 +295,9 @@ body {
   background: rgba(11, 11, 30, 0.92);
   border: 2px solid #ffc857;
   border-radius: 6px;
+  cursor: pointer;      /* 点击翻页（Issue #7） */
+  user-select: none;    /* 连点不选中文本 */
+  -webkit-user-select: none;
 }
 
 /* 说话人头像位（Issue #28）：对话框右上方，128×128 原图缩至 56px 显示；
