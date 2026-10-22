@@ -14,10 +14,12 @@
  * 两种写法本脚本都支持；data.js 落地前（Issue #11/#12 未完成）本脚本对
  * 规则 1–9 输出「跳过」提示，规则 10（占位文案扫描）始终执行。
  *
- * 规则 9 说明：完整状态图搜索（推箱/灯油/水位切换等状态转换）为 §11 标注的
- * 「预留自动校验」，当前实现静态近似（地形 + 门开/关 + 水位高/低并集 +
- * 单向门方向的并集可达性），能拦截「任何合法状态下都收不到星/到不了终点」
- * 的数据错误；状态转换级校验待 #11 数据落地后补全。
+ * 规则 9 说明：§11 标注的「预留自动校验」已落地为完整状态图搜索——
+ * 状态含玩家/箱子位置、门（压力/灯柱派生）、灯柱、灯油携带、水位、风向偏移、
+ * 已收集星集合；动作含移动、推箱、携油点灯、月相/风车开关、落点拾取。
+ * BFS 穷举后仍无法「集齐本关全部星星并到达已激活传送门/蛋糕」→ 报错。
+ * 对话条件星、清凉条计时、落水复位按宽松假设处理（只可能漏报、不会误报）；
+ * 状态数超过 STATE_CAP 时回退静态近似结论（并集可达性），同样不误报。
  *
  * 退出码：0 = 通过（或按约定跳过）；1 = 存在错误。
  */
@@ -41,7 +43,7 @@ const RULE_NAMES = {
   '规则 6': '方向与关 4 水面',
   '规则 7': '对话引用与触发',
   '规则 8': 'NPC 出场',
-  '规则 9': '可达性（静态近似）',
+  '规则 9': '可达性（状态图搜索 + 静态兜底）',
   '规则 10': '占位文案与存档键',
   '机制': '机制使用范围',
 };
@@ -810,95 +812,381 @@ function rule8(game, R) {
   }
 }
 
-/* ════════════════════════ 规则 9：可达性（静态近似） ════════════════════════ */
+/* ════════════════════════ 规则 9：可达性（状态图搜索 + 静态兜底） ════════════════════════ */
+
+/** 单关状态搜索上限；超出回退静态近似（不误报） */
+const STATE_CAP = 400000;
+const WIND_CYCLE = ['N', 'E', 'S', 'W'];
 
 /**
- * 静态近似（§11 标注的完整状态图搜索为预留校验）：
- *   - 地形：墙不可通行；水面按水位状态判定；
- *   - initial：门关、水位 high（仅浮桥石可站立）；
- *   - union：门开、水位取 high/low 并集（浮桥石 或 shallow 均可站立）——
- *     即「存在某一合法状态可通行」的并集，用于拦截任何状态下都收不到星/到不了终点的错误；
- *   - 单向门：进入与离开移动方向均须等于其 dir（反向与侧向不可穿过）；
- *   - 箱子/风带/NPC 等动态实体不参与静态判定（注释见函数内）。
+ * 静态近似（并集可达性）：门全开、水位取 high/low 并集、单向门按方向。
+ * 结论弱于状态图搜索，用作搜索超限时的兜底与快速诊断。
+ * @returns {{stars: string[], goal: string|null, spawnBlocked: boolean}}
  */
+function staticReachability(lv) {
+  const spawn = entitiesOf(lv, 'spawn')[0];
+  const waters = entitiesOf(lv, 'water');
+  const stones = new Set(entitiesOf(lv, 'stepstone').map(s => s.x + ',' + s.y));
+  const oneways = new Map(entitiesOf(lv, 'oneway').map(o => [o.x + ',' + o.y, o.dir]));
+
+  const passable = (x, y) => {
+    if (x < 0 || y < 0 || x >= lv.map.w || y >= lv.map.h) return false;
+    if (isWall(lv, x, y)) return false;
+    if (isWater(lv, x, y)) {
+      const w = waters.find(w => w.x === x && w.y === y);
+      return stones.has(x + ',' + y) || !!(w && w.shallow === true); // high/low 并集
+    }
+    return true;
+  };
+  const canStep = (x, y, dx, dy) => {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!passable(nx, ny)) return false;
+    const dir = DIR_BY_DELTA[dx + ',' + dy];
+    if (oneways.get(x + ',' + y) && oneways.get(x + ',' + y) !== dir) return false;
+    if (oneways.get(nx + ',' + ny) && oneways.get(nx + ',' + ny) !== dir) return false;
+    return true;
+  };
+
+  const union = new Set();
+  if (spawn && passable(spawn.x, spawn.y)) {
+    union.add(spawn.x + ',' + spawn.y);
+    const queue = [{ x: spawn.x, y: spawn.y }];
+    while (queue.length) {
+      const c = queue.shift();
+      for (const dirName of Object.keys(DIRV)) {
+        const [dx, dy] = DIRV[dirName];
+        if (!canStep(c.x, c.y, dx, dy)) continue;
+        const k = (c.x + dx) + ',' + (c.y + dy);
+        if (!union.has(k)) {
+          union.add(k);
+          queue.push({ x: c.x + dx, y: c.y + dy });
+        }
+      }
+    }
+  }
+  const goal = lv.entities.find(e => e && (e.type === 'portal' || e.type === 'cake'));
+  return {
+    stars: entitiesOf(lv, 'star').filter(s => !union.has(s.x + ',' + s.y)).map(s => s.id),
+    goal: goal && !union.has(goal.x + ',' + goal.y) ? label(goal) : null,
+    spawnBlocked: union.size === 0,
+  };
+}
+
+/**
+ * 完整状态图搜索（§11 规则 9「预留自动校验」的落地）：
+ *   状态 = 玩家/箱子位置、门（开关压力与灯柱派生）、灯柱、灯油携带、水位、风向偏移、已收集星。
+ *   动作 = 移动、推箱、携油点灯、月相开关、风车开关、落点拾取；单向门进入/离开方向约束；
+ *   门的状态随开关压力实时派生（踩开关开门、离开即关门、箱子压住常开）。
+ * 宽松假设（不会误报）：
+ *   - NPC/黑羊/告示牌/灯柱不阻挡移动；
+ *   - 对话条件星（关 1 ★3）、对话开门（关 3 捷径）不建模；
+ *   - 清凉条计时不参与；落水复位不建模（落水仅回退本岸，不构成前进）；
+ *   - 风带只推动玩家不推动箱子。
+ * @returns {{status:'ok'|'fail'|'cap'|'skip', msg?:string}}
+ */
+function stateSearch(lv) {
+  const spawn = entitiesOf(lv, 'spawn')[0];
+  const stars = entitiesOf(lv, 'star');
+  const goal = lv.entities.find(e => e && (e.type === 'portal' || e.type === 'cake'));
+  if (!spawn || !goal || stars.length === 0) return { status: 'skip' };
+
+  const starIds = stars.map(s => s.id);
+  const boxes0 = entitiesOf(lv, 'box').map(b => b.x + ',' + b.y).sort();
+  const oils0 = entitiesOf(lv, 'oil').map(o => o.x + ',' + o.y).sort();
+  const gatesAt = new Map();
+  const gateCtl = new Map();
+  for (const g of entitiesOf(lv, 'gate')) {
+    if (typeof g.id === 'string') {
+      gatesAt.set(g.x + ',' + g.y, g);
+      gateCtl.set(g.id, { switches: [], lamps: [] });
+    }
+  }
+  for (const s of entitiesOf(lv, 'switch')) {
+    if (typeof s.target === 'string' && gateCtl.has(s.target)) {
+      gateCtl.get(s.target).switches.push(s.x + ',' + s.y);
+    }
+  }
+  for (const l of entitiesOf(lv, 'lamp')) {
+    if (typeof l.target === 'string' && gateCtl.has(l.target)) {
+      gateCtl.get(l.target).lamps.push(l);
+    }
+  }
+  const waterAt = new Map(entitiesOf(lv, 'water').map(w => [w.x + ',' + w.y, w]));
+  const stoneAt = new Set(entitiesOf(lv, 'stepstone').map(s => s.x + ',' + s.y));
+  const onewayAt = new Map(entitiesOf(lv, 'oneway').map(o => [o.x + ',' + o.y, o.dir]));
+  const windAt = new Map(entitiesOf(lv, 'wind').map(w => [w.x + ',' + w.y, w.dir]));
+  const moonAt = new Set(entitiesOf(lv, 'moonswitch').map(m => m.x + ',' + m.y));
+  const windswitchAt = new Set(entitiesOf(lv, 'windswitch').map(w => w.x + ',' + w.y));
+  const lampAt = new Map(entitiesOf(lv, 'lamp').map(l => [l.x + ',' + l.y, l]));
+  const starAt = new Map(stars.map(s => [s.x + ',' + s.y, s.id]));
+  const oilAt = new Set(oils0);
+
+  /** 动态可站立判定（st = {pos, boxesSet, lit, waterLevel, windOffset}） */
+  const standable = (x, y, st) => {
+    if (x < 0 || y < 0 || x >= lv.map.w || y >= lv.map.h) return false;
+    if (isWall(lv, x, y)) return false;
+    const k = x + ',' + y;
+    if (st.boxesSet.has(k)) return false;
+    if (isWater(lv, x, y)) {
+      if (st.waterLevel === 'high') return stoneAt.has(k);
+      const w = waterAt.get(k);
+      return !!(w && w.shallow === true);
+    }
+    const g = gatesAt.get(k);
+    if (g) {
+      const ctl = gateCtl.get(g.id) || { switches: [], lamps: [] };
+      let open = !!g.open;
+      if (!open) open = ctl.switches.some(sc => sc === st.pos || st.boxesSet.has(sc));
+      if (!open) open = ctl.lamps.some(l => st.lit.includes(l.id));
+      if (!open && ctl.switches.length === 0 && ctl.lamps.length === 0) open = true; // 无控制器门按常开（宽松）
+      return open;
+    }
+    return true;
+  };
+
+  /** 风带推动：站上风带格后持续被推，直到落回普通地面或被阻挡 */
+  const windDirAt = (k, windOffset) => {
+    const base = windAt.get(k);
+    if (!base) return null;
+    return WIND_CYCLE[(WIND_CYCLE.indexOf(base) + windOffset) % 4];
+  };
+  const resolveWind = (x, y, st) => {
+    let cx = x;
+    let cy = y;
+    for (let guard = 0; guard < 64; guard++) {
+      const d = windDirAt(cx + ',' + cy, st.windOffset);
+      if (!d) break;
+      const [dx, dy] = DIRV[d];
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (!standable(nx, ny, st) || st.boxesSet.has(nx + ',' + ny)) break; // 被阻挡，留在风带格
+      cx = nx;
+      cy = ny;
+      if (!windAt.has(nx + ',' + ny)) break; // 吹出风带
+    }
+    return [cx, cy];
+  };
+
+  /** 落点拾取（星/灯油），返回浅拷贝新状态 */
+  const applyCell = (x, y, st) => {
+    const k = x + ',' + y;
+    const ns = { ...st, boxesSet: st.boxesSet, lit: st.lit, oils: st.oils, stars: st.stars };
+    if (starAt.has(k) && !ns.stars.includes(starAt.get(k))) {
+      ns.stars = ns.stars.concat(starAt.get(k)).sort();
+    }
+    if (oilAt.has(k) && ns.oils.includes(k) && !ns.carry) {
+      ns.carry = true;
+      ns.oils = ns.oils.filter(o => o !== k);
+    }
+    return ns;
+  };
+
+  const encode = st =>
+    st.pos + '@b[' + st.boxes.join('|') + ']l[' + st.lit.join('|') + ']o[' + st.oils.join('|')
+    + ']c' + (st.carry ? 1 : 0) + 'w' + st.waterLevel + 'v' + st.windOffset + 's[' + st.stars.join('|') + ']';
+
+  const initial = {
+    pos: spawn.x + ',' + spawn.y,
+    boxes: boxes0.slice(),
+    boxesSet: new Set(boxes0),
+    lit: [],
+    oils: oils0.slice(),
+    carry: false,
+    waterLevel: 'high',
+    windOffset: 0,
+    stars: [],
+  };
+  if (!standable(spawn.x, spawn.y, initial)) {
+    return { status: 'fail', msg: 'spawn 在初始状态下不可站立（墙体/关闭的门/高水位水面）' };
+  }
+
+  const goalCell = goal.x + ',' + goal.y;
+  const allStars = starIds.length;
+  const visited = new Set([encode(initial)]);
+  const everCollected = new Set();
+
+  /* 求解顺序启发式：优先「星收集得多 + 离终点/最近星近」的状态。
+     仅影响探索顺序——目标状态仍须真实可达才会报 ok，穷举完整性不受影响 */
+  const priority = (ns) => {
+    const [x, y] = ns.pos.split(',').map(Number);
+    const remain = allStars - ns.stars.length;
+    if (remain === 0) {
+      return Math.abs(x - goal.x) + Math.abs(y - goal.y);
+    }
+    let nearest = Infinity;
+    for (const s of stars) {
+      if (ns.stars.includes(s.id)) continue;
+      nearest = Math.min(nearest, Math.abs(x - s.x) + Math.abs(y - s.y));
+    }
+    return remain * 1000 + nearest;
+  };
+
+  /* 最小堆（[priority, seq, state]），seq 保 FIFO 稳定 */
+  const heapPush = (heap, item) => {
+    heap.push(item);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (heap[p][0] <= heap[i][0]) break;
+      const t = heap[p];
+      heap[p] = heap[i];
+      heap[i] = t;
+      i = p;
+    }
+  };
+  const heapPop = (heap) => {
+    const top = heap[0];
+    const last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+        if (m === i) break;
+        const t = heap[m];
+        heap[m] = heap[i];
+        heap[i] = t;
+        i = m;
+      }
+    }
+    return top;
+  };
+
+  const heap = [];
+  let seq = 0;
+  heapPush(heap, [priority(initial), seq++, initial]);
+
+  const push = (ns) => {
+    const [nx, ny] = ns.pos.split(',').map(Number);
+    // 新状态落点必须合法：如离开压力开关后门关闭，跨门一步不成立
+    if (!standable(nx, ny, ns)) return;
+    for (const id of ns.stars) everCollected.add(id);
+    const k = encode(ns);
+    if (!visited.has(k)) {
+      visited.add(k);
+      heapPush(heap, [priority(ns), seq++, ns]);
+    }
+  };
+
+  while (heap.length) {
+    const st = heapPop(heap)[2];
+    const [px, py] = st.pos.split(',').map(Number);
+    if (st.stars.length === allStars && st.pos === goalCell) {
+      return { status: 'ok' };
+    }
+    if (visited.size >= STATE_CAP) return { status: 'cap' };
+
+    /* 移动（含风带推动） */
+    for (const dirName of Object.keys(DIRV)) {
+      const [dx, dy] = DIRV[dirName];
+      const nk = (px + dx) + ',' + (py + dy);
+      if (!standable(px + dx, py + dy, st)) continue;
+      if (onewayAt.get(st.pos) && onewayAt.get(st.pos) !== dirName) continue;
+      if (onewayAt.get(nk) && onewayAt.get(nk) !== dirName) continue;
+      const [fx, fy] = resolveWind(px + dx, py + dy, st);
+      const ns = applyCell(fx, fy, st);
+      ns.pos = fx + ',' + fy;
+      push(ns);
+    }
+
+    /* 推箱 */
+    for (const dirName of Object.keys(DIRV)) {
+      const [dx, dy] = DIRV[dirName];
+      const nk = (px + dx) + ',' + (py + dy);
+      if (!st.boxesSet.has(nk)) continue;
+      const bx = px + 2 * dx;
+      const by = py + 2 * dy;
+      const bk = bx + ',' + by;
+      if (!standable(bx, by, st)) continue;
+      if (st.boxesSet.has(bk)) continue;
+      if (onewayAt.get(st.pos) && onewayAt.get(st.pos) !== dirName) continue;
+      if (onewayAt.get(nk) && onewayAt.get(nk) !== dirName) continue;
+      const boxes = st.boxes.filter(b => b !== nk).concat(bk).sort();
+      const ns = applyCell(px + dx, py + dy, st);
+      ns.pos = nk;
+      ns.boxes = boxes;
+      ns.boxesSet = new Set(boxes);
+      push(ns);
+    }
+
+    /* 互动（自身格与四邻格）：携油点灯 / 月相开关 / 风车开关 */
+    const nearCells = [[px, py], [px, py - 1], [px, py + 1], [px - 1, py], [px + 1, py]];
+    for (const [cx, cy] of nearCells) {
+      const ck = cx + ',' + cy;
+      if (lampAt.has(ck)) {
+        const lamp = lampAt.get(ck);
+        if (st.carry && !st.lit.includes(lamp.id)) {
+          const ns = { ...st, boxesSet: st.boxesSet, lit: st.lit.concat(lamp.id).sort(), carry: false, oils: st.oils, stars: st.stars };
+          push(ns);
+        }
+      }
+      if (moonAt.has(ck)) {
+        const ns = { ...st, boxesSet: st.boxesSet, lit: st.lit, oils: st.oils, stars: st.stars, waterLevel: st.waterLevel === 'high' ? 'low' : 'high' };
+        push(ns);
+      }
+      if (windswitchAt.has(ck)) {
+        const ns = { ...st, boxesSet: st.boxesSet, lit: st.lit, oils: st.oils, stars: st.stars, windOffset: (st.windOffset + 1) % 4 };
+        push(ns);
+      }
+    }
+  }
+
+  const missing = starIds.filter(id => !everCollected.has(id));
+  if (missing.length) {
+    return {
+      status: 'fail',
+      msg: '状态图穷举 ' + visited.size + ' 个状态后，星 ' + missing.join('、') + ' 仍无法收集，'
+        + (goal.type === 'cake' ? '蛋糕结局' : '传送门') + '无法激活',
+    };
+  }
+  return {
+    status: 'fail',
+    msg: '所有星均可收集，但集齐后无法到达' + (goal.type === 'cake' ? '蛋糕' : '传送门')
+      + '（穷举 ' + visited.size + ' 个状态）',
+  };
+}
+
 function rule9(game, R) {
   for (const lv of game.levels || []) {
     if (!lv || !lv.map || !Array.isArray(lv.map.rows) || !Array.isArray(lv.entities)) continue;
     const tag = '关 ' + lv.id;
-    const spawn = entitiesOf(lv, 'spawn')[0];
-    if (!spawn) continue; // 规则 4 已报
 
-    const waters = entitiesOf(lv, 'water');
-    const stones = entitiesOf(lv, 'stepstone');
-    const gates = new Map();   // 'x,y' → gate 实体
-    const oneways = new Map(); // 'x,y' → dir
-    for (const e of lv.entities) {
-      if (!e) continue;
-      if (e.type === 'gate') gates.set(e.x + ',' + e.y, e);
-      else if (e.type === 'oneway') oneways.set(e.x + ',' + e.y, e.dir);
-    }
-
-    const passable = (x, y, mode) => {
-      if (x < 0 || y < 0 || x >= lv.map.w || y >= lv.map.h) return false;
-      if (isWall(lv, x, y)) return false;
-      if (isWater(lv, x, y)) {
-        const w = waters.find(w => w.x === x && w.y === y);
-        const stone = stones.some(s => s.x === x && s.y === y);
-        if (mode === 'initial') return stone; // 高水位：仅浮桥石可站立
-        return stone || !!(w && w.shallow === true); // high/low 并集
-      }
-      return true; // 其余地形可通行；箱子/风带等动态机制不参与静态判定
-    };
-
-    const canStep = (x, y, dx, dy, mode) => {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!passable(nx, ny, mode)) return false;
-      const dir = DIR_BY_DELTA[dx + ',' + dy];
-      const o1 = oneways.get(x + ',' + y);
-      if (o1 && dir !== o1) return false; // 离开单向门须沿 dir
-      const o2 = oneways.get(nx + ',' + ny);
-      if (o2 && dir !== o2) return false; // 进入单向门须沿 dir
-      if (mode === 'initial' && gates.has(nx + ',' + ny)) return false; // 门关
-      return true;
-    };
-
-    const bfs = (mode) => {
-      if (!passable(spawn.x, spawn.y, mode)) return new Set();
-      const seen = new Set([spawn.x + ',' + spawn.y]);
-      const queue = [{ x: spawn.x, y: spawn.y }];
-      while (queue.length) {
-        const c = queue.shift();
-        for (const dirName of Object.keys(DIRV)) {
-          const [dx, dy] = DIRV[dirName];
-          if (!canStep(c.x, c.y, dx, dy, mode)) continue;
-          const k = (c.x + dx) + ',' + (c.y + dy);
-          if (!seen.has(k)) {
-            seen.add(k);
-            queue.push({ x: c.x + dx, y: c.y + dy });
-          }
-        }
-      }
-      return seen;
-    };
-
-    const init = bfs('initial');
-    if (init.size === 0) {
-      R.err('规则 9', tag + ' spawn 在初始状态下不可站立或无出口');
-    }
-    const union = bfs('union');
-    for (const s of entitiesOf(lv, 'star')) {
-      if (!union.has(s.x + ',' + s.y)) {
-        R.err('规则 9', tag + ' 星 "' + s.id + '" (' + s.x + ',' + s.y + ') 在任一合法状态均不可达（静态近似）');
+    /* 无控制器的门 → 提示（状态搜索按常开处理，避免对话开门误报） */
+    for (const g of entitiesOf(lv, 'gate')) {
+      const controlled = entitiesOf(lv, 'switch').some(s => s.target === g.id)
+        || entitiesOf(lv, 'lamp').some(l => l.target === g.id);
+      if (!controlled) {
+        R.warn(tag + ' gate "' + g.id + '" 无 switch/lamp 控制，状态搜索按常开处理'
+          + '（若由对话等控制，请在数据中声明控制方式）');
       }
     }
-    const goal = lv.entities.find(e => e && (e.type === 'portal' || e.type === 'cake'));
-    if (goal && !union.has(goal.x + ',' + goal.y)) {
-      R.err('规则 9', tag + ' ' + label(goal) + ' (' + goal.x + ',' + goal.y + ') 在任一合法状态均不可达（静态近似）');
+
+    const search = stateSearch(lv);
+    if (search.status === 'fail') {
+      R.err('规则 9', tag + ' ' + search.msg);
+    } else if (search.status !== 'ok') {
+      if (search.status === 'cap') {
+        R.note('规则 9 · ' + tag + ' · 状态搜索超过 ' + STATE_CAP + ' 状态上限，采用静态近似结论');
+      }
+      const sr = staticReachability(lv);
+      if (sr.spawnBlocked) {
+        R.err('规则 9', tag + ' spawn 在任一合法状态均不可站立或无出口（静态近似）');
+      }
+      for (const id of sr.stars) {
+        R.err('规则 9', tag + ' 星 "' + id + '" 在任一合法状态均不可达（静态近似）');
+      }
+      if (sr.goal) {
+        R.err('规则 9', tag + ' ' + sr.goal + ' 在任一合法状态均不可达（静态近似）');
+      }
     }
   }
-  R.note('规则 9 当前为静态近似（地形 + 门开/关 + 水位高/低并集 + 单向门方向）；推箱/灯油/水位切换等'
-    + '完整状态图搜索为 §11 标注的预留自动校验，待 #11 数据落地后补全');
+  R.note('规则 9 · 状态图搜索已覆盖：推箱压开关、携油点灯、月相/风车开关、单向门、风带、门与高/低水位；'
+    + '对话条件星、清凉条计时、落水复位按宽松假设处理（仅可能漏报、不误报）');
 }
 
 /* ════════════════════════ 规则 10：占位文案与存档键 ════════════════════════ */
@@ -1287,7 +1575,7 @@ function selfTest() {
     lv.map.rows[6] = '#'.repeat(40); // 第 6 行整行墙，隔断下方区域
     lv.entities.push({ type: 'star', id: 's1_sealed', x: 10, y: 10 });
     lv.starCount = 5;
-    assert.ok(hasErr(runRules(g), '规则 9', /任一合法状态均不可达/));
+    assert.ok(hasErr(runRules(g), '规则 9', /s1_sealed/));
   });
   t('规则 9：单向门逆向不可通行', () => {
     const g = clone(valid);
@@ -1302,6 +1590,186 @@ function selfTest() {
     s.x = 38;
     s.y = 25;
     assert.ok(hasErr(runRules(g), '规则 9', /s1_4/));
+  });
+  t('规则 9：推箱压开关开门的合法解不被误报', () => {
+    const g = clone(valid);
+    const lv = g.levels[0];
+    // 墙横贯第 10 行（x=1..38 全封），唯一缺口 (20,10) 放 gate；开关 (6,5) 在北侧走廊尽头，
+    // 礼物盒从 (10,5) 向西推到开关上 → 门常开 → 南下收星 → 传送门
+    const wallRow = lv.map.rows[10].split('');
+    for (let x = 1; x <= 38; x++) wallRow[x] = '#';
+    wallRow[20] = '\u00b7';
+    lv.map.rows[10] = wallRow.join('');
+    // 走廊：第 5 行 x=6..10，南北以第 4/6 行墙封闭、西端 (5,5) 封死，
+    // 玩家只能从东端 (11,5) 进入，箱子位置被限制在 5 格内（状态空间可控）
+    for (const y of [4, 6]) {
+      const r = lv.map.rows[y].split('');
+      for (let x = 6; x <= 10; x++) r[x] = '#';
+      lv.map.rows[y] = r.join('');
+    }
+    const r5 = lv.map.rows[5].split('');
+    r5[5] = '#';
+    lv.map.rows[5] = r5.join('');
+    // NPC 从 x=5 移开（第 5 行西端改为墙），黑羊让出走廊
+    lv.entities.filter(e => e.type === 'npc').forEach((e, i) => {
+      e.x = 4;
+      e.y = 2 + i;
+    });
+    const sheep = lv.entities.find(e => e.type === 'sheep');
+    sheep.x = 12;
+    sheep.y = 6;
+    lv.entities.push({ type: 'gate', id: 'gmain', x: 20, y: 10, open: false });
+    lv.entities.push({ type: 'switch', id: 'swmain', x: 6, y: 5, target: 'gmain' });
+    lv.entities.push({ type: 'box', x: 10, y: 5 });
+    const star = lv.entities.find(e => e.type === 'star' && e.id === 's1_4');
+    star.x = 30;
+    star.y = 12;
+    const portal = lv.entities.find(e => e.type === 'portal');
+    portal.x = 30;
+    portal.y = 14;
+    const res = stateSearch(lv);
+    assert.strictEqual(res.status, 'ok', JSON.stringify(res));
+    const R = runRules(g);
+    assert.strictEqual(R.errors.filter(e => e.rule === '规则 9').length, 0);
+  });
+  t('规则 9：压力开关无人压住时门永闭报错', () => {
+    const g = clone(valid);
+    const lv = g.levels[0];
+    const wallRow = lv.map.rows[10].split('');
+    for (let x = 1; x <= 38; x++) wallRow[x] = '#';
+    wallRow[20] = '\u00b7';
+    lv.map.rows[10] = wallRow.join('');
+    lv.entities.push({ type: 'gate', id: 'gmain', x: 20, y: 10, open: false });
+    lv.entities.push({ type: 'switch', id: 'swmain', x: 10, y: 12, target: 'gmain' });
+    const star = lv.entities.find(e => e.type === 'star' && e.id === 's1_4');
+    star.x = 30;
+    star.y = 12;
+    const portal = lv.entities.find(e => e.type === 'portal');
+    portal.x = 30;
+    portal.y = 14;
+    assert.ok(hasErr(runRules(g), '规则 9', /s1_4/));
+  });
+
+  /** 关 2 口袋布局：星 s2_4 关在 (12,16)，唯一入口 gate1 (12,15)，灯柱/灯油移置门外 */
+  const sealL2Pocket = (g) => {
+    const lv = g.levels[1];
+    const row15 = lv.map.rows[15].split('');
+    for (let x = 8; x <= 14; x++) row15[x] = '#';
+    row15[12] = '\u00b7';
+    lv.map.rows[15] = row15.join('');
+    const row17 = lv.map.rows[17].split('');
+    for (let x = 8; x <= 14; x++) row17[x] = '#';
+    lv.map.rows[17] = row17.join('');
+    for (const y of [16]) {
+      const r = lv.map.rows[y].split('');
+      r[8] = '#';
+      r[14] = '#';
+      lv.map.rows[y] = r.join('');
+    }
+    const gate1 = lv.entities.find(e => e.type === 'gate' && e.id === 'gate1');
+    gate1.x = 12;
+    gate1.y = 15;
+    const lamp1 = lv.entities.find(e => e.type === 'lamp' && e.id === 'lamp1');
+    lamp1.x = 10;
+    lamp1.y = 14;
+    const oil1 = lv.entities.find(e => e.type === 'oil');
+    oil1.x = 8;
+    oil1.y = 14;
+    const s = lv.entities.find(e => e.type === 'star' && e.id === 's2_4');
+    s.x = 12;
+    s.y = 16;
+    // 只保留口袋机制三件套（gate1/lamp1/一罐油），其余灯柱/门/油移除以缩窄搜索空间
+    lv.entities = lv.entities.filter(e =>
+      (e.type !== 'gate' || e.id === 'gate1')
+      && (e.type !== 'lamp' || e.id === 'lamp1')
+      && e.type !== 'oil');
+    lv.entities.push(oil1);
+    return g;
+  };
+  /** 微型点灯关卡（12×8）：油→灯柱→gate→星→portal，用于结论性验证点灯机制 */
+  const buildMiniLampLevel = () => ({
+    map: {
+      w: 12, h: 8,
+      rows: [
+        '############',
+        '#··········#',
+        '#··········#',
+        '#··O·······#',
+        '#···L···G··#',
+        '#······#·#·#',
+        '############',
+        '############',
+      ],
+      legend: { '#': 'wall', '\u00b7': 'floor' },
+    },
+    entities: [
+      { type: 'spawn', x: 1, y: 1 },
+      { type: 'star', id: 's1', x: 8, y: 5 },
+      { type: 'portal', x: 10, y: 3, to: 2 },
+      { type: 'gate', id: 'g1', x: 8, y: 4, open: false },
+      { type: 'lamp', id: 'l1', x: 4, y: 4, target: 'g1', lit: false },
+      { type: 'oil', x: 3, y: 3 },
+    ],
+  });
+  t('规则 9：携油点灯开门（微型关卡，结论性）', () => {
+    const res = stateSearch(buildMiniLampLevel());
+    assert.strictEqual(res.status, 'ok', JSON.stringify(res));
+  });
+  t('规则 9：无灯油 → 门后星不可达（微型关卡，结论性）', () => {
+    const lv = buildMiniLampLevel();
+    lv.entities = lv.entities.filter(e => e.type !== 'oil');
+    const res = stateSearch(lv);
+    assert.strictEqual(res.status, 'fail', JSON.stringify(res));
+    assert.ok(/s1/.test(res.msg), res.msg);
+  });
+  t('规则 9：携油点灯开门的合法解不被误报', () => {
+    const g = sealL2Pocket(clone(valid));
+    const res = stateSearch(g.levels[1]);
+    assert.strictEqual(res.status, 'ok', JSON.stringify(res));
+    const R = runRules(g);
+    assert.strictEqual(R.errors.filter(e => e.rule === '规则 9').length, 0);
+  });
+  t('规则 9：灯油被墙封死 → 星不可收集报错', () => {
+    const g = sealL2Pocket(clone(valid));
+    const lv = g.levels[1];
+    lv.map.rows[23] = '#'.repeat(40); // 第 23 行整行墙，灯油全部封在南侧
+    lv.entities.filter(e => e.type === 'oil').forEach((o, i) => {
+      o.x = 5 + i;
+      o.y = 24;
+    });
+    assert.ok(hasErr(runRules(g), '规则 9', /s2_4/));
+  });
+  t('规则 9：关 4 水位切换全场景（高→浮桥收星→低→浅滩收星→再高→传送门）不被误报', () => {
+    const g = clone(valid);
+    const lv = g.levels[3];
+    lv.map.legend['~'] = 'water';
+    // 湖区第 8–12 行 x=6..16，中央岛 (10,8)/(10,9) 保留地面
+    for (let y = 8; y <= 12; y++) {
+      const r = lv.map.rows[y].split('');
+      for (let x = 6; x <= 16; x++) {
+        if (x === 10 && (y === 8 || y === 9)) continue;
+        r[x] = '~';
+      }
+      lv.map.rows[y] = r.join('');
+    }
+    for (let y = 8; y <= 12; y++) {
+      for (let x = 6; x <= 16; x++) {
+        if (x === 10 && (y === 8 || y === 9)) continue;
+        lv.entities.push({ type: 'water', x, y, waterLevel: 'high', shallow: y === 12 && x >= 11 });
+      }
+    }
+    for (let x = 6; x <= 10; x++) lv.entities.push({ type: 'stepstone', x, y: 10 });
+    lv.entities.push({ type: 'moonswitch', id: 'moon1', x: 17, y: 10 });
+    const s3 = lv.entities.find(e => e.type === 'star' && e.id === 's4_3');
+    s3.x = 10;
+    s3.y = 9;
+    const s4 = lv.entities.find(e => e.type === 'star' && e.id === 's4_4');
+    s4.x = 14;
+    s4.y = 12;
+    const res = stateSearch(lv);
+    assert.strictEqual(res.status, 'ok', JSON.stringify(res));
+    const R = runRules(g);
+    assert.strictEqual(R.errors.filter(e => e.rule === '规则 9').length, 0);
   });
 
   console.log('自测：规则 10');
@@ -1375,4 +1843,5 @@ if (require.main === module) main();
 module.exports = {
   loadGame, makeReport, checkBase, rule1, rule2, rule3, rule4, rule5, rule6,
   rule7, rule8, rule9, rule10, scanText, mechanismScope, buildValidGame,
+  stateSearch, staticReachability,
 };
