@@ -279,7 +279,12 @@
   /* ════════════════════════ 渲染器 ════════════════════════ */
 
   class Renderer {
-    constructor(canvas) {
+    /**
+     * @param {HTMLCanvasElement} canvas
+     * @param {object} [opts] { hudReserve: 画布上方为 HUD 预留的 CSS 高度（px），
+     *   缩放计算时从可用高度中扣除，保证 HUD 带 + 画布整体不超出窗口 }
+     */
+    constructor(canvas, opts) {
       this.canvas = canvas;
       canvas.width = VIEW_W;
       canvas.height = VIEW_H;
@@ -288,6 +293,7 @@
       this.atlasCache = new Map();    // 瓦片图集缓存：key = [tilesetId, version, paletteKey]
       this.templateCache = new Map(); // 模板色素材缓存：key = [tilesetId, version, type]
       this.scale = 1;
+      this.hudReserve = (opts && Number(opts.hudReserve) > 0) ? Number(opts.hudReserve) : 0;
       this._onResize = () => this.resize();
       if (typeof root.addEventListener === 'function') {
         root.addEventListener('resize', this._onResize);
@@ -300,7 +306,7 @@
       const dpr = Number.isFinite(root.devicePixelRatio) && root.devicePixelRatio > 0
         ? root.devicePixelRatio : 1;
       const availW = ((root.innerWidth || 0) - 24) * dpr;
-      const availH = ((root.innerHeight || 0) - 24) * dpr;
+      const availH = ((root.innerHeight || 0) - 24 - this.hudReserve) * dpr;
       const k = Math.max(
         1,
         Math.min(Math.floor(availW / VIEW_W), Math.floor(availH / VIEW_H))
@@ -310,6 +316,9 @@
       st.width = VIEW_W * k / dpr + 'px';
       st.height = VIEW_H * k / dpr + 'px';
       st.imageRendering = 'pixelated';
+      const stage = this.canvas.parentElement;
+      // 对话框以舞台为锚，宽度须跟随画布，不能被 HUD 文本撑大。
+      if (stage && stage.id === 'stage') stage.style.width = st.width;
       return k;
     }
 
@@ -912,7 +921,7 @@
     Camera: Camera,
     Renderer: Renderer,
     Input: Input,
-    createRenderer: (canvas) => new Renderer(canvas),
+    createRenderer: (canvas, opts) => new Renderer(canvas, opts),
     createCamera: () => new Camera(),
     createInput: (opts) => new Input(opts),
     KEY_BINDINGS: KEY_BINDINGS,

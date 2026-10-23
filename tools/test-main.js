@@ -33,7 +33,7 @@ const UI_IDS = [
   'title-screen', 'btn-start', 'btn-continue', 'btn-levels', 'btn-help', 'btn-sound',
   'level-screen', 'level-grid', 'btn-back',
   'help-screen', 'btn-help-back',
-  'dialog', 'dialog-portrait', 'dialog-name', 'dialog-text', 'dialog-hint', 'dialog-options',
+  'dialog', 'dialog-backdrop', 'dialog-portrait', 'dialog-name', 'dialog-text', 'dialog-hint', 'dialog-options',
   'pause-screen', 'btn-resume', 'btn-restart', 'btn-quit',
   'clear-screen', 'clear-text', 'btn-next',
   'ending-screen', 'ending-body', 'btn-ending',
@@ -99,7 +99,7 @@ registry.set('game', new FakeCanvas());
 // 复刻 index.html 初始状态：屏幕层/对话框/HUD/暂未开放按钮默认隐藏，按钮默认文案
 for (const id of [
   'help-screen', 'level-screen', 'pause-screen', 'clear-screen', 'ending-screen',
-  'dialog', 'hud', 'btn-continue', 'btn-levels',
+  'dialog', 'dialog-backdrop', 'hud', 'btn-continue', 'btn-levels',
 ]) {
   registry.get(id).classList.add('hidden');
 }
@@ -314,6 +314,7 @@ test('对话往返：打字机进入/快进/翻页/旁白样式/退出清空无�
   tick(game);
   assert.strictEqual(game.state, STATE.DIALOGUE);
   assert.ok(shown('dialog'));
+  assert.ok(shown('dialog-backdrop'), '对话中背景虚化层显示');
   assert.ok(shown('hud'), '对话中 HUD 保持可见');
   assert.strictEqual(text('dialog-name'), 'Byeori');
   assert.strictEqual(text('dialog-text'), '', '打字机从空文本开始（首帧不足 25ms）');
@@ -340,6 +341,7 @@ test('对话往返：打字机进入/快进/翻页/旁白样式/退出清空无�
   tick(game);
   assert.strictEqual(game.state, STATE.PLAYING);
   assert.ok(hidden('dialog'));
+  assert.ok(hidden('dialog-backdrop'), '退出对话后虚化层隐藏');
   assert.strictEqual(text('dialog-name'), '', '对话框内容清空');
   assert.strictEqual(text('dialog-text'), '');
   assert.strictEqual(game._dialog, null);
@@ -795,7 +797,7 @@ test('全状态往返无泄漏：完整循环两遍，实例/监听/HUD/对话�
   assert.strictEqual(game._uiHandlers.length, handlerCount, 'UI 监听数量不变');
   assert.strictEqual(game.state, STATE.TITLE);
   assert.ok(shown('title-screen'));
-  assert.ok(hidden('hud') && hidden('dialog') && hidden('pause-screen')
+  assert.ok(hidden('hud') && hidden('dialog') && hidden('dialog-backdrop') && hidden('pause-screen')
     && hidden('clear-screen') && hidden('ending-screen'), '仅标题屏幕可见');
   assert.strictEqual(text('dialog-name'), '');
   assert.strictEqual(text('dialog-text'), '');
@@ -1216,6 +1218,20 @@ test('销毁：解绑后按键/按钮全部失效，渲染器与输入释放', (
   press('Escape');
   tick(game);
   assert.strictEqual(game.state, STATE.PLAYING, '销毁后按键不再生效');
+});
+
+test('销毁：对话中销毁一并清掉对话框与背景虚化层（复用 DOM 不残留遮罩）', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 10, 15); // Byeori 旁
+  tick(game);
+  press('e');
+  tick(game);
+  assert.strictEqual(game.state, STATE.DIALOGUE);
+  assert.ok(shown('dialog') && shown('dialog-backdrop'));
+  game.destroy();
+  assert.ok(hidden('dialog'), '销毁后对话框隐藏');
+  assert.ok(hidden('dialog-backdrop'), '销毁后背景虚化层隐藏');
 });
 
 test('index.html：无「玻璃碎片」遗留文案、选关按钮暂隐（#10 开放）', () => {
