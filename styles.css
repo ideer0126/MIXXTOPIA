@@ -408,5 +408,11 @@ body {
   #dialog {
     bottom: 92px;
   }
-}
 
+  /* 矮横屏为抬高的对话框上方留出空间，头像保留 3:4 比例。 */
+  @media (orientation: landscape) and (max-height: 450px) {
+    #dialog-portrait {
+      width: min(33.333%, 12vh);
+    }
+  }
+}

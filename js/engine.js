@@ -316,6 +316,9 @@
       st.width = VIEW_W * k / dpr + 'px';
       st.height = VIEW_H * k / dpr + 'px';
       st.imageRendering = 'pixelated';
+      const stage = this.canvas.parentElement;
+      // 对话框以舞台为锚，宽度须跟随画布，不能被 HUD 文本撑大。
+      if (stage && stage.id === 'stage') stage.style.width = st.width;
       return k;
     }
 

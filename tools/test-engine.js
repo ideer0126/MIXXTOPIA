@@ -432,13 +432,17 @@ test('设备像素整数缩放：高密度、分数 DPR、非法 DPR 与小窗�
   const saved = { width: global.innerWidth, height: global.innerHeight, dpr: global.devicePixelRatio };
   try {
     const canvas = new FakeCanvas();
+    const stage = { id: 'stage', style: {} };
+    canvas.parentElement = stage;
     const renderer = engine.createRenderer(canvas);
+    assert.strictEqual(stage.style.width, canvas.style.width, '初始舞台宽度跟随画布');
     for (const [dpr, scale] of [[1, 3], [1.25, 3], [1.5, 4], [2, 6], [0.75, 2]]) {
       global.devicePixelRatio = dpr;
       assert.strictEqual(renderer.resize(), scale);
       assert.strictEqual(renderer.scale, scale);
       assert.strictEqual(canvas.style.width, 320 * scale / dpr + 'px');
       assert.strictEqual(canvas.style.height, 224 * scale / dpr + 'px');
+      assert.strictEqual(stage.style.width, canvas.style.width, 'DPR 改变后舞台宽度跟随画布');
       assert.strictEqual(canvas.width, 320);
       assert.strictEqual(canvas.height, 224);
       assert.strictEqual(canvas.style.imageRendering, 'pixelated');
@@ -449,6 +453,7 @@ test('设备像素整数缩放：高密度、分数 DPR、非法 DPR 与小窗�
       assert.strictEqual(renderer.resize(), 3);
       assert.strictEqual(canvas.style.width, '960px');
       assert.strictEqual(canvas.style.height, '672px');
+      assert.strictEqual(stage.style.width, canvas.style.width);
     }
     global.devicePixelRatio = 2;
     for (const size of [10, undefined]) {
@@ -456,6 +461,7 @@ test('设备像素整数缩放：高密度、分数 DPR、非法 DPR 与小窗�
       assert.strictEqual(renderer.resize(), 1);
       assert.strictEqual(canvas.style.width, '160px');
       assert.strictEqual(canvas.style.height, '112px');
+      assert.strictEqual(stage.style.width, canvas.style.width);
     }
     renderer.destroy();
   } finally {
