@@ -133,7 +133,7 @@ MIXXTOPIA/
 | 9 | 收集与解谜机制：星星、开关、门、传送门 | 程序 | js/engine.js 机制部分 | M2 | #4 | ⚪ 未开始 |
 | 10 | 选关界面与解锁规则 | 程序 | js/main.js 选关部分 | M2 | #8 | ⚪ 未开始 |
 | 11 | 6 关地图数据（含谜题布局） | 策划 | js/data.js 地图 | M3 | #3 #9 | ⚪ 未开始 |
-| 12 | 6 成员剧情对话文案接入 | 策划 | js/data.js 对话 | M3 | #3 #7 | ✅ 已实现（本地：data.js 46 节点 + main.js 节点语义/选项 + validate.js + 测试，待评审提交） |
+| 12 | 6 成员剧情对话文案接入 | 策划 | js/data.js 对话 | M3 | #3 #7 | ✅ 已实现（data.js 46 节点 + main.js 节点语义/选项 + 测试；校验器用 #30 的 tools/validate.js） |
 | 13 | 像素美术：NSWER + 6 成员精灵、瓦片、道具 | 美术 | js/sprites.js | M3 | #4 | ⚪ 未开始 |
 | 14 | 音频：芯片音效 + 6 关 BGM 循环 | 音频 | js/audio.js | M4 | #4 | ⚪ 未开始 |
 | 15 | 表现打磨：粒子、过场演出、结算动画 | 程序 | js/engine.js 粒子 | M4 | #9 #13 | ⚪ 未开始 |
@@ -163,7 +163,7 @@ MIXXTOPIA/
 - [x] #6 游戏状态机与 UI 接线：标题/游玩/对话/暂停/结算/结局六态 + HUD（PR #26）
 - [x] #7 对话系统：打字机 25ms/字、按住加速、点按快进、E/空格/Enter/点击翻页、对话期间玩家锁定与计时暂停（分支 feat/7-dialogue-system，PR #27）
 - [x] 剧情扩展（2026-10-23）：GAME_DESIGN.md v0.3 —— 世界观加入官方概念「互为彼此的专属缪斯」与神话倒影层（Lily=珀耳塞福涅 / Haewon=哈迪斯 / Sullyoon=阿芙洛狄忒 / Bae=德墨忒尔 / Kyujin=宙斯 / Jiwoo=赫尔墨斯）；小分队名单确认并落地到对话稿（§13）；依据：用户提供的抖音图文截图 + 新 MV 公开报道
-- [x] #12 对话文案接入（2026-10-23，本地未提交）：js/data.js 全量对话（46 节点，§7 格式）；main.js 对话引擎补节点语义（intro/npc/hint/check 解析、once/next、选项列表 ↑↓+E、star/clear/load/sheep 自动分发、黑羊计数）；index.html/styles.css 选项 UI；tools/validate.js 对话校验；测试 37 项全过 + 无头 Chrome 冒烟通过
+- [x] #12 对话文案接入（2026-10-23）：js/data.js 全量对话（46 节点，§7 格式）；main.js 对话引擎补节点语义（intro/npc/hint/check 解析、once/next、选项列表 ↑↓+E、star/clear/load/sheep 自动分发、黑羊计数）；index.html/styles.css 选项 UI；测试 37 项全过 + 无头 Chrome 冒烟通过；数据校验统一走 #30 的 tools/validate.js（entry 语义已对齐）
 
 **下一步**
 - [ ] M1 收尾：合并 #7 后进入 M2
