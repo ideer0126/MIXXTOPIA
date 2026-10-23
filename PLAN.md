@@ -16,7 +16,7 @@
 | 部署 | GitHub Pages，静态托管，移动端可玩 |
 | 定位 | 粉丝同人作品，非官方、非商用 |
 
-**概念关键词**：生日许愿 · 梦幻 · 三部曲终章（Blue Valentine → Heavy Serenade → Strange Muse）· 首次小分队曲 · "긴 소원을 부릅니다, 응답하라 NSWER"
+**概念关键词**：生日许愿 · 梦幻 · 三部曲终章（Blue Valentine → Heavy Serenade → Strange Muse）· 首次小分队曲 · 互为彼此的专属缪斯 · "긴 소원을 부릅니다, 응답하라 NSWER"
 
 ---
 
@@ -33,11 +33,11 @@ NSWER 在生日夜被一道星光带入梦境世界 **MIXXTOPIA**。六位缪斯
 | 1 | Birthday Wish (긴 소원) | 生日烛光梦境 | 全员登场 | 教学：移动/对话/收集/推箱/开关 |
 | 2 | Kerosene | 灯油与火焰 | Jiwoo | 开关解谜（点燃灯柱） |
 | 3 | RudE TaLK | 霓虹态度街头 | Kyujin | 单向门 + 路径推理 |
-| 4 | Sing to the Moon (너는 달) | 月夜湖畔 | 小分队 A* | 水面/浮桥解谜 |
-| 5 | Hot 'n Unbothered | 炎热沙漠绿洲 | 小分队 B* | 迷宫 + 限时收集 |
-| 6 | WHIP (휙) | 疾风终章 | 小分队 C* + 全员 | 综合谜题 + 结局演出 |
+| 4 | Sing to the Moon (너는 달) | 月夜湖畔 | 小分队：Lily + Haewon | 水面/浮桥解谜 |
+| 5 | Hot 'n Unbothered | 炎热沙漠绿洲 | 小分队：Sullyoon + Bae | 迷宫 + 限时收集 |
+| 6 | WHIP (휙) | 疾风终章 | 小分队：Jiwoo + Kyujin + 全员 | 综合谜题 + 结局演出 |
 
-> \* 三首小分队曲的人员构成已按 §9 预案处理（GAME_DESIGN.md §13：全员登场 + 主对话成员）。
+> 三首小分队曲人员构成已于 2026-10-23 查证确认（《Strange Muse》收录 NMIXX 出道以来首次小分队曲；来源与风格细节见 GAME_DESIGN.md §13）。
 
 ### 2.3 核心循环
 
@@ -133,7 +133,7 @@ MIXXTOPIA/
 | 9 | 收集与解谜机制：星星、开关、门、传送门 | 程序 | js/engine.js 机制部分 | M2 | #4 | ⚪ 未开始 |
 | 10 | 选关界面与解锁规则 | 程序 | js/main.js 选关部分 | M2 | #8 | ⚪ 未开始 |
 | 11 | 6 关地图数据（含谜题布局） | 策划 | js/data.js 地图 | M3 | #3 #9 | ⚪ 未开始 |
-| 12 | 6 成员剧情对话文案接入 | 策划 | js/data.js 对话 | M3 | #3 #7 | ⚪ 未开始 |
+| 12 | 6 成员剧情对话文案接入 | 策划 | js/data.js 对话 | M3 | #3 #7 | ✅ 已实现（data.js 46 节点 + main.js 节点语义/选项 + 测试；校验器用 #30 的 tools/validate.js） |
 | 13 | 像素美术：NSWER + 6 成员精灵、瓦片、道具 | 美术 | js/sprites.js | M3 | #4 | ⚪ 未开始 |
 | 14 | 音频：芯片音效 + 6 关 BGM 循环 | 音频 | js/audio.js | M4 | #4 | ⚪ 未开始 |
 | 15 | 表现打磨：粒子、过场演出、结算动画 | 程序 | js/engine.js 粒子 | M4 | #9 #13 | ⚪ 未开始 |
@@ -155,13 +155,15 @@ MIXXTOPIA/
 
 ## 8. 当前进度与后续节奏
 
-**已完成（截至 2026-10-22）**
+**已完成（截至 2026-10-23）**
 - [x] M0 项目基建：仓库、CI（pages.yml）、README/LICENSE/.gitignore、Milestones/Labels/Issues 落地
 - [x] #3 游戏设计文档 docs/GAME_DESIGN.md（PR #19）
 - [x] #4 Canvas 渲染引擎：瓦片图集、调色板、摄像机、整数缩放（PR #20）
 - [x] #5 输入系统：键盘 + 触屏虚拟按键（PR #21）
 - [x] #6 游戏状态机与 UI 接线：标题/游玩/对话/暂停/结算/结局六态 + HUD（PR #26）
 - [x] #7 对话系统：打字机 25ms/字、按住加速、点按快进、E/空格/Enter/点击翻页、对话期间玩家锁定与计时暂停（分支 feat/7-dialogue-system，PR #27）
+- [x] 剧情扩展（2026-10-23）：GAME_DESIGN.md v0.3 —— 世界观加入官方概念「互为彼此的专属缪斯」与神话倒影层（Lily=珀耳塞福涅 / Haewon=哈迪斯 / Sullyoon=阿芙洛狄忒 / Bae=德墨忒尔 / Kyujin=宙斯 / Jiwoo=赫尔墨斯）；小分队名单确认并落地到对话稿（§13）；依据：用户提供的抖音图文截图 + 新 MV 公开报道
+- [x] #12 对话文案接入（2026-10-23）：js/data.js 全量对话（46 节点，§7 格式）；main.js 对话引擎补节点语义（intro/npc/hint/check 解析、once/next、选项列表 ↑↓+E、star/clear/load/sheep 自动分发、黑羊计数）；index.html/styles.css 选项 UI；测试 37 项全过 + 无头 Chrome 冒烟通过；数据校验统一走 #30 的 tools/validate.js（entry 语义已对齐）
 
 **下一步**
 - [ ] M1 收尾：合并 #7 后进入 M2
@@ -176,7 +178,7 @@ MIXXTOPIA/
 
 | 项 | 状态 | 处理 |
 |---|---|---|
-| 三首小分队曲人员构成 | 已按预案处理 | 图文源不可直接访问、未获确切名单；GAME_DESIGN.md §13 按「全员登场 + 主对话成员」落地，确认名单后仅替换出场侧重或对话 speaker（地图、谜题、星数、机制不变） |
+| 三首小分队曲人员构成 | 已确认（2026-10-23） | Sing to the Moon = Lily+Haewon、Hot 'n Unbothered = Sullyoon+Bae、WHIP = Jiwoo+Kyujin（多来源交叉确认，见 GAME_DESIGN.md §13）；对话 speaker 已按名单落地（v0.3），地图、谜题、星数、机制不变 |
 | 音乐版权 | 不使用原曲音频 | 全部为原创 8-bit 音效/BGM，避免侵权 |
 | 移动端操作 | 待测试 | M4 虚拟按键 + M5 真机/仿真验证 |
 | Google Fonts 离线 | 有风险 | 提供 monospace 回退字体，不影响可玩性 |

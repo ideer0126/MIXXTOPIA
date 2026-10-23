@@ -33,7 +33,7 @@ const UI_IDS = [
   'title-screen', 'btn-start', 'btn-continue', 'btn-levels', 'btn-help', 'btn-sound',
   'level-screen', 'level-grid', 'btn-back',
   'help-screen', 'btn-help-back',
-  'dialog', 'dialog-portrait', 'dialog-name', 'dialog-text', 'dialog-hint',
+  'dialog', 'dialog-portrait', 'dialog-name', 'dialog-text', 'dialog-hint', 'dialog-options',
   'pause-screen', 'btn-resume', 'btn-restart', 'btn-quit',
   'clear-screen', 'clear-text', 'btn-next',
   'ending-screen', 'ending-body', 'btn-ending',
@@ -916,6 +916,293 @@ test('onEvent 钩子：状态/收集/结算事件按序上报', () => {
   assert.strictEqual(events.filter((e) => e[0] === 'collect').length, 3);
   assert.strictEqual(events.filter((e) => e[0] === 'clear').length, 1);
   game.destroy();
+});
+
+/* ─────────────────── 9.5 对话节点语义（Issue #12） ─────────────────── */
+
+/** 安装测试用 GAME 并执行 fn，结束后恢复原 sandbox.GAME */
+function withGAME(g, fn) {
+  const saved = sandbox.GAME;
+  sandbox.GAME = g;
+  try {
+    fn();
+  } finally {
+    if (saved === undefined) delete sandbox.GAME;
+    else sandbox.GAME = saved;
+  }
+}
+
+/** 构造最小测试关卡（复用引擎演示地形） */
+function dataLevel(entities) {
+  return {
+    id: 1,
+    title: 'Birthday Wish',
+    palette: { bg: '#1A1033', cream: '#F7E8C8', gold: '#FFC857', pink: '#FF8FA3' },
+    map: engine.demoLevel.map,
+    entities: entities,
+  };
+}
+
+/** 快进一行 + 翻页（与既有对话测试同节奏：点按完本行 → 翻页） */
+function advanceDialog(game) {
+  press('e'); tick(game);
+  press('e'); tick(game);
+}
+
+test('#12 NPC 互动解析：intro once → npc 自我介绍 → hint 可重复（npc:lily）', () => {
+  withGAME({
+    levels: [dataLevel([
+      { type: 'spawn', x: 2, y: 26 },
+      { type: 'npc', id: 'lily', x: 10, y: 15 }, // 无 dialogue 字段 → 按 trigger 解析
+    ])],
+    characters: { lily: { name: 'Lily', color: '#7FB8E6' } },
+    dialogue: {
+      'l1.intro': {
+        type: 'intro', trigger: 'npc:lily', once: true,
+        lines: [{ s: 'lily', t: '开场台词。' }],
+        next: 'l1.lily.hint',
+      },
+      'l1.npc.lily': {
+        type: 'npc', trigger: 'npc:lily', once: true,
+        lines: [{ s: 'lily', t: '自我介绍台词。' }],
+      },
+      'l1.lily.hint': {
+        type: 'hint', trigger: 'npc:lily', once: false,
+        lines: [{ s: 'lily', t: '提示台词。' }],
+      },
+    },
+  }, () => {
+    const game = makeGame();
+    assert.strictEqual(game.dataSource, 'data');
+    elt('btn-start').click();
+    teleport(game, 10, 15);
+    tick(game);
+    // 第 1 次互动 → intro（once）
+    press('e'); tick(game);
+    assert.strictEqual(game.state, STATE.DIALOGUE);
+    assert.strictEqual(game._dialog.nodeId, 'l1.intro');
+    advanceDialog(game);
+    assert.strictEqual(game.state, STATE.PLAYING);
+    assert.ok(game._playedNodes.has('l1.intro'));
+    // 第 2 次互动 → 同 trigger 的 npc 自我介绍（once，intro.next 目标保持）
+    press('e'); tick(game);
+    assert.strictEqual(game._dialog.nodeId, 'l1.npc.lily');
+    advanceDialog(game);
+    // 第 3 次互动 → hint（repeat）
+    press('e'); tick(game);
+    assert.strictEqual(game._dialog.nodeId, 'l1.lily.hint');
+    advanceDialog(game);
+    // 第 4 次互动 → hint 仍可重复
+    press('e'); tick(game);
+    assert.strictEqual(game._dialog.nodeId, 'l1.lily.hint');
+    advanceDialog(game);
+    assert.strictEqual(game.state, STATE.PLAYING);
+    game.destroy();
+  });
+});
+
+test('#12 共享 NPC trigger：仅播放当前关卡台词，切关与返回时各自保留 hint', () => {
+  const data = {};
+  vm.runInNewContext(fs.readFileSync(path.join(repoRoot, 'js/data.js'), 'utf8'), data);
+  withGAME({
+    levels: [4, 1, 6, 14].map((id) => Object.assign(dataLevel([
+      { type: 'spawn', x: 2, y: 26 },
+      { type: 'npc', id: 'lily', x: 10, y: 15 },
+    ]), { id: id })),
+    characters: data.GAME.characters,
+    dialogue: data.GAME.dialogue,
+  }, () => {
+    const game = makeGame();
+    elt('btn-start').click();
+    const visits = [
+      [0, ['l4.intro', 'l4.lily.hint', 'l4.lily.hint']],
+      [1, ['l1.intro', 'l1.npc.lily', 'l1.lily.hint']],
+      [2, ['l6.intro', 'l6.hint', 'l6.hint']],
+      [0, ['l4.lily.hint']],
+    ];
+    for (const [index, nodes] of visits) {
+      game._loadLevel(index);
+      teleport(game, 10, 15);
+      tick(game);
+      for (const nodeId of nodes) {
+        press('e'); tick(game);
+        assert.strictEqual(game._dialog && game._dialog.nodeId, nodeId);
+        while (game.state === STATE.DIALOGUE) advanceDialog(game);
+      }
+    }
+    game._loadLevel(3);
+    teleport(game, 10, 15);
+    tick(game);
+    press('e'); tick(game);
+    assert.strictEqual(game.state, STATE.PLAYING, '无当前关卡节点时不播放其他关卡台词');
+    game.destroy();
+  });
+});
+
+test('#12 选项列表：↑↓ 移动 · E 确认 → goto 分支；check 节点可重复', () => {
+  withGAME({
+    levels: [Object.assign(dataLevel([
+      { type: 'spawn', x: 2, y: 26 },
+      { type: 'npc', id: 'dj', x: 10, y: 15, dialogue: 'l3.dj.check' },
+    ]), { id: 3 })],
+    characters: { dj: { name: '街头DJ', color: '#FF5D8F' } },
+    dialogue: {
+      'l3.dj.check': {
+        type: 'check', trigger: 'npc:dj', once: false,
+        lines: [{ s: 'dj', t: '这条街最酷的人是谁？' }],
+        options: [
+          { label: '「Kyujin。」', goto: 'l3.dj.right' },
+          { label: '「我自己。」', goto: 'l3.dj.wrong' },
+        ],
+      },
+      'l3.dj.right': {
+        type: 'check', trigger: 'npc:dj', once: false,
+        lines: [{ s: 'dj', t: '会说话。过吧。' }],
+      },
+      'l3.dj.wrong': {
+        type: 'check', trigger: 'npc:dj', once: false,
+        lines: [{ s: 'dj', t: '哈！有胆量，但没门。' }],
+      },
+    },
+  }, () => {
+    const game = makeGame();
+    elt('btn-start').click();
+    teleport(game, 10, 15);
+    tick(game);
+    press('e'); tick(game);
+    assert.strictEqual(game.state, STATE.DIALOGUE);
+    assert.strictEqual(game._dialog.nodeId, 'l3.dj.check');
+    let ended = 0;
+    const onEnd = () => { ended++; };
+    game._dialog.onEnd = onEnd;
+    advanceDialog(game); // 台词播完 → 进入选项模式
+    assert.strictEqual(game.state, STATE.DIALOGUE, '选项模式仍停留在对话态');
+    assert.ok(game._dialog.optionsShown);
+    const box = elt('dialog-options');
+    assert.strictEqual(box.children.length, 2);
+    assert.ok(box.children[0].className.indexOf('selected') >= 0, '默认选中第 1 项');
+    assert.strictEqual(text('dialog-hint'), '↑↓ 选择 · E 确认');
+    // 按 ↑ 越界不移动；↓ 移到第 2 项
+    press('ArrowUp'); tick(game);
+    assert.ok(box.children[0].className.indexOf('selected') >= 0, '顶部越界保持');
+    press('ArrowDown'); tick(game);
+    assert.ok(box.children[1].className.indexOf('selected') >= 0, '第 2 项选中');
+    // 确认 → goto wrong 分支
+    press('e'); tick(game);
+    assert.strictEqual(game._dialog.nodeId, 'l3.dj.wrong');
+    assert.strictEqual(box.children.length, 0, '分支台词播放期间清空旧选项及高亮');
+    assert.strictEqual(box.textContent, '');
+    assert.strictEqual(game._dialog.onEnd, onEnd, 'goto 分支保留完成回调');
+    assert.strictEqual(ended, 0, '分支播完前不调用完成回调');
+    advanceDialog(game);
+    assert.strictEqual(game.state, STATE.PLAYING);
+    assert.strictEqual(ended, 1, '分支结束后调用完成回调一次');
+    // check 节点 once:false → 再次互动可重来
+    press('e'); tick(game);
+    assert.strictEqual(game._dialog.nodeId, 'l3.dj.check');
+    game.destroy();
+  });
+});
+
+test('#12 星星台词：收集触发 star:<星id>（once），播完回游玩态', () => {
+  withGAME({
+    levels: [dataLevel([
+      { type: 'spawn', x: 2, y: 26 },
+      { type: 'star', id: 's1', x: 8, y: 20 },
+    ])],
+    characters: { lily: { name: 'Lily', color: '#7FB8E6' } },
+    dialogue: {
+      'l1.star1': {
+        type: 'star', trigger: 'star:s1', entry: true, once: true,
+        lines: [{ s: 'lily', t: '딩동댕！收集成功。' }],
+      },
+    },
+  }, () => {
+    const game = makeGame();
+    elt('btn-start').click();
+    teleport(game, 8, 20);
+    tick(game);
+    assert.strictEqual(game.stars, 1, '星星已收集');
+    assert.strictEqual(game.state, STATE.DIALOGUE, '收集后进入反馈台词');
+    assert.strictEqual(game._dialog.nodeId, 'l1.star1');
+    assert.strictEqual(text('dialog-name'), 'Lily');
+    advanceDialog(game);
+    assert.strictEqual(game.state, STATE.PLAYING);
+    assert.ok(game._playedNodes.has('l1.star1'), 'once 标记已记录');
+    game.destroy();
+  });
+});
+
+test('#12 过关台词：clear:<关卡id> 播完才进入结算', () => {
+  withGAME({
+    levels: [dataLevel([
+      { type: 'spawn', x: 2, y: 26 },
+      { type: 'star', id: 's1', x: 8, y: 20 },
+      { type: 'star', id: 's2', x: 25, y: 14 },
+      { type: 'portal', x: 38, y: 10 },
+    ])],
+    characters: {
+      lily: { name: 'Lily', color: '#7FB8E6' },
+      byeori: { name: 'Byeori', color: '#FFD700' },
+    },
+    dialogue: {
+      'l1.clear': {
+        type: 'clear', trigger: 'clear:1', scopeId: 1, entry: true, once: true,
+        lines: [
+          { s: 'lily', t: '三颗愿望之星全部归位。' },
+          { s: 'byeori', t: '目标达成！' },
+        ],
+      },
+    },
+  }, () => {
+    const game = makeGame();
+    elt('btn-start').click();
+    collectAll(game);
+    assert.strictEqual(game.state, STATE.PLAYING);
+    teleport(game, 38, 10);
+    tick(game);
+    assert.strictEqual(game.state, STATE.DIALOGUE, '先播过关台词');
+    assert.ok(hidden('clear-screen'), '台词未播完不进结算');
+    assert.strictEqual(game._dialog.nodeId, 'l1.clear');
+    advanceDialog(game);
+    assert.strictEqual(game.state, STATE.DIALOGUE, '第 2 行仍在台词');
+    advanceDialog(game);
+    assert.strictEqual(game.state, STATE.CLEAR, '台词播完进入结算');
+    assert.ok(shown('clear-screen'));
+    game.destroy();
+  });
+});
+
+test('#12 黑羊彩蛋：首次互动播谜语并计数 sheep+1，之后不再触发', () => {
+  withGAME({
+    levels: [dataLevel([
+      { type: 'spawn', x: 2, y: 26 },
+      { type: 'sheep', id: 'sheep1', x: 10, y: 15, dialogue: 'l1.sheep' },
+    ])],
+    characters: { sheep: { name: '黑羊', color: '#B8A8E0' } },
+    dialogue: {
+      'l1.sheep': {
+        type: 'sheep', trigger: 'sheep:sheep1', entry: true, once: true,
+        lines: [{ s: 'sheep', t: '第一个愿望，是让蜡烛永远为过生日的人点亮。' }],
+      },
+    },
+  }, () => {
+    const game = makeGame();
+    elt('btn-start').click();
+    teleport(game, 10, 15);
+    tick(game);
+    press('e'); tick(game);
+    assert.strictEqual(game.state, STATE.DIALOGUE);
+    assert.strictEqual(game._dialog.nodeId, 'l1.sheep');
+    assert.strictEqual(game.sheepCount, 1, '黑羊计数 +1');
+    advanceDialog(game);
+    assert.strictEqual(game.state, STATE.PLAYING);
+    // 再次互动：once 已播 → 不进入对话、不重复计数
+    press('e'); tick(game);
+    assert.strictEqual(game.state, STATE.PLAYING);
+    assert.strictEqual(game.sheepCount, 1);
+    game.destroy();
+  });
 });
 
 /* ─────────────────── 10. 销毁与页面文案 ─────────────────── */

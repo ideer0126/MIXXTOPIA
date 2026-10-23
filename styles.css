@@ -344,6 +344,33 @@ body {
   animation: hint-blink 1s steps(2, start) infinite;
 }
 
+/* 对话选项列表（Issue #12：check 节点，↑↓ 选择 · E 确认） */
+#dialog-options {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#dialog-options:empty {
+  display: none;
+}
+
+.dialog-option {
+  padding: 4px 8px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #c9b8e8;
+  border: 1px dashed rgba(201, 184, 232, 0.45);
+  border-radius: 4px;
+}
+
+.dialog-option.selected {
+  color: #ffc857;
+  border: 1px solid #ffc857;
+  background: #1a1033;
+}
+
 @keyframes hint-blink {
   50% { opacity: 0.35; }
 }

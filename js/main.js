@@ -9,9 +9,18 @@
  * 对话系统（Issue #7，规范见 GAME_DESIGN.md §7）：
  *   - 面向 NPC 按 E 触发；对话期间玩家定身、计时暂停（状态机隔离，PLAYING 才移动）；
  *   - 打字机 25ms/字逐字显示（DIALOG_MS），姓名框随行切换（nar 旁白隐藏姓名标签）；
- *   - 打字中按住互动键加速打字（DIALOG_FAST_MS），按住 <250ms 内松开的「点按」
+ *   - 打字中按住互动键加速打字（DIALOG_FAST_MS），按住 <250ms 内短松开的「点按」
  *     立即显示本行全文（快进）；本行显示完后 E/空格/Enter/点击对话框翻页；
  *   - 末行翻页退出对话，_leaveState 清空对话框与进行态（无状态泄漏）。
+ *
+ * 对话节点语义（Issue #12，规格 GAME_DESIGN.md §7）：
+ *   - 节点字段 type / trigger / once / entry / scopeId / lines / options / next；
+ *   - NPC 互动解析：首次 intro（once）→ 同 trigger 的 npc 自我介绍（once）→
+ *     intro.next 指向的 hint（repeat）→ check（repeat）；
+ *   - 选项列表（check 节点）：↑↓ 移动、E 确认 → goto 分支节点；
+ *   - 自动事件分发：收集星 → star:<星id>；过关 → clear:<关卡id>（播完才进结算）；
+ *     关卡加载 → load:<关卡id>；黑羊互动 → sheep 计数 +1（会话内，存档见 #8）；
+ *   - once 标记会话内记忆（this._playedNodes），Issue #8 存档落地后持久化。
  *
  * 状态机约定（「无状态泄漏」的实现要点，测试 tools/test-main.js 逐项验收）：
  *   - 每次切换必经 _setState → _leaveState(旧态清理) → _enterState(新态初始化)，
@@ -199,6 +208,9 @@
       this.runTime = 0;        // 本关用时（秒，仅 PLAYING 累计）
       this.soundOn = true;     // #14 音频落地前仅驱动按钮文案
       this._dialog = null;     // 对话进行态 { lines, idx, shown, t, typing, holdTyping, holdTime }，离开对话态即清空
+      this._playedNodes = new Set(); // 已播放过的 once 节点（会话内记忆；Issue #8 存档落地后持久化）
+      this._npcTarget = {};   // <关卡id>:<实体id> → 开场 intro 结束后指向的后续节点（hint）
+      this.sheepCount = 0;    // 黑羊彩蛋计数 0–6（会话内；存档见 #8）
       this._pendingNextIsEnding = false; // 结算按钮指向结局（最后一关）
       this._portraitSrc = null;          // 头像当前 src 缓存（避免重复赋值导致闪动）
       this._failedPortraits = new Set(); // 加载失败的路径，后续渲染保持隐藏
@@ -387,7 +399,9 @@
         this.level.map.h * TILE
       );
       this._checkPickups();
+      if (this.state !== STATE.PLAYING) return; // 收集触发台词进入对话，本帧不再推进
       this._checkPortal();
+      if (this.state !== STATE.PLAYING) return; // 过关台词进入对话，本帧不再计时
       this.runTime += dt;
     }
 
@@ -409,28 +423,41 @@
       return false;
     }
 
-    /** 附近是否有可互动 NPC（占位：只认 npc，#9 扩展开关/门/传送门等） */
-    _nearNpc() {
+    /** 附近是否有可互动实体（NPC / 黑羊；#9 扩展开关/门/传送门等） */
+    _nearInteractable() {
       const cx = this.player.x + PLAYER_SIZE / 2;
       const cy = this.player.y + PLAYER_SIZE / 2;
-      for (const e of this._entitiesOf('npc')) {
-        const ex = e.x * TILE + TILE / 2;
-        const ey = e.y * TILE + TILE / 2;
-        if (Math.abs(cx - ex) <= INTERACT_RANGE && Math.abs(cy - ey) <= INTERACT_RANGE) return e;
+      for (const type of ['npc', 'sheep']) {
+        for (const e of this._entitiesOf(type)) {
+          const ex = e.x * TILE + TILE / 2;
+          const ey = e.y * TILE + TILE / 2;
+          if (Math.abs(cx - ex) <= INTERACT_RANGE && Math.abs(cy - ey) <= INTERACT_RANGE) return e;
+        }
       }
       return null;
     }
 
-    /** 确认键互动：NPC → 对话。返回是否触发了状态切换 */
+    /** 确认键互动：NPC → 对话；黑羊 → 彩蛋谜语（首次计数 sheep +1）。返回是否触发了状态切换 */
     _interact() {
       if (!this.player) return false;
-      const npc = this._nearNpc();
-      if (!npc) return false;
-      this._enterDialogue(npc.dialogue || 'boot.hi');
+      const ent = this._nearInteractable();
+      if (!ent) return false;
+      if (ent.type === 'sheep') {
+        // 黑羊：绑定节点为 once，首次互动播放并计数（集齐 6 句追加结局画面，演出接入 #15）
+        const nodeId = ent.dialogue;
+        const node = nodeId && this.dialogue[nodeId];
+        if (!node || !node.lines || this._playedNodes.has(nodeId)) return false;
+        this.sheepCount = (this.sheepCount || 0) + 1;
+        this._playNode(nodeId);
+        return true;
+      }
+      const nodeId = this._resolveNpcNode(ent);
+      if (!nodeId) return false;
+      this._playNode(nodeId);
       return true;
     }
 
-    /** 收集星星（占位，#9 接入正式收集与反馈演出） */
+    /** 收集星星（#9 接入正式收集与反馈演出；star:<星id> 台词由 #12 分发） */
     _checkPickups() {
       const px = this.player.x;
       const py = this.player.y;
@@ -446,11 +473,13 @@
           if (this.onEvent) {
             try { this.onEvent('collect', { id: e.id, stars: this.stars }); } catch (err) { /* 忽略钩子异常 */ }
           }
+          // 收集反馈台词（once）：进入对话则本帧停止继续收集，避免连吞台词
+          if (this._dispatchAuto('star:' + e.id)) return;
         }
       }
     }
 
-    /** 集齐星星后接触传送门 → 过关结算（占位，#9 接管；关 6 蛋糕结局由 #11/#15 接入） */
+    /** 集齐星星后接触传送门 → 先播过关台词（clear:<关卡id>，once），播完进入结算 */
     _checkPortal() {
       if (this.stars < this._starCount()) return;
       const px = this.player.x;
@@ -459,7 +488,7 @@
         const rx = e.x * TILE;
         const ry = e.y * TILE;
         if (px < rx + TILE && px + PLAYER_SIZE > rx && py < ry + TILE && py + PLAYER_SIZE > ry) {
-          this._onLevelClear();
+          this._dispatchAuto('clear:' + this.level.id, () => this._onLevelClear());
           return;
         }
       }
@@ -503,6 +532,8 @@
       if (this.onEvent) {
         try { this.onEvent('restart', { level: this.levelIndex }); } catch (e) { /* 忽略钩子异常 */ }
       }
+      // 关卡加载自动演出（load:<关卡id>；序章 p0 等场景在 #11 场景系统落地后同机制接入）
+      this._dispatchAuto('load:' + this.level.id);
     }
 
     _restartLevel() {
@@ -580,14 +611,25 @@
       return BOOT_ENDING;
     }
 
-    /* ── 对话（Issue #7：打字机 + 姓名框 + 翻页；选项列表由 #12 接入） ── */
+    /* ── 对话（Issue #7：打字机 + 姓名框 + 翻页；Issue #12：节点语义 + 选项列表） ── */
 
-    /** 进入对话态：读取节点行数据，从第一行开始打字机显示 */
-    _enterDialogue(nodeId) {
-      const node = this.dialogue[nodeId] || {};
-      const lines = Array.isArray(node.lines) ? node.lines : [];
-      if (!lines.length) return; // 无内容不进入对话态
+    /**
+     * 播放对话节点：进入对话态，从第一行开始打字机显示。
+     * @param {string} nodeId 对话节点 id
+     * @param {object} [opts] { autoChain: 自动串联 next（自动事件用）, onEnd: 完成回调 }
+     */
+    _playNode(nodeId, opts) {
+      opts = opts || {};
+      const node = this.dialogue[nodeId];
+      const lines = node && Array.isArray(node.lines) ? node.lines : [];
+      if (!lines.length) {
+        // 无内容不进入对话态；自动事件直接走完成回调，不打断流程
+        if (opts.onEnd) { try { opts.onEnd(); } catch (err) { /* 回调异常不阻断 */ } }
+        return;
+      }
+      if (node.once) this._playedNodes.add(nodeId);
       this._dialog = {
+        nodeId: nodeId,
         lines: lines,
         idx: 0,         // 当前行号
         shown: 0,       // 当前行已显示字数
@@ -595,9 +637,103 @@
         typing: true,   // 当前行是否仍在逐字显示
         holdTyping: false, // 本行打字期间按住互动键的标记（点按快进/长按加速）
         holdTime: 0,    // 按住时长（ms）
+        options: Array.isArray(node.options) && node.options.length ? node.options : null,
+        optionsShown: false, // 台词播完后是否已进入选项模式
+        optIdx: 0,      // 选项光标
+        next: node.next || null,      // intro 的后续指向 / 自动事件的串联节点
+        autoChain: !!opts.autoChain,  // 自动事件才在节点结束后自动播放 next
+        onEnd: opts.onEnd || null,    // 完成回调（如 clear 播完 → 结算）
       };
       this._setState(STATE.DIALOGUE);
       this._startDialogLine();
+    }
+
+    /** 兼容旧调用：直接播放指定节点（占位关卡 boot.hi 等无 type/trigger 的线性节点） */
+    _enterDialogue(nodeId) {
+      this._playNode(nodeId);
+    }
+
+    /* ── 节点解析与自动事件分发（Issue #12，规格 GAME_DESIGN.md §7） ── */
+
+    /**
+     * 解析 NPC 互动应播放的节点：
+     *   1. 显式绑定（dialogue 字段）且其 trigger 不匹配 npc:<该实体id> → 直接采用；
+     *   2. 否则按 trigger 解析：首次 intro（once，记录 next 目标）→
+     *      npc 自我介绍（once）→ intro.next 指向的 hint（repeat）→ check（repeat）。
+     */
+    _resolveNpcNode(ent) {
+      const explicit = ent.dialogue;
+      if (explicit && this.dialogue[explicit]) {
+        const node = this.dialogue[explicit];
+        if (node.trigger !== 'npc:' + ent.id) {
+          // 占位/特殊 NPC 的显式线性节点：未播过（或无 once）即播
+          if (!node.once || !this._playedNodes.has(explicit)) return explicit;
+          return null;
+        }
+      }
+      const key = 'npc:' + ent.id;
+      const levelPrefix = 'l' + this.level.id + '.';
+      const targetKey = this.level.id + ':' + ent.id;
+      const cands = [];
+      for (const id in this.dialogue) {
+        const n = this.dialogue[id];
+        if (id.indexOf(levelPrefix) === 0 && n.trigger === key && !n.entry) cands.push({ id: id, node: n });
+      }
+      const unplayed = (type) => {
+        for (const c of cands) {
+          if (c.node.type === type && c.node.once && !this._playedNodes.has(c.id)) return c;
+        }
+        return null;
+      };
+      const target = this._npcTarget[targetKey];
+      if (target && this.dialogue[target]) {
+        // intro 已播：先补播未播的同 trigger npc 自我介绍（once），再回到 hint
+        const npcOnce = unplayed('npc');
+        if (npcOnce) return npcOnce.id;
+        return target;
+      }
+      const intro = unplayed('intro');
+      if (intro) {
+        if (intro.node.next) this._npcTarget[targetKey] = intro.node.next;
+        return intro.id;
+      }
+      const npcOnce = unplayed('npc');
+      if (npcOnce) return npcOnce.id;
+      for (const c of cands) {
+        if (c.node.once === false && (c.node.type === 'check' || c.node.type === 'hint')) return c.id;
+      }
+      return null;
+    }
+
+    /**
+     * 按 trigger 查找自动事件入口：
+     * clear:/load: 自动作用域须 entry:true（§7 约定，与 tools/validate.js #30 一致）；
+     * star:/sheep:/cake 节点按 trigger 直接调度（不设 entry）。
+     */
+    _findAutoEntry(key) {
+      const needsEntry = key.indexOf('clear:') === 0 || key.indexOf('load:') === 0;
+      for (const id in this.dialogue) {
+        const n = this.dialogue[id];
+        if (n.trigger !== key) continue;
+        if (needsEntry && n.entry !== true) continue;
+        if (!n.once || !this._playedNodes.has(id)) return id;
+      }
+      return null;
+    }
+
+    /**
+     * 自动事件分发（star / clear / load / cake 等）：
+     * 找到入口节点则播放（自动串联 next），播完执行 onEnd；无节点则立即 onEnd。
+     * @returns {boolean} 是否进入对话
+     */
+    _dispatchAuto(key, onEnd) {
+      const nodeId = this._findAutoEntry(key);
+      if (!nodeId) {
+        if (onEnd) { try { onEnd(); } catch (err) { /* 回调异常不阻断 */ } }
+        return false;
+      }
+      this._playNode(nodeId, { autoChain: true, onEnd: onEnd });
+      return true;
     }
 
     /** 进入新行：重置打字机进度，渲染姓名框（nar 旁白隐藏标签）与空文本 */
@@ -677,6 +813,23 @@
       const pressed = this.input.wasPressed('confirm');
       const released = this.input.wasReleased('confirm');
 
+      // 选项模式：↑↓ 移动光标，confirm 选择，其余按键忽略
+      if (d.optionsShown) {
+        if (this.input.wasPressed('up') && d.optIdx > 0) {
+          d.optIdx--;
+          this._renderOptions();
+        } else if (this.input.wasPressed('down') && d.optIdx < d.options.length - 1) {
+          d.optIdx++;
+          this._renderOptions();
+        } else if (pressed) {
+          const opt = d.options[d.optIdx];
+          const onEnd = d.onEnd;
+          this._clearOptionsBox();
+          this._playNode(opt.goto, { onEnd: onEnd });
+        }
+        return;
+      }
+
       // 本行已显示完：按下即翻页（同一按下不再作用于新行，保证一次按键翻一页）
       if (pressed && !d.typing) {
         this._advanceDialog();
@@ -738,23 +891,68 @@
       this._text(textEl, String(d.lines[d.idx].t).slice(0, d.shown));
     }
 
-    /** 翻页：本行未显示完不可翻页；末行翻页退出对话态 */
+    /** 翻页：本行未显示完不可翻页；末行翻页 → 选项模式 / 串联 next / 结束对话 */
     _advanceDialog() {
       const d = this._dialog;
       if (!d || d.typing) return;
       d.idx++;
       if (d.idx >= d.lines.length) {
-        this._setState(STATE.PLAYING); // 离开对话态时 _leaveState 清空对话框与 _dialog
+        this._endDialogLines();
       } else {
         this._startDialogLine();
       }
     }
 
-    /** 点击对话框 = 点按：打字中立即显示全文，显示完则翻页（GAME_DESIGN §7 点击翻页） */
+    /** 台词播完的收尾：优先选项 → 自动串联 next → 退出对话并执行完成回调 */
+    _endDialogLines() {
+      const d = this._dialog;
+      if (!d) return;
+      if (d.options && !d.optionsShown) {
+        d.optionsShown = true;
+        d.optIdx = 0;
+        this._renderOptions();
+        return;
+      }
+      if (d.next && d.autoChain && this.dialogue[d.next]) {
+        const onEnd = d.onEnd; // 链尾沿用同一完成回调
+        this._playNode(d.next, { autoChain: true, onEnd: onEnd });
+        return;
+      }
+      const cb = d.onEnd;
+      this._setState(STATE.PLAYING); // 离开对话态时 _leaveState 清空对话框与 _dialog
+      if (cb) { try { cb(); } catch (err) { /* 回调异常不阻断 */ } }
+    }
+
+    /** 渲染选项列表：清空容器后逐项重建，当前项高亮 */
+    _renderOptions() {
+      const d = this._dialog;
+      const box = this._ui.dialogOptions;
+      if (!d || !box) return;
+      this._clearOptionsBox();
+      if (!d.options) return;
+      for (let i = 0; i < d.options.length; i++) {
+        const el = this.doc.createElement('div');
+        el.className = 'dialog-option' + (i === d.optIdx ? ' selected' : '');
+        el.textContent = (i === d.optIdx ? '▸ ' : '　') + d.options[i].label;
+        box.appendChild(el);
+      }
+      this._text(this._ui.dialogHint, '↑↓ 选择 · E 确认');
+    }
+
+    /** 清空选项容器（textContent 与 children 都清，兼容真 DOM 与测试桩） */
+    _clearOptionsBox() {
+      const box = this._ui.dialogOptions;
+      if (!box) return;
+      if (typeof box.textContent === 'string') box.textContent = '';
+      if (Array.isArray(box.children)) box.children.length = 0;
+    }
+
+    /** 点击对话框 = 点按：打字中立即显示全文，显示完则翻页（GAME_DESIGN §7 点击翻页；选项模式仅键盘操作） */
     _tapDialog() {
       if (this.state !== STATE.DIALOGUE) return;
       const d = this._dialog;
       if (!d) return;
+      if (d.optionsShown) return;
       if (d.typing) this._completeDialogLine();
       else this._advanceDialog();
     }
@@ -763,6 +961,7 @@
       this._text(this._ui.dialogName, '');
       this._text(this._ui.dialogText, '');
       this._text(this._ui.dialogHint, DIALOG_HINT_PAGE);
+      this._clearOptionsBox();
       this._hidePortrait();
       const img = this._ui.dialogPortrait;
       if (img) {
@@ -845,6 +1044,7 @@
         'dialog-name': 'dialogName',
         'dialog-text': 'dialogText',
         'dialog-hint': 'dialogHint',
+        'dialog-options': 'dialogOptions',
         'pause-screen': 'pauseScreen',
         'btn-resume': 'btnResume',
         'btn-restart': 'btnRestart',
