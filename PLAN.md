@@ -30,7 +30,7 @@ NSWER 在生日夜被一道星光带入梦境世界 **MIXXTOPIA**。六位缪斯
 
 | 关 | 曲目 | 区域主题 | 出场成员 | 机制重点 |
 |---|---|---|---|---|
-| 1 | Birthday Wish (긴 소원) | 生日烛光梦境 | 全员登场 | 教学：移动/对话/收集/推箱/开关 |
+| 1 | Birthday Wish (긴 소원) | 梦核幼儿园生日派对 | 全员登场 | 教学：移动/对话/收集/推箱/开关 |
 | 2 | Kerosene | 灯油与火焰 | Jiwoo | 开关解谜（点燃灯柱） |
 | 3 | RudE TaLK | 霓虹态度街头 | Kyujin | 单向门 + 路径推理 |
 | 4 | Sing to the Moon (너는 달) | 月夜湖畔 | 小分队：Lily + Haewon | 水面/浮桥解谜 |
@@ -155,7 +155,7 @@ MIXXTOPIA/
 
 ## 8. 当前进度与后续节奏
 
-**已完成（截至 2026-10-23）**
+**已完成（截至 2026-10-24）**
 - [x] M0 项目基建：仓库、CI（pages.yml）、README/LICENSE/.gitignore、Milestones/Labels/Issues 落地
 - [x] #3 游戏设计文档 docs/GAME_DESIGN.md（PR #19）
 - [x] #4 Canvas 渲染引擎：瓦片图集、调色板、摄像机、整数缩放（PR #20）
@@ -164,6 +164,7 @@ MIXXTOPIA/
 - [x] #7 对话系统：打字机 25ms/字、按住加速、点按快进、E/空格/Enter/点击翻页、对话期间玩家锁定与计时暂停（分支 feat/7-dialogue-system，PR #27）
 - [x] 剧情扩展（2026-10-23）：GAME_DESIGN.md v0.3 —— 世界观加入官方概念「互为彼此的专属缪斯」与神话倒影层（Lily=珀耳塞福涅 / Haewon=哈迪斯 / Sullyoon=阿芙洛狄忒 / Bae=德墨忒尔 / Kyujin=宙斯 / Jiwoo=赫尔墨斯）；小分队名单确认并落地到对话稿（§13）；依据：用户提供的抖音图文截图 + 新 MV 公开报道
 - [x] #12 对话文案接入（2026-10-23）：js/data.js 全量对话（46 节点，§7 格式）；main.js 对话引擎补节点语义（intro/npc/hint/check 解析、once/next、选项列表 ↑↓+E、star/clear/load/sheep 自动分发、黑羊计数）；index.html/styles.css 选项 UI；测试 37 项全过 + 无头 Chrome 冒烟通过；数据校验统一走 #30 的 tools/validate.js（entry 语义已对齐）
+- [x] 关 1 剧情重制（2026-10-24，Issue #34）：GAME_DESIGN v0.4 —— 区域改为「梦核幼儿园生日派对」，18 岁 NSWER 梦回童年，六位缪斯幼儿园文艺汇演妆造（成人身体、仅换妆造）；`l1.*` 对话稿细化并同步 js/data.js；新增关 1 40×28 地图布局草案（供 #11；美术见 #13）
 
 **下一步**
 - [ ] M1 收尾：合并 #7 后进入 M2
