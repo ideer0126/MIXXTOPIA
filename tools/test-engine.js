@@ -14,6 +14,7 @@
  *   6. 整数倍放大计算与 imageSmoothingEnabled 关闭
  *   7. 未知地形符号不崩溃
  *   8. 输入系统（Issue #5）：键盘绑定/边沿/轴向量、触屏虚拟按键、粗指针检测、开关与销毁
+ *   9. §11 数据校验（空地图和预留机制搜索单独报告待完成，不视为完整验收通过）
  */
 'use strict';
 
@@ -21,6 +22,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { validateProject, formatIssue } = require('./validate.js');
 
 /* ─────────────────── Canvas 2D 极简桩 ─────────────────── */
 
@@ -470,6 +472,14 @@ test('设备像素整数缩放：高密度、分数 DPR、非法 DPR 与小窗�
     if (saved.dpr === undefined) delete global.devicePixelRatio;
     else global.devicePixelRatio = saved.dpr;
   }
+});
+
+/* ─────────────────── §11 数据校验 ─────────────────── */
+
+test('§11 数据：现有数据无错误，未落地检查明确报告待完成', () => {
+  const result = validateProject();
+  assert.strictEqual(result.errors.length, 0, result.errors.map(formatIssue).join('\n'));
+  for (const item of result.pending) console.log('    待完成 ' + formatIssue(item));
 });
 
 /* ─────────────────── 7. 输入系统（Issue #5） ─────────────────── */
