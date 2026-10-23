@@ -1001,12 +1001,50 @@ test('#12 NPC 互动解析：intro once → npc 自我介绍 → hint 可重复�
   });
 });
 
+test('#12 共享 NPC trigger：仅播放当前关卡台词，切关与返回时各自保留 hint', () => {
+  const data = {};
+  vm.runInNewContext(fs.readFileSync(path.join(repoRoot, 'js/data.js'), 'utf8'), data);
+  withGAME({
+    levels: [4, 1, 6, 14].map((id) => Object.assign(dataLevel([
+      { type: 'spawn', x: 2, y: 26 },
+      { type: 'npc', id: 'lily', x: 10, y: 15 },
+    ]), { id: id })),
+    characters: data.GAME.characters,
+    dialogue: data.GAME.dialogue,
+  }, () => {
+    const game = makeGame();
+    elt('btn-start').click();
+    const visits = [
+      [0, ['l4.intro', 'l4.lily.hint', 'l4.lily.hint']],
+      [1, ['l1.intro', 'l1.npc.lily', 'l1.lily.hint']],
+      [2, ['l6.intro', 'l6.hint', 'l6.hint']],
+      [0, ['l4.lily.hint']],
+    ];
+    for (const [index, nodes] of visits) {
+      game._loadLevel(index);
+      teleport(game, 10, 15);
+      tick(game);
+      for (const nodeId of nodes) {
+        press('e'); tick(game);
+        assert.strictEqual(game._dialog && game._dialog.nodeId, nodeId);
+        while (game.state === STATE.DIALOGUE) advanceDialog(game);
+      }
+    }
+    game._loadLevel(3);
+    teleport(game, 10, 15);
+    tick(game);
+    press('e'); tick(game);
+    assert.strictEqual(game.state, STATE.PLAYING, '无当前关卡节点时不播放其他关卡台词');
+    game.destroy();
+  });
+});
+
 test('#12 选项列表：↑↓ 移动 · E 确认 → goto 分支；check 节点可重复', () => {
   withGAME({
-    levels: [dataLevel([
+    levels: [Object.assign(dataLevel([
       { type: 'spawn', x: 2, y: 26 },
       { type: 'npc', id: 'dj', x: 10, y: 15, dialogue: 'l3.dj.check' },
-    ])],
+    ]), { id: 3 })],
     characters: { dj: { name: '街头DJ', color: '#FF5D8F' } },
     dialogue: {
       'l3.dj.check': {
@@ -1034,6 +1072,9 @@ test('#12 选项列表：↑↓ 移动 · E 确认 → goto 分支；check 节�
     press('e'); tick(game);
     assert.strictEqual(game.state, STATE.DIALOGUE);
     assert.strictEqual(game._dialog.nodeId, 'l3.dj.check');
+    let ended = 0;
+    const onEnd = () => { ended++; };
+    game._dialog.onEnd = onEnd;
     advanceDialog(game); // 台词播完 → 进入选项模式
     assert.strictEqual(game.state, STATE.DIALOGUE, '选项模式仍停留在对话态');
     assert.ok(game._dialog.optionsShown);
@@ -1049,8 +1090,13 @@ test('#12 选项列表：↑↓ 移动 · E 确认 → goto 分支；check 节�
     // 确认 → goto wrong 分支
     press('e'); tick(game);
     assert.strictEqual(game._dialog.nodeId, 'l3.dj.wrong');
+    assert.strictEqual(box.children.length, 0, '分支台词播放期间清空旧选项及高亮');
+    assert.strictEqual(box.textContent, '');
+    assert.strictEqual(game._dialog.onEnd, onEnd, 'goto 分支保留完成回调');
+    assert.strictEqual(ended, 0, '分支播完前不调用完成回调');
     advanceDialog(game);
     assert.strictEqual(game.state, STATE.PLAYING);
+    assert.strictEqual(ended, 1, '分支结束后调用完成回调一次');
     // check 节点 once:false → 再次互动可重来
     press('e'); tick(game);
     assert.strictEqual(game._dialog.nodeId, 'l3.dj.check');
