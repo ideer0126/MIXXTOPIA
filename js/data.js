@@ -14,9 +14,10 @@
  * - trigger 取值：npc:<实体id> / star:<星id> / clear:<关卡id> / load:<关卡或场景id> /
  *   sheep:<黑羊实体id> / cake（关 6 蛋糕）。实体 id 与星 id 在 Issue #11 地图落地时
  *   与本节触发键一一对应（sheepN = 第 N 关黑羊；star 的星 id 由地图实体定义）。
- * - entry:true 仅标注自动事件入口（load/clear/star/sheep/cake）；NPC 互动节点与
- *   选项分支节点（l3.dj.right / l3.dj.wrong）不设 entry（缺省 false，由引擎按
- *   §7 的「首次 intro → 此后 hint」规则解析，不受 entry 机制影响）。
+ * - entry:true 仅标注 clear:/load: 自动作用域入口（与 tools/validate.js #30 约定一致）；
+ *   star:/sheep:/cake 节点按 trigger 直接调度、不设 entry。NPC 互动节点与选项分支
+ *   节点（l3.dj.right / l3.dj.wrong）同样不设 entry（由引擎按 §7 的
+ *   「首次 intro → 此后 hint」规则解析）。
  * - once 节点仅首次播放；存档落地（Issue #8）后由 localStorage 持久化，
  *   当前由 main.js 会话内记忆。
  */
@@ -90,11 +91,11 @@
         next: 'l1.lily.hint',
       },
       'l1.star1': {
-        type: 'star', trigger: 'star:s1', entry: true, once: true,
+        type: 'star', trigger: 'star:s1', once: true,
         lines: [{ s: 'lily', t: '딩동댕！收集成功。左上角的 HUD 会帮你数星星哦。' }],
       },
       'l1.star3': {
-        type: 'star', trigger: 'star:s3', entry: true, once: true,
+        type: 'star', trigger: 'star:s3', once: true,
         lines: [{ s: 'haewon', t: '哦？蛋糕旁边有东西在发光……最后那颗星星出现了！' }],
       },
       'l1.npc.lily': {
@@ -317,7 +318,7 @@
         lines: [{ s: 'kyujin', t: '风从哪边来，就往哪边借力。逆风跑，只会被吹回原地。' }],
       },
       'l6.end': {
-        type: 'cutscene', trigger: 'cake', scopeId: 6, entry: true, once: true,
+        type: 'cutscene', trigger: 'cake', scopeId: 6, once: true,
         lines: [
           { s: 'nar', t: '25 颗愿望之星，全部到齐。许愿蛋糕被逐层点亮——25 支蜡烛，25 个心愿。' },
           { s: 'lily', t: '那么——一起许愿吧。春天会回来，我们永远在彼此的生日里。응답하라 NSWER！' },
@@ -331,27 +332,27 @@
 
       /* ── 黑羊彩蛋（每关一只，互动计数 sheep +1；集齐 6 句追加结局画面） ── */
       'l1.sheep': {
-        type: 'sheep', trigger: 'sheep:sheep1', entry: true, once: true,
+        type: 'sheep', trigger: 'sheep:sheep1', once: true,
         lines: [{ s: 'sheep', t: '第一个愿望，是让蜡烛永远为过生日的人点亮。' }],
       },
       'l2.sheep': {
-        type: 'sheep', trigger: 'sheep:sheep2', entry: true, once: true,
+        type: 'sheep', trigger: 'sheep:sheep2', once: true,
         lines: [{ s: 'sheep', t: '火焰记得每一滴灯油的名字。' }],
       },
       'l3.sheep': {
-        type: 'sheep', trigger: 'sheep:sheep3', entry: true, once: true,
+        type: 'sheep', trigger: 'sheep:sheep3', once: true,
         lines: [{ s: 'sheep', t: '最酷的态度，是敢承认自己走错了路。' }],
       },
       'l4.sheep': {
-        type: 'sheep', trigger: 'sheep:sheep4', entry: true, once: true,
+        type: 'sheep', trigger: 'sheep:sheep4', once: true,
         lines: [{ s: 'sheep', t: '月亮从不催促夜路的人。' }],
       },
       'l5.sheep': {
-        type: 'sheep', trigger: 'sheep:sheep5', entry: true, once: true,
+        type: 'sheep', trigger: 'sheep:sheep5', once: true,
         lines: [{ s: 'sheep', t: '真正的清凉，是心里不慌。' }],
       },
       'l6.sheep': {
-        type: 'sheep', trigger: 'sheep:sheep6', entry: true, once: true,
+        type: 'sheep', trigger: 'sheep:sheep6', once: true,
         lines: [{ s: 'sheep', t: '风会把你吹向该去的地方。' }],
       },
     },

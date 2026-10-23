@@ -703,11 +703,18 @@
       return null;
     }
 
-    /** 按 trigger 查找自动事件入口（entry 且未播过的 once 节点） */
+    /**
+     * 按 trigger 查找自动事件入口：
+     * clear:/load: 自动作用域须 entry:true（§7 约定，与 tools/validate.js #30 一致）；
+     * star:/sheep:/cake 节点按 trigger 直接调度（不设 entry）。
+     */
     _findAutoEntry(key) {
+      const needsEntry = key.indexOf('clear:') === 0 || key.indexOf('load:') === 0;
       for (const id in this.dialogue) {
         const n = this.dialogue[id];
-        if (n.trigger === key && n.entry && (!n.once || !this._playedNodes.has(id))) return id;
+        if (n.trigger !== key) continue;
+        if (needsEntry && n.entry !== true) continue;
+        if (!n.once || !this._playedNodes.has(id)) return id;
       }
       return null;
     }
