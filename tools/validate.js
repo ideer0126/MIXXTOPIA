@@ -19,7 +19,8 @@
  * 已收集星集合；动作含移动、推箱、携油点灯、月相/风车开关、落点拾取。
  * BFS 穷举后仍无法「集齐本关全部星星并到达已激活传送门/蛋糕」→ 报错。
  * 对话条件星、清凉条计时、落水复位按宽松假设处理（只可能漏报、不会误报）；
- * 状态数超过 STATE_CAP 时回退静态近似结论（并集可达性），同样不误报。
+ * 状态数达到 STATE_CAP 上限时报告无法证明同一次游玩可集齐星星并到达终点；
+ * 静态近似（并集可达性）仅在状态搜索未执行时用于快速诊断，不能证明完整通关路径。
  *
  * 退出码：0 = 通过（或按约定跳过）；1 = 存在错误。
  */
@@ -43,7 +44,7 @@ const RULE_NAMES = {
   '规则 6': '方向与关 4 水面',
   '规则 7': '对话引用与触发',
   '规则 8': 'NPC 出场',
-  '规则 9': '可达性（状态图搜索 + 静态兜底）',
+  '规则 9': '可达性（状态图搜索 + 静态诊断）',
   '规则 10': '占位文案与存档键',
   '机制': '机制使用范围',
 };
@@ -245,8 +246,12 @@ function rule1(game, R) {
 
 function rule2(game, R) {
   for (const lv of game.levels || []) {
-    if (!lv || !lv.map || !Array.isArray(lv.map.rows) || !lv.map.legend) continue; // 规则 1 报
+    if (!lv || !lv.map || !Array.isArray(lv.map.rows)) continue; // 规则 1 报
     const tag = '关 ' + lv.id;
+    if (!lv.map.legend || typeof lv.map.legend !== 'object' || Array.isArray(lv.map.legend)) {
+      R.err('规则 2', tag + ' 缺少或无效的 map.legend 对象');
+      continue;
+    }
     const badChars = new Set();
     lv.map.rows.forEach((row, y) => {
       if (typeof row !== 'string') return;
@@ -313,7 +318,7 @@ function rule3(game, R) {
     }
     for (const s of stars) {
       if (!s.id || typeof s.id !== 'string') {
-        R.err('规则 3', tag + ' 星实体缺少字符串 id');
+        R.err('规则 3', tag + ' 星实体缺少字符串 id（坐标 ' + s.x + ',' + s.y + '）');
         continue;
       }
       if (seen.has(s.id)) {
@@ -376,7 +381,8 @@ function rule5(game, R) {
     for (const e of lv.entities) {
       if (!e || e.type !== 'gate') continue;
       if (!e.id || typeof e.id !== 'string') {
-        R.err('规则 5', tag + ' gate 缺少字符串 id（开关/灯柱 target 依赖）');
+        R.err('规则 5', tag + ' gate 缺少字符串 id（开关/灯柱 target 依赖）'
+          + '（坐标 ' + e.x + ',' + e.y + '）');
       } else {
         gateIds.add(e.id);
       }
@@ -812,15 +818,15 @@ function rule8(game, R) {
   }
 }
 
-/* ════════════════════════ 规则 9：可达性（状态图搜索 + 静态兜底） ════════════════════════ */
+/* ════════════════════════ 规则 9：可达性（状态图搜索 + 静态诊断） ════════════════════════ */
 
-/** 单关状态搜索上限；超出回退静态近似（不误报） */
+/** 单关状态搜索上限；达到上限仍未找到通关路径则报错，不以静态近似代替证明 */
 const STATE_CAP = 400000;
 const WIND_CYCLE = ['N', 'E', 'S', 'W'];
 
 /**
  * 静态近似（并集可达性）：门全开、水位取 high/low 并集、单向门按方向。
- * 结论弱于状态图搜索，用作搜索超限时的兜底与快速诊断。
+ * 仅在状态搜索未执行时用于快速诊断，不能证明同一次游玩的完整通关路径，也不用于超限兜底。
  * @returns {{stars: string[], goal: string|null, spawnBlocked: boolean}}
  */
 function staticReachability(lv) {
@@ -1169,10 +1175,10 @@ function rule9(game, R) {
     const search = stateSearch(lv);
     if (search.status === 'fail') {
       R.err('规则 9', tag + ' ' + search.msg);
-    } else if (search.status !== 'ok') {
-      if (search.status === 'cap') {
-        R.note('规则 9 · ' + tag + ' · 状态搜索超过 ' + STATE_CAP + ' 状态上限，采用静态近似结论');
-      }
+    } else if (search.status === 'cap') {
+      R.err('规则 9', tag + ' 状态搜索达到 STATE_CAP=' + STATE_CAP
+        + ' 状态上限，无法证明同一次游玩可集齐星星并到达终点');
+    } else if (search.status === 'skip') {
       const sr = staticReachability(lv);
       if (sr.spawnBlocked) {
         R.err('规则 9', tag + ' spawn 在任一合法状态均不可站立或无出口（静态近似）');
