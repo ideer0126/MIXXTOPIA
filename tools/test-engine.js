@@ -14,7 +14,7 @@
  *   6. 整数倍放大计算与 imageSmoothingEnabled 关闭
  *   7. 未知地形符号不崩溃
  *   8. 输入系统（Issue #5）：键盘绑定/边沿/轴向量、触屏虚拟按键、粗指针检测、开关与销毁
- *   9. 机制与粒子（Issue #9）：地形/实体碰撞、推箱、压力开关门、粒子生命周期与绘制
+ *   9. 机制与粒子（Issue #9）：地形/实体碰撞、推箱（含门格拒绝箱子）、压力开关门、粒子生命周期与绘制
  */
 'use strict';
 
@@ -806,7 +806,7 @@ test('地形判定：超界按墙、水面阻挡、未知字符按墙', () => {
   assert.strictEqual(mech.blockedAt(1 * S, 2 * S, S), true, '未知字符按墙');
 });
 
-test('推箱：沿移动方向滑一格；箱后一格被墙/门/其他箱子占住则不动', () => {
+test('推箱：沿移动方向滑一格；箱后一格被墙/关闭的门/其他箱子占住则不动', () => {
   const level = mechanicsLevel([
     { type: 'box', id: 'b1', x: 3, y: 2 },
     { type: 'box', id: 'b2', x: 5, y: 2 },
@@ -829,6 +829,37 @@ test('推箱：沿移动方向滑一格；箱后一格被墙/门/其他箱子占
   assert.strictEqual(mech.pushBox(4 * S, 2 * S, S, 1, 0), b2);
   assert.deepStrictEqual([b2.x, b2.y], [6, 2]);
   assert.strictEqual(mech.pushBox(5 * S, 2 * S, S, 1, 0), null, '墙阻挡');
+});
+
+test('推箱：门格一律不接受箱子，门开时也推不进', () => {
+  const level = mechanicsLevel([
+    { type: 'box', id: 'b1', x: 4, y: 2 },
+    { type: 'gate', id: 'g1', x: 5, y: 2, open: false },
+    { type: 'switch', id: 'sw1', x: 4, y: 3, target: 'g1' },
+  ]);
+  const mech = engine.createMechanics(level);
+  const S = engine.TILE;
+  const box = level.entities[0];
+  const gate = level.entities[1];
+
+  // 玩家踩上开关 → 门打开（与真实流程一致）
+  const r = mech.syncSwitches(4 * S, 3 * S, S);
+  assert.strictEqual(gate.open, true);
+  assert.strictEqual(r.gates[0].open, true);
+  assert.strictEqual(mech.blockedAt(5 * S, 2 * S, S), false, '门开时玩家可通行');
+
+  // 门开着，箱子仍不能落到门格 (5,2)
+  assert.strictEqual(mech.pushBox(3 * S, 2 * S, S, 1, 0), null, '开门也不接受箱子');
+  assert.deepStrictEqual([box.x, box.y], [4, 2], '箱子原地不动');
+
+  // 门关上后同样推不进
+  gate.open = false;
+  assert.strictEqual(mech.pushBox(3 * S, 2 * S, S, 1, 0), null, '关门同样阻挡');
+  assert.deepStrictEqual([box.x, box.y], [4, 2]);
+
+  // 对照：远离门格的方向仍可正常推动
+  assert.strictEqual(mech.pushBox(4 * S, 3 * S, S, 0, -1), box);
+  assert.deepStrictEqual([box.x, box.y], [4, 1]);
 });
 
 test('压力开关：玩家踩上开门、离开关门，返回值只含变化项', () => {
