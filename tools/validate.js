@@ -595,8 +595,20 @@ function rule7(game, R) {
       R.err('规则 7', '节点 "' + nodeId + '" 类型 ' + node.type + ' 与 trigger "'
         + node.trigger + '" 矛盾（§7 取值约定）');
     }
-    if (typeof node.once !== 'undefined' && typeof node.once !== 'boolean') {
-      R.warn('节点 "' + nodeId + '" 的 once 非布尔值');
+    const expectedOnce = {
+      intro: true,
+      hint: false,
+      npc: true,
+      check: false,
+      star: true,
+      clear: true,
+      sheep: true,
+      cutscene: true,
+    };
+    if (typeof node.once !== 'boolean') {
+      R.err('规则 7', '节点 "' + nodeId + '" 的 once 必填且须为布尔值（§7 字段约束）');
+    } else if (node.once !== expectedOnce[node.type]) {
+      R.err('规则 7', '节点 "' + nodeId + '" 的 once 不符合类型 ' + node.type + ' 的要求');
     }
     /* lines / speaker */
     if (!Array.isArray(node.lines) || node.lines.length === 0) {
@@ -1532,6 +1544,16 @@ function selfTest() {
     const g = clone(valid);
     g.dialogue['l1.sheep'].once = false;
     assert.ok(hasErr(runRules(g), '规则 7', /once 必须为 true/));
+  });
+  t('规则 7：节点缺少 once 报错', () => {
+    const g = clone(valid);
+    delete g.dialogue['l1.intro.lily'].once;
+    assert.ok(hasErr(runRules(g), '规则 7', /once 必填且须为布尔值/));
+  });
+  t('规则 7：节点 once 非布尔值报错', () => {
+    const g = clone(valid);
+    g.dialogue['l1.intro.lily'].once = 'true';
+    assert.ok(hasErr(runRules(g), '规则 7', /once 必填且须为布尔值/));
   });
   t('规则 7：scopeId 与 trigger 后缀不一致报错', () => {
     const g = clone(valid);
