@@ -270,6 +270,10 @@
     /** 解绑全部 UI 监听并释放输入与渲染器；此后不再产生任何效果 */
     destroy() {
       this.stop();
+      // 对话态下销毁时，对话框与背景虚化层只在 _leaveState(DIALOGUE) 隐藏；
+      // 这里显式清理，避免复用同一 DOM 时残留暗化/模糊遮罩（PR #33 评审）
+      this._hide(this._ui.dialog);
+      this._hide(this._ui.dialogBackdrop);
       for (let i = 0; i < this._uiHandlers.length; i++) {
         const el = this._uiHandlers[i][0];
         const type = this._uiHandlers[i][1];

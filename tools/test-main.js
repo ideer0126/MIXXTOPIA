@@ -1220,6 +1220,20 @@ test('销毁：解绑后按键/按钮全部失效，渲染器与输入释放', (
   assert.strictEqual(game.state, STATE.PLAYING, '销毁后按键不再生效');
 });
 
+test('销毁：对话中销毁一并清掉对话框与背景虚化层（复用 DOM 不残留遮罩）', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 10, 15); // Byeori 旁
+  tick(game);
+  press('e');
+  tick(game);
+  assert.strictEqual(game.state, STATE.DIALOGUE);
+  assert.ok(shown('dialog') && shown('dialog-backdrop'));
+  game.destroy();
+  assert.ok(hidden('dialog'), '销毁后对话框隐藏');
+  assert.ok(hidden('dialog-backdrop'), '销毁后背景虚化层隐藏');
+});
+
 test('index.html：无「玻璃碎片」遗留文案、选关按钮暂隐（#10 开放）', () => {
   const html = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   assert.ok(!/玻璃碎片/.test(html), '帮助界面不得再出现「玻璃碎片」');
