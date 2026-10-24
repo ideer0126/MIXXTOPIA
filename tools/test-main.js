@@ -1348,12 +1348,18 @@ test('保存并退出：写盘回标题，继续冒险恢复关卡与已收集�
 test('回到标题（不保存）：不写盘，继续按钮保持隐藏', () => {
   const game = makeGame();
   elt('btn-start').click();
+  game._npcTarget['1:lily'] = 'l1.hint';
+  game._playedNodes.add('l1.intro');
+  game.sheepCount = 1;
   teleport(game, 8, 20);
   tick(game);
   press('Escape');
   tick(game);
   elt('btn-quit').click();
   assert.strictEqual(game.state, STATE.TITLE);
+  assert.strictEqual(Object.keys(game._npcTarget).length, 0);
+  assert.strictEqual(game._playedNodes.size, 0);
+  assert.strictEqual(game.sheepCount, 0);
   assert.ok(hidden('btn-continue'));
   assert.strictEqual(localStorageStub.getItem(main.SAVE_KEY), null);
   game.destroy();
@@ -1391,6 +1397,7 @@ test('通关自动存档：记录 cleared/unlocked，current 指向下一关', (
   teleport(game, 38, 10);
   tick(game);
   assert.strictEqual(game.state, STATE.CLEAR);
+  assert.match(text('clear-text'), /^星星 3\/3 · 用时 \d+:\d{2}$/);
 
   const raw = JSON.parse(localStorageStub.getItem(main.SAVE_KEY));
   const slot = raw.slots[0];
@@ -1493,6 +1500,20 @@ test('存储不可用：保存失败提示并停留在暂停界面', () => {
   elt('btn-save-quit').click();
   assert.strictEqual(game.state, STATE.PAUSED, '保存失败不退出，避免丢进度');
   assert.ok(/保存失败/.test(text('pause-note')));
+  game.destroy();
+});
+
+test('通关自动存档失败：结算追加提示，仍可进入下一关', () => {
+  const game = makeGame({ storage: null });
+  elt('btn-start').click();
+  collectAll(game);
+  teleport(game, 38, 10);
+  tick(game);
+  assert.strictEqual(game.state, STATE.CLEAR);
+  assert.match(text('clear-text'), /^星星 3\/3 · 用时 \d+:\d{2} · 自动存档失败/);
+  elt('btn-next').click();
+  assert.strictEqual(game.state, STATE.PLAYING);
+  assert.strictEqual(game.level.id, 2);
   game.destroy();
 });
 

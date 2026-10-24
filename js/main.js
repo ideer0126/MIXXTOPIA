@@ -1013,6 +1013,7 @@
       this.saveData = null;
       this.saveSlotIndex = -1;
       this._playedNodes = new Set();
+      this._npcTarget = {};
       this.sheepCount = 0;
       this._pendingOverwrite = -1;
       this._pendingDelete = -1;
@@ -1024,10 +1025,8 @@
     _onLevelClear() {
       const lv = this.level;
       const starCount = this._starCount();
-      this._text(
-        this._ui.clearText,
-        '星星 ' + this.stars + '/' + starCount + ' · 用时 ' + formatTime(this.runTime)
-      );
+      const clearText = '星星 ' + this.stars + '/' + starCount + ' · 用时 ' + formatTime(this.runTime);
+      this._text(this._ui.clearText, clearText);
       const isLast = this.levelIndex >= this.levels.length - 1;
       this._pendingNextIsEnding = isLast;
       this._text(this._ui.btnNext, isLast ? '▶ 见证结局' : '▶ 下一关');
@@ -1037,11 +1036,13 @@
         if (cleared.indexOf(lv.id) < 0) cleared.push(lv.id);
         const next = this.levels[this.levelIndex + 1];
         const nextId = next ? next.id : lv.id;
-        this._writeSave({
+        if (!this._writeSave({
           current: nextId,
           unlocked: Math.max(Number(this.saveData.unlocked) || 1, nextId, lv.id),
           cleared: cleared,
-        });
+        })) {
+          this._text(this._ui.clearText, clearText + ' · 自动存档失败：浏览器本地存储不可用或已写满');
+        }
       }
       this._setState(STATE.CLEAR);
       if (this.onEvent) {
