@@ -19,8 +19,16 @@
  *     intro.next 指向的 hint（repeat）→ check（repeat）；
  *   - 选项列表（check 节点）：↑↓ 移动、E 确认 → goto 分支节点；
  *   - 自动事件分发：收集星 → star:<星id>；过关 → clear:<关卡id>（播完才进结算）；
- *     关卡加载 → load:<关卡id>；黑羊互动 → sheep 计数 +1（会话内，存档见 #8）；
- *   - once 标记会话内记忆（this._playedNodes），Issue #8 存档落地后持久化。
+ *     关卡加载 → load:<关卡id>；黑羊互动 → sheep 计数 +1（随存档持久化）；
+ *   - once 标记（this._playedNodes）随存档持久化（slot.played），重进不再重播。
+ *
+ * 存档系统（Issue #8，规范见 GAME_DESIGN.md §10）：
+ *   - 3 个存档位（localStorage `mixxtopia.save.v1`，`{ v, slots[3] }`）；
+ *     标题「继续冒险」= updatedAt 最新的存档位，「选择存档」列出 3 档，不做选关；
+ *   - 手动存档制：仅「ESC → 保存并退出」与通关结算自动存档会写盘；
+ *     「回到标题（不保存）」/刷新页面丢弃上次存档之后的进度；
+ *   - 存档内容：当前关、每关已收集星 id、cleared/unlocked、黑羊计数、once 已播节点；
+ *   - 声音设置独立存 `mixxtopia.settings.v1`，开关立即生效。
  *
  * 状态机约定（「无状态泄漏」的实现要点，测试 tools/test-main.js 逐项验收）：
  *   - 每次切换必经 _setState → _leaveState(旧态清理) → _enterState(新态初始化)，
@@ -177,13 +185,182 @@
     return m + ':' + (r < 10 ? '0' : '') + r;
   }
 
+  /* ════════════════════════ 存档（Issue #8，规范 GAME_DESIGN.md §10） ════════════════════════ */
+
+  const SAVE_KEY = 'mixxtopia.save.v1';        // { v, slots: [slot|null ×3] }
+  const SETTINGS_KEY = 'mixxtopia.settings.v1'; // { v, sound } 独立于存档位
+  const SAVE_VERSION = 1;
+  const SLOT_COUNT = 3;
+
+  /** 取 localStorage；隐私模式/被禁用等访问异常按不可用处理（返回 null） */
+  function resolveStorage(host) {
+    try {
+      const s = host && host.localStorage;
+      if (s && typeof s.getItem === 'function' && typeof s.setItem === 'function') return s;
+    } catch (e) { /* 访问被拒绝：按不可用处理 */ }
+    return null;
+  }
+
+  /** 空存档位（新游戏开局时内存中的初始态；首次保存前不写盘） */
+  function emptySlot(index, levelId) {
+    return {
+      v: SAVE_VERSION,
+      slot: index + 1,
+      current: levelId,
+      unlocked: levelId,
+      cleared: [],
+      stars: {},
+      sheep: 0,
+      played: [],
+      updatedAt: 0,
+    };
+  }
+
+  /** 深拷贝存档位（读档后运行时修改不污染 store 缓存/原始对象） */
+  function cloneSlot(slot) {
+    const stars = {};
+    for (const key in slot.stars) {
+      if (Object.prototype.hasOwnProperty.call(slot.stars, key)) stars[key] = slot.stars[key].slice();
+    }
+    return {
+      v: SAVE_VERSION,
+      slot: slot.slot,
+      current: slot.current,
+      unlocked: slot.unlocked,
+      cleared: slot.cleared.slice(),
+      stars: stars,
+      sheep: slot.sheep,
+      played: slot.played.slice(),
+      updatedAt: slot.updatedAt,
+    };
+  }
+
+  /** 校验并规范化存档位；结构不可识别返回 null（按空档处理，不覆盖原始数据） */
+  function normalizeSlot(raw, index) {
+    if (!raw || typeof raw !== 'object') return null;
+    const current = Math.floor(Number(raw.current));
+    if (!isFinite(current) || current <= 0) return null;
+    const stars = {};
+    if (raw.stars && typeof raw.stars === 'object' && !Array.isArray(raw.stars)) {
+      for (const key in raw.stars) {
+        if (!Object.prototype.hasOwnProperty.call(raw.stars, key)) continue;
+        if (Array.isArray(raw.stars[key])) {
+          stars[key] = raw.stars[key].filter((id) => typeof id === 'string');
+        }
+      }
+    }
+    const cleared = Array.isArray(raw.cleared)
+      ? raw.cleared.map(Number).filter((n) => isFinite(n) && n > 0)
+      : [];
+    const unlocked = Math.max(1, Math.floor(Number(raw.unlocked)) || 1);
+    return {
+      v: SAVE_VERSION,
+      slot: index + 1,
+      current: current,
+      unlocked: Math.max(unlocked, current),
+      cleared: cleared,
+      stars: stars,
+      sheep: Math.max(0, Math.floor(Number(raw.sheep)) || 0),
+      played: Array.isArray(raw.played) ? raw.played.filter((id) => typeof id === 'string') : [],
+      updatedAt: Number(raw.updatedAt) || 0,
+    };
+  }
+
+  /**
+   * 3 存档位的读写封装：所有解析/校验集中在此，损坏数据不抛错（按空档处理）。
+   * 浏览器禁用 localStorage 时 storage 为 null，读返回空档、写返回 false。
+   */
+  class SaveStore {
+    constructor(storage) {
+      this.storage = storage || null;
+      this.corrupt = false; // 最近一次读取是否遇到非法数据（供 UI 提示）
+    }
+
+    get available() { return !!this.storage; }
+
+    _blankSlots() { return [null, null, null]; }
+
+    /** 全部存档位（长度恒为 SLOT_COUNT，空档为 null） */
+    readAll() {
+      this.corrupt = false;
+      if (!this.storage) return this._blankSlots();
+      let raw = null;
+      try { raw = this.storage.getItem(SAVE_KEY); } catch (e) { return this._blankSlots(); }
+      if (!raw) return this._blankSlots();
+      let data = null;
+      try { data = JSON.parse(raw); } catch (e) {
+        this.corrupt = true;
+        return this._blankSlots();
+      }
+      if (!data || data.v !== SAVE_VERSION || !Array.isArray(data.slots)) {
+        this.corrupt = true;
+        return this._blankSlots();
+      }
+      const slots = [];
+      for (let i = 0; i < SLOT_COUNT; i++) slots.push(normalizeSlot(data.slots[i], i));
+      return slots;
+    }
+
+    readSlot(index) {
+      if (index < 0 || index >= SLOT_COUNT) return null;
+      return this.readAll()[index];
+    }
+
+    /** updatedAt 最新的存档位 { index, slot }；无存档返回 null */
+    latest() {
+      const slots = this.readAll();
+      let best = null;
+      for (let i = 0; i < slots.length; i++) {
+        const s = slots[i];
+        if (!s) continue;
+        if (!best || s.updatedAt >= best.slot.updatedAt) best = { index: i, slot: s };
+      }
+      return best;
+    }
+
+    hasAny() {
+      return this.readAll().some(Boolean);
+    }
+
+    /** 写入单个存档位；失败（无存储/配额/序列化）返回 false */
+    writeSlot(index, slot) {
+      if (!this.storage || index < 0 || index >= SLOT_COUNT) return false;
+      const normalized = normalizeSlot(slot, index);
+      if (!normalized) return false;
+      const slots = this.readAll();
+      slots[index] = normalized;
+      try {
+        this.storage.setItem(SAVE_KEY, JSON.stringify({ v: SAVE_VERSION, slots: slots }));
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    /** 清空单个存档位（标题「选择存档」删除）；已被清空视为成功 */
+    clearSlot(index) {
+      if (index < 0 || index >= SLOT_COUNT) return false;
+      const slots = this.readAll();
+      if (!slots[index]) return true;
+      slots[index] = null;
+      if (!this.storage) return false;
+      try {
+        this.storage.setItem(SAVE_KEY, JSON.stringify({ v: SAVE_VERSION, slots: slots }));
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+  }
+
   /* ════════════════════════ 游戏主类 ════════════════════════ */
 
   class Game {
     /**
      * @param {HTMLCanvasElement} canvas  #game
-     * @param {object} [opts]  { doc, root, onEvent }
-     *   onEvent(name, data)：测试/冒烟钩子，'state' | 'collect' | 'clear' | 'restart'
+     * @param {object} [opts]  { doc, root, onEvent, storage }
+     *   onEvent(name, data)：测试/冒烟钩子，'state' | 'collect' | 'clear' | 'restart' | 'save'
+     *   storage：可注入的 localStorage 兼容对象（测试用）；传 null 模拟存储不可用
      */
     constructor(canvas, opts) {
       opts = opts || {};
@@ -202,6 +379,19 @@
       this.dialogue = data.dialogue;
       this.dataSource = data.source;
 
+      // 存档（Issue #8）：3 档位；opts.storage 显式传入时优先（含 null = 存储不可用）
+      this.storage = Object.prototype.hasOwnProperty.call(opts, 'storage')
+        ? opts.storage
+        : resolveStorage(this.root);
+      this.store = new SaveStore(this.storage);
+      this.saveSlotIndex = -1;  // 当前存档位下标（0–2）；-1 = 未绑定
+      this.saveData = null;     // 当前存档位的内存态（只在保存/自动存档时写盘）
+      this._saveMode = 'load';  // 选择存档界面模式：'load' | 'overwrite'
+      this._pendingOverwrite = -1; // 覆盖模式下的待确认档位
+      this._pendingDelete = -1;    // 待确认删除的档位（二次点击生效）
+      this._settings = this._readSettings();
+      this.soundOn = this._settings.sound !== false;
+
       // 运行态（可在测试中直接读取）
       this.state = null;
       this.levelIndex = 0;
@@ -210,11 +400,10 @@
       this.stars = 0;          // 本关已收集星数
       this.collected = [];     // 本关已收集星 id（运行时记录）
       this.runTime = 0;        // 本关用时（秒，仅 PLAYING 累计）
-      this.soundOn = true;     // #14 音频落地前仅驱动按钮文案
       this._dialog = null;     // 对话进行态 { lines, idx, shown, t, typing, holdTyping, holdTime }，离开对话态即清空
-      this._playedNodes = new Set(); // 已播放过的 once 节点（会话内记忆；Issue #8 存档落地后持久化）
+      this._playedNodes = new Set(); // 已播放过的 once 节点（随存档 slot.played 持久化）
       this._npcTarget = {};   // <关卡id>:<实体id> → 开场 intro 结束后指向的后续节点（hint）
-      this.sheepCount = 0;    // 黑羊彩蛋计数 0–6（会话内；存档见 #8）
+      this.sheepCount = 0;    // 黑羊彩蛋计数 0–6（随存档持久化）
       this._pendingNextIsEnding = false; // 结算按钮指向结局（最后一关）
       this._portraitSrc = null;          // 头像当前 src 缓存（避免重复赋值导致闪动）
       this._failedPortraits = new Set(); // 加载失败的路径，后续渲染保持隐藏
@@ -227,6 +416,7 @@
 
       this._cacheUI();
       this._bindUI();
+      this._applySoundState();
       this._setState(STATE.TITLE);
     }
 
@@ -274,6 +464,7 @@
       // 这里显式清理，避免复用同一 DOM 时残留暗化/模糊遮罩（PR #33 评审）
       this._hide(this._ui.dialog);
       this._hide(this._ui.dialogBackdrop);
+      this._hide(this._ui.saveScreen); // 销毁时复用的 DOM 不残留选择存档界面
       for (let i = 0; i < this._uiHandlers.length; i++) {
         const el = this._uiHandlers[i][0];
         const type = this._uiHandlers[i][1];
@@ -306,6 +497,7 @@
           this._hide(this._ui.hud);
           this.input.setEnabled(false);
           this.input.setTouchVisible(false);
+          this._refreshTitle(); // 继续按钮：取决于是否存在存档
           break;
         case STATE.PLAYING:
           this._hideAllScreens();
@@ -322,6 +514,7 @@
         case STATE.PAUSED:
           this._show(this._ui.pauseScreen);
           this._hide(this._ui.hud);
+          this._text(this._ui.pauseNote, ''); // 清掉上次的保存失败提示
           this.input.setEnabled(true);   // Esc 继续
           this.input.setTouchVisible(false);
           break;
@@ -357,6 +550,7 @@
           break;
         case STATE.PAUSED:
           this._hide(this._ui.pauseScreen);
+          this._text(this._ui.pauseNote, '');
           break;
         case STATE.CLEAR:
           this._hide(this._ui.clearScreen);
@@ -504,21 +698,265 @@
       }
     }
 
-    /* ── 关卡生命周期 ── */
+    /* ── 标题与存档（Issue #8） ── */
 
+    /** 刷新标题按钮：有任一存档时才显示「继续冒险」 */
+    _refreshTitle() {
+      if (this.store.hasAny()) this._show(this._ui.btnContinue);
+      else this._hide(this._ui.btnContinue);
+    }
+
+    /** 标题「新游戏」：优先占用第一个空档；三档全满则打开选择存档界面要求覆盖 */
     _startNewGame() {
-      if (this.state !== STATE.TITLE) return; // 仅标题界面可开始新游戏
+      if (this.state !== STATE.TITLE) return;
+      const slots = this.store.readAll();
+      let empty = -1;
+      for (let i = 0; i < slots.length; i++) {
+        if (!slots[i]) { empty = i; break; }
+      }
+      if (empty < 0) { this._openSaveScreen('overwrite'); return; }
+      this._newGame(empty);
+    }
+
+    /**
+     * 在指定存档位开新游戏：只初始化内存态，**不写盘**。
+     * 首次「保存并退出」或通关自动存档时才真正生成存档文件（手动存档制）。
+     */
+    _newGame(index) {
+      if (this.state !== STATE.TITLE) return false;
+      const first = this.levels[0];
+      if (!first || index < 0 || index >= SLOT_COUNT) return false;
+      this.saveSlotIndex = index;
+      this.saveData = emptySlot(index, first.id);
+      this._playedNodes = new Set();
+      this.sheepCount = 0;
+      this._pendingOverwrite = -1;
+      this._pendingDelete = -1;
       this.levelIndex = 0;
       this._loadLevel(0);
+      return true;
     }
+
+    /** 标题「继续冒险」：载入 updatedAt 最新的存档位 */
+    _continueGame() {
+      if (this.state !== STATE.TITLE) return;
+      const latest = this.store.latest();
+      if (!latest) return;
+      this._loadSlot(latest.index);
+    }
+
+    /** 读档：恢复关卡、已收集星、once 节点、黑羊计数后进入游玩 */
+    _loadSlot(index) {
+      if (this.state !== STATE.TITLE) return false;
+      const slot = this.store.readSlot(index);
+      if (!slot) return false;
+      this.saveSlotIndex = index;
+      this.saveData = cloneSlot(slot);
+      this._playedNodes = new Set(this.saveData.played);
+      this.sheepCount = this.saveData.sheep;
+      this._pendingOverwrite = -1;
+      this._pendingDelete = -1;
+      let levelIndex = -1;
+      for (let i = 0; i < this.levels.length; i++) {
+        if (this.levels[i].id === this.saveData.current) { levelIndex = i; break; }
+      }
+      this.levelIndex = levelIndex >= 0 ? levelIndex : 0;
+      this._loadLevel(this.levelIndex, { restore: true });
+      return true;
+    }
+
+    /** 打开选择存档界面（mode='overwrite' 时已有档位需二次点击确认覆盖） */
+    _openSaveScreen(mode) {
+      if (this.state !== STATE.TITLE) return;
+      this._saveMode = mode === 'overwrite' ? 'overwrite' : 'load';
+      this._pendingOverwrite = -1;
+      this._pendingDelete = -1;
+      this._refreshSaveScreen();
+      this._hide(this._ui.titleScreen);
+      this._show(this._ui.saveScreen);
+    }
+
+    _closeSaveScreen() {
+      if (this.state !== STATE.TITLE) return;
+      this._pendingOverwrite = -1;
+      this._pendingDelete = -1;
+      this._hide(this._ui.saveScreen);
+      this._show(this._ui.titleScreen);
+      this._refreshTitle();
+    }
+
+    /** 点击存档位：空档开新游戏；已有档默认载入；覆盖模式需连点两次 */
+    _onSlotClick(index) {
+      if (this.state !== STATE.TITLE) return;
+      const screen = this._ui.saveScreen;
+      if (!screen || (screen.classList && screen.classList.contains('hidden'))) return;
+      this._pendingDelete = -1; // 选择档位时取消待删除
+      const slot = this.store.readSlot(index);
+      if (!slot) { this._newGame(index); return; }
+      if (this._saveMode === 'overwrite') {
+        if (this._pendingOverwrite === index) { this._newGame(index); return; }
+        this._pendingOverwrite = index;
+        this._refreshSaveScreen();
+        return;
+      }
+      this._loadSlot(index);
+    }
+
+    /** 删除存档位：首次点击进入确认态，再次点击才真正清空（不可恢复） */
+    _onSlotDelete(index) {
+      if (this.state !== STATE.TITLE) return;
+      const screen = this._ui.saveScreen;
+      if (!screen || (screen.classList && screen.classList.contains('hidden'))) return;
+      if (!this.store.readSlot(index)) return;
+      if (this._pendingDelete !== index) {
+        this._pendingDelete = index;
+        this._pendingOverwrite = -1;
+        this._refreshSaveScreen();
+        return;
+      }
+      this._pendingDelete = -1;
+      if (this.store.clearSlot(index)) {
+        this._refreshTitle();
+        this._refreshSaveScreen();
+      } else {
+        this._text(this._ui.saveNote, '删除失败：浏览器本地存储不可用');
+      }
+    }
+
+    /** 渲染 3 个存档位（关卡 / 星数 / 已通关数）与底部提示 */
+    _refreshSaveScreen() {
+      const slots = this.store.readAll();
+      for (let i = 0; i < SLOT_COUNT; i++) {
+        const btn = this._ui.slotBtns[i];
+        const meta = this._ui.slotMetas[i];
+        const del = this._ui.slotDelBtns[i];
+        const slot = slots[i];
+        const confirming = !!slot && this._pendingOverwrite === i;
+        const deleting = !!slot && this._pendingDelete === i;
+        if (btn && btn.classList) {
+          btn.classList.toggle('slot-empty', !slot);
+          btn.classList.toggle('slot-confirm', confirming);
+        }
+        if (del && del.classList) {
+          del.classList.toggle('hidden', !slot);
+          del.classList.toggle('slot-del-confirm', deleting);
+        }
+        if (!meta) continue;
+        if (!slot) { this._text(meta, '空档 · 点击开始新游戏'); continue; }
+        const lv = this._levelById(slot.current);
+        const total = lv ? this._starCountOf(lv) : 0;
+        const got = (slot.stars[String(slot.current)] || []).length;
+        const name = lv ? lv.title : '第 ' + slot.current + ' 关';
+        const tail = deleting ? ' · 再点一次删除' : (confirming ? ' · 再点一次覆盖' : '');
+        this._text(meta, name + ' · ★ ' + got + '/' + total + ' · 已通关 ' + slot.cleared.length + tail);
+      }
+      const note = this._ui.saveNote;
+      if (!note) return;
+      if (this.store.corrupt) {
+        this._text(note, '存档数据损坏，已按空档处理；下次保存会覆盖损坏数据');
+      } else if (this._pendingDelete >= 0) {
+        this._text(note, '确认删除存档 ' + (this._pendingDelete + 1) + '？再点一次 ✕ 删除（不可恢复）');
+      } else if (this._pendingOverwrite >= 0) {
+        this._text(note, '存档 ' + (this._pendingOverwrite + 1) + ' 已有进度，再点一次覆盖为新游戏');
+      } else if (!this.store.available) {
+        this._text(note, '浏览器本地存储不可用，无法保存进度');
+      } else {
+        this._text(note, '存档保存在本机浏览器 · 仅「保存并退出」与通关自动存档会写入');
+      }
+    }
+
+    /**
+     * 写入当前存档位（手动保存 / 通关自动存档共用）。
+     * patch 可覆盖 current / unlocked / cleared（通关时指向下一关）。
+     * @returns {boolean} 是否写盘成功
+     */
+    _writeSave(patch) {
+      if (!this.saveData || !this.level || this.saveSlotIndex < 0) return false;
+      const s = this.saveData;
+      s.v = SAVE_VERSION;
+      s.slot = this.saveSlotIndex + 1;
+      s.current = this.level.id;
+      s.stars[String(this.level.id)] = this.collected.slice();
+      s.sheep = Math.max(0, this.sheepCount || 0);
+      s.played = Array.from(this._playedNodes);
+      s.unlocked = Math.max(1, Number(s.unlocked) || 1, s.current);
+      if (patch) Object.assign(s, patch);
+      s.unlocked = Math.max(1, Number(s.unlocked) || 1, Number(s.current) || 1);
+      s.updatedAt = Date.now();
+      const ok = this.store.writeSlot(this.saveSlotIndex, s);
+      if (ok) {
+        if (this.onEvent) {
+          try {
+            this.onEvent('save', { slot: this.saveSlotIndex, level: s.current, cleared: s.cleared.length });
+          } catch (e) { /* 钩子异常不阻断 */ }
+        }
+        this._refreshTitle();
+      }
+      return ok;
+    }
+
+    /** 暂停菜单「保存并退出」：写盘成功后回标题；失败则留在暂停界面提示 */
+    _saveAndQuit() {
+      if (this.state !== STATE.PAUSED) return false;
+      if (!this._writeSave()) {
+        this._text(this._ui.pauseNote, '保存失败：浏览器本地存储不可用或已写满');
+        return false;
+      }
+      this._quitToTitle();
+      return true;
+    }
+
+    /** 当前循环里可用关卡数据按 id 查找 */
+    _levelById(id) {
+      for (let i = 0; i < this.levels.length; i++) {
+        if (this.levels[i].id === id) return this.levels[i];
+      }
+      return null;
+    }
+
+    /** 关卡星数（关卡数据优先；与实例态无关，供存档界面展示） */
+    _starCountOf(lv) {
+      if (!lv) return 0;
+      if (typeof lv.starCount === 'number' && lv.starCount > 0) return lv.starCount;
+      return (lv.entities || []).filter((e) => e.type === 'star').length;
+    }
+
+    /** 声音按钮文案与当前设置一致（构造函数 / 切换 / 读设置后调用） */
+    _applySoundState() {
+      this._text(this._ui.btnSound, this.soundOn ? '♪ 声音：开' : '♪ 声音：关');
+    }
+
+    /** 读独立的声音设置（与存档位无关；损坏或缺失时按默认开） */
+    _readSettings() {
+      const fallback = { v: SAVE_VERSION, sound: true };
+      if (!this.storage) return fallback;
+      try {
+        const raw = this.storage.getItem(SETTINGS_KEY);
+        if (!raw) return fallback;
+        const data = JSON.parse(raw);
+        return { v: SAVE_VERSION, sound: !data || data.sound !== false };
+      } catch (e) {
+        return fallback;
+      }
+    }
+
+    _writeSettings() {
+      if (!this.storage) return;
+      try { this.storage.setItem(SETTINGS_KEY, JSON.stringify(this._settings)); } catch (e) { /* 忽略配额/禁用 */ }
+    }
+
+    /* ── 关卡生命周期 ── */
 
     /**
      * 加载关卡：浅克隆关卡与实体层（data.js 数据只读，运行时标记不落回共享数据），
      * 重置玩家/星数/计时/相机后进入 PLAYING。重玩与过关共用此入口。
+     * @param {number} i 关卡下标
+     * @param {object} [opts] { restore:true } 读档时按 saveData.stars 恢复已收集星
      */
-    _loadLevel(i) {
+    _loadLevel(i, opts) {
       const lv = this.levels[i];
       if (!lv) return;
+      const restore = !!(opts && opts.restore) && !!this.saveData;
       this.levelIndex = i;
       this.level = Object.assign({}, lv, {
         entities: (lv.entities || []).map((e) => Object.assign({}, e)),
@@ -527,6 +965,17 @@
       this.player = { x: spawn.x * TILE, y: spawn.y * TILE };
       this.stars = 0;
       this.collected = [];
+      if (restore) {
+        const saved = this.saveData.stars[String(this.level.id)] || [];
+        for (const e of this._entitiesOf('star')) {
+          if (saved.indexOf(e.id) >= 0) {
+            e.collected = true;
+            this.collected.push(e.id);
+          }
+        }
+        this.stars = this.collected.length;
+        this.saveData.current = this.level.id;
+      }
       this.runTime = 0;
       this._dialog = null;
       this.camera.x = 0;
@@ -551,6 +1000,7 @@
       this._loadLevel(this.levelIndex);
     }
 
+    /** 回标题（不写盘）：放弃上次存档之后的进度；存档本身保持不动 */
     _quitToTitle() {
       if (this.state !== STATE.PAUSED && this.state !== STATE.ENDING) return;
       this.level = null;
@@ -560,6 +1010,12 @@
       this.runTime = 0;
       this._dialog = null;
       this.levelIndex = 0;
+      this.saveData = null;
+      this.saveSlotIndex = -1;
+      this._playedNodes = new Set();
+      this.sheepCount = 0;
+      this._pendingOverwrite = -1;
+      this._pendingDelete = -1;
       this._setState(STATE.TITLE);
     }
 
@@ -575,6 +1031,18 @@
       const isLast = this.levelIndex >= this.levels.length - 1;
       this._pendingNextIsEnding = isLast;
       this._text(this._ui.btnNext, isLast ? '▶ 见证结局' : '▶ 下一关');
+      // 通关自动存档：记录已收集星、cleared、unlocked，current 指向下一关（末关停留在本关）
+      if (this.saveData) {
+        const cleared = this.saveData.cleared.slice();
+        if (cleared.indexOf(lv.id) < 0) cleared.push(lv.id);
+        const next = this.levels[this.levelIndex + 1];
+        const nextId = next ? next.id : lv.id;
+        this._writeSave({
+          current: nextId,
+          unlocked: Math.max(Number(this.saveData.unlocked) || 1, nextId, lv.id),
+          cleared: cleared,
+        });
+      }
       this._setState(STATE.CLEAR);
       if (this.onEvent) {
         try {
@@ -1014,7 +1482,9 @@
 
     _toggleSound() {
       this.soundOn = !this.soundOn;
-      this._text(this._ui.btnSound, this.soundOn ? '♪ 声音：开' : '♪ 声音：关');
+      this._settings.sound = this.soundOn;
+      this._applySoundState();
+      this._writeSettings(); // 设置独立于存档位，立即生效
       // #14 音频落地后接入 MIXX.audio
     }
 
@@ -1025,7 +1495,7 @@
     _hideAllScreens() {
       this._hide(this._ui.titleScreen);
       this._hide(this._ui.helpScreen);
-      this._hide(this._ui.levelScreen);
+      this._hide(this._ui.saveScreen);
       this._hide(this._ui.pauseScreen);
       this._hide(this._ui.clearScreen);
       this._hide(this._ui.endingScreen);
@@ -1042,12 +1512,21 @@
         'title-screen': 'titleScreen',
         'btn-start': 'btnStart',
         'btn-continue': 'btnContinue',
-        'btn-levels': 'btnLevels',
+        'btn-saves': 'btnSaves',
         'btn-help': 'btnHelp',
         'btn-sound': 'btnSound',
-        'level-screen': 'levelScreen',
-        'level-grid': 'levelGrid',
-        'btn-back': 'btnBack',
+        'save-screen': 'saveScreen',
+        'save-note': 'saveNote',
+        'btn-slot-1': 'btnSlot1',
+        'btn-slot-2': 'btnSlot2',
+        'btn-slot-3': 'btnSlot3',
+        'btn-slot-del-1': 'btnSlotDel1',
+        'btn-slot-del-2': 'btnSlotDel2',
+        'btn-slot-del-3': 'btnSlotDel3',
+        'slot-meta-1': 'slotMeta1',
+        'slot-meta-2': 'slotMeta2',
+        'slot-meta-3': 'slotMeta3',
+        'btn-save-back': 'btnSaveBack',
         'help-screen': 'helpScreen',
         'btn-help-back': 'btnHelpBack',
         'dialog': 'dialog',
@@ -1061,6 +1540,8 @@
         'btn-resume': 'btnResume',
         'btn-restart': 'btnRestart',
         'btn-quit': 'btnQuit',
+        'btn-save-quit': 'btnSaveQuit',
+        'pause-note': 'pauseNote',
         'clear-screen': 'clearScreen',
         'clear-text': 'clearText',
         'btn-next': 'btnNext',
@@ -1074,13 +1555,21 @@
       for (const id of Object.keys(aliases)) {
         this._ui[aliases[id]] = get ? get(id) : null;
       }
+      this._ui.slotBtns = [this._ui.btnSlot1, this._ui.btnSlot2, this._ui.btnSlot3];
+      this._ui.slotMetas = [this._ui.slotMeta1, this._ui.slotMeta2, this._ui.slotMeta3];
+      this._ui.slotDelBtns = [this._ui.btnSlotDel1, this._ui.btnSlotDel2, this._ui.btnSlotDel3];
     }
 
     _bindUI() {
       const ui = this._ui;
       this._on(ui.btnStart, 'click', () => this._startNewGame());
-      // btn-continue：存档系统（#8）落地后接线，当前恒隐藏
-      // btn-levels / level-screen：选关界面（#10）落地后接线
+      this._on(ui.btnContinue, 'click', () => this._continueGame());
+      this._on(ui.btnSaves, 'click', () => this._openSaveScreen('load'));
+      this._on(ui.btnSaveBack, 'click', () => this._closeSaveScreen());
+      for (let i = 0; i < SLOT_COUNT; i++) {
+        this._on(ui.slotBtns[i], 'click', () => this._onSlotClick(i));
+        this._on(ui.slotDelBtns[i], 'click', () => this._onSlotDelete(i));
+      }
       this._on(ui.btnHelp, 'click', () => {
         if (this.state === STATE.TITLE) this._show(ui.helpScreen);
       });
@@ -1093,6 +1582,7 @@
       });
       this._on(ui.btnRestart, 'click', () => this._restartLevel());
       this._on(ui.btnQuit, 'click', () => this._quitToTitle());
+      this._on(ui.btnSaveQuit, 'click', () => this._saveAndQuit());
       this._on(ui.btnNext, 'click', () => this._nextFromClear());
       this._on(ui.btnEnding, 'click', () => this._quitToTitle());
       // 点击对话框翻页（Issue #7；打字中点击=快进本行）
@@ -1203,6 +1693,11 @@
     boot: boot,
     buildBootLevels: buildBootLevels,
     formatTime: formatTime,
+    SaveStore: SaveStore,
+    SAVE_KEY: SAVE_KEY,
+    SETTINGS_KEY: SETTINGS_KEY,
+    SAVE_VERSION: SAVE_VERSION,
+    SLOT_COUNT: SLOT_COUNT,
   };
 
   root.MIXX = root.MIXX || {};

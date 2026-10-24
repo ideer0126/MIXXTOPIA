@@ -13,9 +13,12 @@
  *   4. 无泄漏：单输入实例、单游戏循环、离开状态清空 DOM、重开新局零残留、
  *      关卡数据只读（重玩不残留收集标记）
  *   5. 状态守卫：错误状态下的按钮/按键不生效；destroy 后全部解绑
- *   6. index.html 存量文案更正（无「玻璃碎片」）与选关按钮暂隐
+ *   6. index.html 存量文案更正（无「玻璃碎片」）与存档界面元素齐全
  *   7. 对话系统（Issue #7）：打字机 25ms/字、按住加速、点按快进、E/空格/Enter/点击
  *      翻页、旁白姓名框隐藏、对话期间玩家锁定与计时暂停、提示文案切换
+ *   8. 存档系统（Issue #8）：3 存档位、继续/新游戏/选择存档、手动保存并退出、
+ *      回到标题不写盘、通关自动存档、读档恢复星数/once/黑羊、损坏存档容错、
+ *      存储不可用提示、声音设置独立持久化
  */
 'use strict';
 
@@ -30,11 +33,14 @@ const { FakeCanvas } = require('./stub-canvas.js');
 /** main.js _cacheUI 需要的全部 id（与 index.html 一致） */
 const UI_IDS = [
   'hud', 'hud-level', 'hud-shards',
-  'title-screen', 'btn-start', 'btn-continue', 'btn-levels', 'btn-help', 'btn-sound',
-  'level-screen', 'level-grid', 'btn-back',
+  'title-screen', 'btn-start', 'btn-continue', 'btn-saves', 'btn-help', 'btn-sound',
+  'save-screen', 'save-note',
+  'btn-slot-1', 'btn-slot-2', 'btn-slot-3',
+  'btn-slot-del-1', 'btn-slot-del-2', 'btn-slot-del-3',
+  'slot-meta-1', 'slot-meta-2', 'slot-meta-3', 'btn-save-back',
   'help-screen', 'btn-help-back',
   'dialog', 'dialog-backdrop', 'dialog-portrait', 'dialog-name', 'dialog-text', 'dialog-hint', 'dialog-options',
-  'pause-screen', 'btn-resume', 'btn-restart', 'btn-quit',
+  'pause-screen', 'btn-resume', 'btn-restart', 'btn-quit', 'btn-save-quit', 'pause-note',
   'clear-screen', 'clear-text', 'btn-next',
   'ending-screen', 'ending-body', 'btn-ending',
   'touch-controls',
@@ -98,14 +104,16 @@ registry.set('game', new FakeCanvas());
 
 // 复刻 index.html 初始状态：屏幕层/对话框/HUD/暂未开放按钮默认隐藏，按钮默认文案
 for (const id of [
-  'help-screen', 'level-screen', 'pause-screen', 'clear-screen', 'ending-screen',
-  'dialog', 'dialog-backdrop', 'hud', 'btn-continue', 'btn-levels',
+  'help-screen', 'save-screen', 'pause-screen', 'clear-screen', 'ending-screen',
+  'dialog', 'dialog-backdrop', 'hud', 'btn-continue',
+  'btn-slot-del-1', 'btn-slot-del-2', 'btn-slot-del-3',
 ]) {
   registry.get(id).classList.add('hidden');
 }
 registry.get('btn-sound').textContent = '♪ 声音：开';
 registry.get('btn-next').textContent = '▶ 下一关';
 registry.get('dialog-hint').textContent = '▼ E / 空格';
+for (let i = 1; i <= 3; i++) registry.get('slot-meta-' + i).textContent = '空档';
 
 const documentStub = {
   readyState: 'complete',
@@ -133,11 +141,26 @@ function fireWindow(type, ev) {
 
 /* ─────────────────── 沙箱与加载 ─────────────────── */
 
+/** localStorage 桩（隔离每次 Node 进程；测试间可 clear） */
+function createLocalStorage() {
+  const map = new Map();
+  return {
+    getItem(key) { return map.has(String(key)) ? map.get(String(key)) : null; },
+    setItem(key, value) { map.set(String(key), String(value)); },
+    removeItem(key) { map.delete(String(key)); },
+    clear() { map.clear(); },
+    key(i) { return Array.from(map.keys())[i] || null; },
+    get length() { return map.size; },
+  };
+}
+const localStorageStub = createLocalStorage();
+
 let rafCount = 0;
 let rafSeq = 0;
 const sandbox = {
   console,
   document: documentStub,
+  localStorage: localStorageStub,
   MIXX_NO_DEMO: true, // 停用引擎演示
   MIXX_NO_BOOT: true, // 阻止 main.js 自启动，测试手动建实例
   innerWidth: 1280,
@@ -194,9 +217,14 @@ function press(k) {
   key('keyup', k);
 }
 
-/** 新建游戏实例（不自动 start，测试手动驱动帧） */
+/**
+ * 新建游戏实例（不自动 start，测试手动驱动帧）。
+ * 默认清空 localStorage，保证用例互不污染；跨实例验证存档时传 { keepStorage: true }。
+ */
 function makeGame(opts) {
-  return new main.Game(registry.get('game'), opts || {});
+  opts = opts || {};
+  if (!opts.keepStorage) localStorageStub.clear();
+  return new main.Game(registry.get('game'), opts);
 }
 
 /** 驱动一帧（递增时间戳，避免 dt 为 0） */
@@ -260,9 +288,10 @@ test('初始进入标题：屏幕显隐正确、输入禁用、虚拟按键隐�
   const game = makeGame();
   assert.strictEqual(game.state, STATE.TITLE);
   assert.ok(shown('title-screen'));
-  assert.ok(hidden('help-screen') && hidden('pause-screen') && hidden('clear-screen') && hidden('ending-screen'));
+  assert.ok(hidden('help-screen') && hidden('save-screen') && hidden('pause-screen') && hidden('clear-screen') && hidden('ending-screen'));
   assert.ok(hidden('dialog'));
   assert.ok(hidden('hud'));
+  assert.ok(hidden('btn-continue'), '无存档时「继续冒险」隐藏');
   assert.strictEqual(game.input.enabled, false);
   assert.ok(elt('touch-controls').classList.contains('touch-off'), '虚拟按键应隐藏');
   game.destroy();
@@ -1234,12 +1263,268 @@ test('销毁：对话中销毁一并清掉对话框与背景虚化层（复用 D
   assert.ok(hidden('dialog-backdrop'), '销毁后背景虚化层隐藏');
 });
 
-test('index.html：无「玻璃碎片」遗留文案、选关按钮暂隐（#10 开放）', () => {
+test('index.html：无「玻璃碎片」遗留文案、存档界面元素齐全（不做选关）', () => {
   const html = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   assert.ok(!/玻璃碎片/.test(html), '帮助界面不得再出现「玻璃碎片」');
   assert.ok(/愿望之星/.test(html));
-  assert.ok(/id="btn-levels" class="menu-btn hidden"/.test(html), '选关按钮在 #10 前隐藏');
+  assert.ok(/id="btn-saves"/.test(html), '标题提供「选择存档」');
+  assert.ok(/id="btn-save-quit"/.test(html), '暂停菜单提供「保存并退出」');
+  assert.ok(/id="save-screen"/.test(html) && /id="btn-slot-1"/.test(html), '3 存档位界面存在');
+  assert.ok(/id="btn-slot-del-1"/.test(html), '存档位带删除按钮');
+  assert.ok(!/id="level-grid"/.test(html), '不做选关界面');
   assert.ok(/id="hud-level"/.test(html) && /id="hud-shards"/.test(html), 'HUD 元素齐全');
+});
+
+/* ─────────────────── 7. 存档系统（Issue #8） ─────────────────── */
+
+/** 直接写入 3 档存档（用于构造全满/指定进度场景） */
+function seedSaves(slots) {
+  localStorageStub.setItem(main.SAVE_KEY, JSON.stringify({ v: main.SAVE_VERSION, slots: slots }));
+}
+function slotData(index, current, updatedAt) {
+  return {
+    v: main.SAVE_VERSION, slot: index, current: current, unlocked: current,
+    cleared: [], stars: {}, sheep: 0, played: [], updatedAt: updatedAt,
+  };
+}
+
+test('存档：初始 3 档全空、继续隐藏；选择存档可打开/返回', () => {
+  const game = makeGame();
+  assert.strictEqual(main.SLOT_COUNT, 3);
+  assert.strictEqual(main.SAVE_KEY, 'mixxtopia.save.v1');
+  assert.ok(hidden('btn-continue'), '无存档时不显示继续');
+  elt('btn-saves').click();
+  assert.ok(shown('save-screen') && hidden('title-screen'));
+  for (let i = 1; i <= 3; i++) assert.ok(/空档/.test(text('slot-meta-' + i)), '空档 ' + i);
+  elt('btn-save-back').click();
+  assert.ok(shown('title-screen') && hidden('save-screen'));
+  game.destroy();
+});
+
+test('新游戏：占用第一个空档位但不立即写盘（手动存档制）', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  assert.strictEqual(game.state, STATE.PLAYING);
+  assert.strictEqual(game.saveSlotIndex, 0);
+  assert.strictEqual(game.saveData.current, 1);
+  assert.strictEqual(localStorageStub.getItem(main.SAVE_KEY), null, '开局不写盘');
+  assert.ok(hidden('btn-continue'));
+  game.destroy();
+});
+
+test('保存并退出：写盘回标题，继续冒险恢复关卡与已收集星', () => {
+  let game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 8, 20);
+  tick(game);
+  assert.strictEqual(game.stars, 1);
+  press('Escape');
+  tick(game);
+  assert.strictEqual(game.state, STATE.PAUSED);
+  elt('btn-save-quit').click();
+  assert.strictEqual(game.state, STATE.TITLE);
+  assert.ok(shown('btn-continue'), '保存后标题出现继续');
+
+  const raw = JSON.parse(localStorageStub.getItem(main.SAVE_KEY));
+  assert.strictEqual(raw.slots.length, 3);
+  assert.strictEqual(raw.slots[0].current, 1);
+  assert.deepStrictEqual(raw.slots[0].stars['1'], ['s1']);
+  assert.ok(raw.slots[0].updatedAt > 0);
+  game.destroy();
+
+  game = makeGame({ keepStorage: true });
+  assert.ok(shown('btn-continue'), '有存档时继续按钮显示');
+  elt('btn-continue').click();
+  assert.strictEqual(game.state, STATE.PLAYING);
+  assert.strictEqual(game.saveSlotIndex, 0);
+  assert.strictEqual(game.level.id, 1);
+  assert.strictEqual(game.stars, 1);
+  assert.strictEqual(text('hud-shards'), '★ 1/3');
+  const star = game.level.entities.find((e) => e.id === 's1');
+  assert.ok(star && star.collected, '读档后已收集星标记为 collected');
+  game.destroy();
+});
+
+test('回到标题（不保存）：不写盘，继续按钮保持隐藏', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 8, 20);
+  tick(game);
+  press('Escape');
+  tick(game);
+  elt('btn-quit').click();
+  assert.strictEqual(game.state, STATE.TITLE);
+  assert.ok(hidden('btn-continue'));
+  assert.strictEqual(localStorageStub.getItem(main.SAVE_KEY), null);
+  game.destroy();
+});
+
+test('回到标题（不保存）不覆盖旧档：继续后回到上次保存的进度', () => {
+  let game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 8, 20);
+  tick(game); // ★1
+  press('Escape'); tick(game);
+  elt('btn-save-quit').click();
+  game.destroy();
+
+  game = makeGame({ keepStorage: true });
+  elt('btn-continue').click();
+  teleport(game, 25, 14);
+  tick(game); // ★2（未保存）
+  assert.strictEqual(game.stars, 2);
+  press('Escape'); tick(game);
+  elt('btn-quit').click();
+  assert.strictEqual(game.state, STATE.TITLE);
+  game.destroy();
+
+  game = makeGame({ keepStorage: true });
+  elt('btn-continue').click();
+  assert.strictEqual(game.stars, 1, '未保存的 ★2 不写入，回到上次存档');
+  game.destroy();
+});
+
+test('通关自动存档：记录 cleared/unlocked，current 指向下一关', () => {
+  let game = makeGame();
+  elt('btn-start').click();
+  collectAll(game);
+  teleport(game, 38, 10);
+  tick(game);
+  assert.strictEqual(game.state, STATE.CLEAR);
+
+  const raw = JSON.parse(localStorageStub.getItem(main.SAVE_KEY));
+  const slot = raw.slots[0];
+  assert.deepStrictEqual(slot.cleared, [1]);
+  assert.strictEqual(slot.unlocked, 2);
+  assert.strictEqual(slot.current, 2);
+  assert.deepStrictEqual(slot.stars['1'].slice().sort(), ['s1', 's2', 's3']);
+  game.destroy();
+
+  game = makeGame({ keepStorage: true });
+  elt('btn-continue').click();
+  assert.strictEqual(game.state, STATE.PLAYING);
+  assert.strictEqual(game.level.id, 2, '继续直接进入下一关');
+  assert.strictEqual(game.stars, 0);
+  game.destroy();
+});
+
+test('三档位：继续=最新档；三档全满时新游戏需二次点击确认覆盖', () => {
+  seedSaves([slotData(1, 2, 100), slotData(2, 1, 200), slotData(3, 2, 300)]);
+  let game = makeGame({ keepStorage: true });
+  assert.ok(shown('btn-continue'));
+  elt('btn-continue').click();
+  assert.strictEqual(game.saveSlotIndex, 2, '继续载入 updatedAt 最新的档 3');
+  game.destroy();
+
+  game = makeGame({ keepStorage: true });
+  elt('btn-start').click();
+  assert.strictEqual(game.state, STATE.TITLE);
+  assert.ok(shown('save-screen'), '三档全满 → 打开选择存档要求覆盖');
+  elt('btn-slot-1').click();
+  assert.strictEqual(game.state, STATE.TITLE, '第一次点击只进入确认态');
+  assert.ok(/再点一次/.test(text('save-note')));
+  assert.ok(elt('btn-slot-1').classList.contains('slot-confirm'));
+  elt('btn-slot-1').click();
+  assert.strictEqual(game.state, STATE.PLAYING);
+  assert.strictEqual(game.saveSlotIndex, 0);
+  assert.strictEqual(game.level.id, 1, '新游戏从第 1 关开始');
+  game.destroy();
+});
+
+test('选择存档：已有档载入对应进度、空档直接开新游戏', () => {
+  seedSaves([null, slotData(2, 2, 500), null]);
+  let game = makeGame({ keepStorage: true });
+  elt('btn-saves').click();
+  assert.ok(/疾风/.test(text('slot-meta-2')), '存档 2 显示第 2 关信息');
+  elt('btn-slot-2').click();
+  assert.strictEqual(game.state, STATE.PLAYING);
+  assert.strictEqual(game.saveSlotIndex, 1);
+  assert.strictEqual(game.level.id, 2);
+  game.destroy();
+
+  game = makeGame({ keepStorage: true });
+  elt('btn-saves').click();
+  elt('btn-slot-1').click();
+  assert.strictEqual(game.state, STATE.PLAYING);
+  assert.strictEqual(game.saveSlotIndex, 0);
+  assert.strictEqual(game.level.id, 1);
+  game.destroy();
+});
+
+test('删除存档：需二次点击确认；删除后变空档、删除按钮隐藏、继续按钮消失', () => {
+  seedSaves([slotData(1, 1, 100), null, null]);
+  const game = makeGame({ keepStorage: true });
+  elt('btn-saves').click();
+  assert.ok(!elt('btn-slot-del-1').classList.contains('hidden'), '有档位时显示删除按钮');
+  assert.ok(elt('btn-slot-del-2').classList.contains('hidden'), '空档不显示删除按钮');
+  elt('btn-slot-del-1').click();
+  assert.strictEqual(game.state, STATE.TITLE, '第一次点击只进入确认态');
+  assert.ok(/再点一次/.test(text('save-note')));
+  assert.ok(elt('btn-slot-del-1').classList.contains('slot-del-confirm'));
+  elt('btn-slot-del-1').click();
+  const raw = JSON.parse(localStorageStub.getItem(main.SAVE_KEY));
+  assert.strictEqual(raw.slots[0], null, '二次点击后清空存档位');
+  assert.ok(/空档/.test(text('slot-meta-1')));
+  assert.ok(elt('btn-slot-del-1').classList.contains('hidden'));
+  assert.ok(hidden('btn-continue'), '删光后继续按钮隐藏');
+  game.destroy();
+});
+
+test('损坏存档：非法 JSON / 结构异常不抛错，按空档处理并提示', () => {  localStorageStub.setItem(main.SAVE_KEY, '{oops');
+  let game = makeGame({ keepStorage: true });
+  assert.ok(hidden('btn-continue'));
+  elt('btn-saves').click();
+  assert.ok(/损坏/.test(text('save-note')), '损坏提示');
+  assert.ok(/空档/.test(text('slot-meta-1')));
+  game.destroy();
+
+  localStorageStub.setItem(main.SAVE_KEY, JSON.stringify({ v: main.SAVE_VERSION, slots: 'nope' }));
+  game = makeGame({ keepStorage: true });
+  assert.ok(hidden('btn-continue'));
+  game.destroy();
+});
+
+test('存储不可用：保存失败提示并停留在暂停界面', () => {
+  const game = makeGame({ storage: null });
+  elt('btn-start').click();
+  press('Escape');
+  tick(game);
+  assert.strictEqual(game.state, STATE.PAUSED);
+  elt('btn-save-quit').click();
+  assert.strictEqual(game.state, STATE.PAUSED, '保存失败不退出，避免丢进度');
+  assert.ok(/保存失败/.test(text('pause-note')));
+  game.destroy();
+});
+
+test('声音设置：独立持久化（不占存档位），重建游戏后沿用', () => {
+  let game = makeGame();
+  assert.strictEqual(game.soundOn, true);
+  elt('btn-sound').click();
+  assert.strictEqual(game.soundOn, false);
+  assert.strictEqual(text('btn-sound'), '♪ 声音：关');
+  game.destroy();
+
+  game = makeGame({ keepStorage: true });
+  assert.strictEqual(game.soundOn, false);
+  assert.strictEqual(text('btn-sound'), '♪ 声音：关');
+  game.destroy();
+});
+
+test('读档恢复 once 已播节点与黑羊计数', () => {
+  let game = makeGame();
+  elt('btn-start').click();
+  game._playedNodes.add('l1.intro');
+  game.sheepCount = 2;
+  press('Escape');
+  tick(game);
+  elt('btn-save-quit').click();
+  game.destroy();
+
+  game = makeGame({ keepStorage: true });
+  elt('btn-continue').click();
+  assert.ok(game._playedNodes.has('l1.intro'));
+  assert.strictEqual(game.sheepCount, 2);
+  game.destroy();
 });
 
 /* ─────────────────── 汇总 ─────────────────── */

@@ -18,8 +18,8 @@
  *   star:/sheep:/cake 节点按 trigger 直接调度、不设 entry。NPC 互动节点与选项分支
  *   节点（l3.dj.right / l3.dj.wrong）同样不设 entry（由引擎按 §7 的
  *   「首次 intro → 此后 hint」规则解析）。
- * - once 节点仅首次播放；存档落地（Issue #8）后由 localStorage 持久化，
- *   当前由 main.js 会话内记忆。
+ * - once 节点仅首次播放；播放记录由 Issue #8 持久化到 localStorage
+ *   （对应存档位的 played 列表），读档后不再重播。
  */
 'use strict';
 

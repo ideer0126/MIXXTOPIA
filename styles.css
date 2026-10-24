@@ -196,6 +196,89 @@ body {
   font-size: 10px;
 }
 
+/* ── 选择存档（Issue #8）：3 个固定存档位 ── */
+
+.save-note {
+  margin: 0;
+  max-width: 320px;
+  font-size: 9px;
+  line-height: 1.7;
+  color: #b8a8e0;
+}
+
+.save-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(320px, 86vw);
+}
+
+.slot-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.slot-btn {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  text-align: left;
+}
+
+.slot-del {
+  flex: 0 0 auto;
+  padding: 12px 14px;
+  color: #ff9bb5;
+  border-color: #7a3d5c;
+}
+
+.slot-del-confirm {
+  background: #4a1430;
+  border-color: #ff7ba9;
+}
+
+.slot-name {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #ffc857;
+}
+
+.slot-meta {
+  min-width: 0; /* 允许 flex 子项收缩，超长进度文案走省略号 */
+  font-size: 9px;
+  line-height: 1.5;
+  color: #d8cff0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-btn.slot-empty .slot-meta {
+  color: #7f74a8;
+}
+
+.slot-btn.slot-confirm {
+  border-color: #ff7ba9;
+  background: #2a1440;
+}
+
+.slot-btn.slot-confirm .slot-meta {
+  color: #ffb6c9;
+}
+
+.pause-note {
+  min-height: 1.2em;
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.6;
+  color: #ff9bb5;
+}
+
 /* 标题界面 */
 .title-glow {
   animation: title-pulse 2.4s ease-in-out infinite alternate;

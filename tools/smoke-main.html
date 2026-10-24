@@ -8,10 +8,11 @@
 </head>
 <body>
   <!--
-    tools/smoke-main.html —— 游戏状态机（Issue #6）+ 对话系统（Issue #7）浏览器冒烟测试
+    tools/smoke-main.html —— 游戏状态机（Issue #6）+ 对话系统（Issue #7）+ 存档（Issue #8）冒烟测试
     运行：静态服务器或 file:// + 无头浏览器 dump-dom，断言 <body data-smoke="ok">。
     覆盖真实浏览器环境下六态往返（标题/游玩/对话/暂停/结算/结局）与无状态泄漏，
-    以及打字机逐字显示、点按快进、翻页退出（Issue #7）。
+    打字机逐字显示、点按快进、翻页退出（Issue #7），以及手动保存并退出、
+    通关自动存档、继续冒险读档（Issue #8）。
     UI 骨架与 index.html 一致（main.js 按 id 接线）。
   -->
   <canvas id="game" width="320" height="224"></canvas>
@@ -22,16 +23,34 @@
   </div>
 
   <div id="title-screen" class="screen">
-    <button id="btn-start" class="menu-btn">▶ 开始游戏</button>
     <button id="btn-continue" class="menu-btn hidden">↻ 继续冒险</button>
-    <button id="btn-levels" class="menu-btn hidden">★ 选择关卡</button>
+    <button id="btn-start" class="menu-btn">▶ 新游戏</button>
+    <button id="btn-saves" class="menu-btn">▤ 选择存档</button>
     <button id="btn-help" class="menu-btn">? 操作说明</button>
     <button id="btn-sound" class="menu-btn">♪ 声音：开</button>
   </div>
 
-  <div id="level-screen" class="screen hidden">
-    <div id="level-grid"></div>
-    <button id="btn-back" class="menu-btn small">← 返回</button>
+  <div id="save-screen" class="screen hidden">
+    <p id="save-note" class="save-note">存档保存在本机浏览器</p>
+    <div class="slot-row">
+      <button type="button" id="btn-slot-1" class="menu-btn slot-btn">
+        <span class="slot-name">存档 1</span><span id="slot-meta-1" class="slot-meta">空档</span>
+      </button>
+      <button type="button" id="btn-slot-del-1" class="menu-btn slot-del hidden">✕</button>
+    </div>
+    <div class="slot-row">
+      <button type="button" id="btn-slot-2" class="menu-btn slot-btn">
+        <span class="slot-name">存档 2</span><span id="slot-meta-2" class="slot-meta">空档</span>
+      </button>
+      <button type="button" id="btn-slot-del-2" class="menu-btn slot-del hidden">✕</button>
+    </div>
+    <div class="slot-row">
+      <button type="button" id="btn-slot-3" class="menu-btn slot-btn">
+        <span class="slot-name">存档 3</span><span id="slot-meta-3" class="slot-meta">空档</span>
+      </button>
+      <button type="button" id="btn-slot-del-3" class="menu-btn slot-del hidden">✕</button>
+    </div>
+    <button id="btn-save-back" class="menu-btn small">← 返回</button>
   </div>
 
   <div id="help-screen" class="screen hidden">
@@ -44,13 +63,16 @@
     <img id="dialog-portrait" alt="" aria-hidden="true" />
     <div id="dialog-name"></div>
     <div id="dialog-text"></div>
+    <div id="dialog-options"></div>
     <div id="dialog-hint">▼ E / 空格</div>
   </div>
 
   <div id="pause-screen" class="screen hidden">
     <button id="btn-resume" class="menu-btn">▶ 继续</button>
     <button id="btn-restart" class="menu-btn">↻ 重玩本关</button>
-    <button id="btn-quit" class="menu-btn">✖ 回到标题</button>
+    <button id="btn-quit" class="menu-btn">✖ 回到标题（不保存）</button>
+    <button id="btn-save-quit" class="menu-btn">💾 保存并退出</button>
+    <p id="pause-note" class="pause-note"></p>
   </div>
 
   <div id="clear-screen" class="screen hidden">
@@ -83,6 +105,12 @@
       function shown(id) { return !document.getElementById(id).classList.contains('hidden'); }
       function text(id) { return document.getElementById(id).textContent; }
 
+      // 清掉历史存档，保证冒烟页面每次运行起点一致
+      try {
+        localStorage.removeItem('mixxtopia.save.v1');
+        localStorage.removeItem('mixxtopia.settings.v1');
+      } catch (e) { /* 存储不可用时仍可验证游戏流程 */ }
+
       var main = window.MIXX.main;
       ok('main 就绪', !!main && typeof main.Game === 'function');
       var game = main.boot();
@@ -107,12 +135,19 @@
         });
       }
 
-      // 1) 标题
+      // 1) 标题 + 选择存档界面（Issue #8）
       ok('初始 title', game.state === 'title' && shown('title-screen') && !shown('hud'));
+      ok('无存档时继续隐藏', !shown('btn-continue') && shown('btn-saves'));
+      document.getElementById('btn-saves').click();
+      ok('选择存档界面', shown('save-screen') && !shown('title-screen'));
+      ok('空档文案', text('slot-meta-1') === '空档 · 点击开始新游戏');
+      document.getElementById('btn-save-back').click();
+      ok('存档界面返回', shown('title-screen') && !shown('save-screen'));
 
       // 2) 开始 → 游玩 + HUD
       document.getElementById('btn-start').click();
       ok('start → playing', game.state === 'playing' && !shown('title-screen'));
+      ok('新游戏占档 1', game.saveSlotIndex === 0);
       ok('HUD 关名', text('hud-level') === '占位关卡 · 烛光梦境');
       ok('HUD 星数 0/3', text('hud-shards') === '★ 0/3');
 
@@ -151,16 +186,34 @@
       frame();
       ok('→ playing', game.state === 'playing' && shown('hud'));
 
-      // 5) 收集 + 结算
+      // 4b) 回到标题（不保存）：进度不写盘
+      press('Escape'); frame();
+      document.getElementById('btn-quit').click();
+      ok('不保存回标题', game.state === 'title' && shown('title-screen') && !shown('btn-continue'));
+      document.getElementById('btn-start').click();
+      ok('重新开新游戏', game.state === 'playing' && text('hud-shards') === '★ 0/3');
+
+      // 5) 收集 + 结算 + 通关自动存档
       collectAll();
       ok('收集 3 星', text('hud-shards') === '★ 3/3');
       tp(38, 10);
       frame();
       ok('→ clear', game.state === 'clear' && shown('clear-screen') && /星星 3\/3/.test(text('clear-text')));
+      var saveRaw = JSON.parse(localStorage.getItem('mixxtopia.save.v1'));
+      ok('通关自动存档', !!saveRaw && !!saveRaw.slots[0]
+        && saveRaw.slots[0].current === 2 && saveRaw.slots[0].cleared.indexOf(1) >= 0);
 
-      // 6) 下一关 → 结局 → 标题
+      // 6) 下一关 → 保存并退出 → 继续冒险读档
       document.getElementById('btn-next').click();
       ok('下一关 playing', game.state === 'playing' && text('hud-shards') === '★ 0/2');
+      press('Escape'); frame();
+      document.getElementById('btn-save-quit').click();
+      ok('保存并退出 → title', game.state === 'title' && shown('title-screen') && shown('btn-continue'));
+      document.getElementById('btn-continue').click();
+      ok('继续 → 第 2 关', game.state === 'playing' && game.level.id === 2
+        && text('hud-shards') === '★ 0/2');
+
+      // 7) 末关 → 结局 → 标题
       collectAll();
       tp(38, 10);
       frame();
@@ -170,10 +223,11 @@
       ok('结局文案渲染', document.getElementById('ending-body').innerHTML.indexOf('25 颗愿望之星') >= 0);
       document.getElementById('btn-ending').click();
       ok('ending → title', game.state === 'title' && shown('title-screen'));
+      ok('结局后存档仍在', shown('btn-continue'));
 
-      // 7) 无泄漏
+      // 8) 无泄漏
       ok('无残留屏幕', !shown('hud') && !shown('dialog') && !shown('pause-screen')
-        && !shown('clear-screen') && !shown('ending-screen'));
+        && !shown('clear-screen') && !shown('ending-screen') && !shown('save-screen'));
       ok('对话框清空', text('dialog-text') === '' && text('dialog-name') === '');
       ok('无运行时错误', errors.length === 0);
 
