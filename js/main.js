@@ -13,6 +13,14 @@
  *     立即显示本行全文（快进）；本行显示完后 E/空格/Enter/点击对话框翻页；
  *   - 末行翻页退出对话，_leaveState 清空对话框与进行态（无状态泄漏）。
  *
+ * 收集与解谜机制（Issue #9，规范见 GAME_DESIGN.md §6）：
+ *   - 碰撞：engine.Mechanics 判定瓦片（墙/水）、关闭的门与箱子；玩家移动分轴滑动；
+ *   - 推箱：朝箱子移动且箱后一格可站立时，礼物盒滑动一格；
+ *   - 压力开关：玩家或箱子压住开关期间 target 门开启，离开即关闭；
+ *   - 星星：接触收集 + 金色粒子 + 音效，触发 star:<星id> 台词（#12）；
+ *   - 传送门：集齐本关星星后激活（粒子/音效/onEvent），踩上触发过关台词 → 结算；
+ *   - 所有反馈走 engine.Particles 与 MIXX.audio，音频不可用时安静降级。
+ *
  * 对话节点语义（Issue #12，规格 GAME_DESIGN.md §7）：
  *   - 节点字段 type / trigger / once / entry / scopeId / lines / options / next；
  *   - NPC 互动解析：首次 intro（once）→ 同 trigger 的 npc 自我介绍（once）→
@@ -41,9 +49,9 @@
  *   - 单游戏循环：start() 防重复启动，destroy() 解绑全部 UI 监听、输入与渲染器。
  *
  * 数据来源：window.GAME（js/data.js，Issue #11/#12）就位后自动采用；
- * 当前 data.js 为空，内置「占位关卡 ×2」兜底（复用引擎演示地形），
- * 保证六态全部可达、可往返验证。占位实现（碰撞/收集/传送门/角色绘制）
- * 由后续 Issue 接管：#9 机制、#13 美术、#15 演出（#7 对话已实现）。
+ * 当前 data.js 的 levels 为空，内置「占位关卡 ×2」兜底（复用引擎演示地形，
+ * 关 1 已带开关/门/礼物盒，用于验证 #9 的单关完整闭环），保证六态全部可达、
+ * 可往返验证。正式关卡/美术/演出由后续 Issue 接管：#11 地图、#13 美术、#15 演出。
  *
  * 启用方式：index.html 在 engine.js 之后加载本文件；本文件立即设置
  * MIXX_NO_DEMO = true 停用引擎演示模式，并在 DOMContentLoaded 后自启动。
@@ -64,10 +72,10 @@
   const TILE = engine.TILE;
   const VIEW_W = engine.VIEW_W;
   const VIEW_H = engine.VIEW_H;
-  const PLAYER_SIZE = 16;      // 玩家碰撞盒边长（px，#9 前与引擎演示一致的占位碰撞）
+  const PLAYER_SIZE = 16;      // 玩家碰撞盒边长（px）
   const MOVE_SPEED = 80;       // px/s
-  const INTERACT_RANGE = 24;   // 互动距离（px，#9 接管后细化）
-  const SOLID_TILES = { '#': true, '~': true }; // 占位碰撞：墙与水不可通行（#9 接管）
+  const INTERACT_RANGE = 24;   // 互动距离（px）
+  // 碰撞与机关判定统一走 engine.Mechanics（#9）：墙/水、关闭的门、箱子均阻挡。
 
   /* 说话人头像位（Issue #28）：素材规范见 assets/characters/README.md */
   const PORTRAIT_BASE = 'assets/characters/';
@@ -83,6 +91,11 @@
   const DIALOG_TAP_MS = 250;      // 按住时长阈值：短于此的「点按」→ 立即显示本行全文
   const DIALOG_HINT_TYPING = '▸▸ 快进';   // 打字中的提示
   const DIALOG_HINT_PAGE = '▼ E / 空格'; // 本行显示完、等待翻页的提示
+
+  /* 实体绘制层次（#9）：地垫在最下、门其次、箱子/角色/星星等在最上，
+     避免礼物盒压上开关时被开关贴图盖住（数据顺序不承担绘制层次） */
+  const ENTITY_DRAW_LAYER = { switch: 1, gate: 2 };
+  const ENTITY_DRAW_LAYER_DEFAULT = 3;
 
   /* ════════════════════════ 状态常量 ════════════════════════ */
 
@@ -120,8 +133,8 @@
 
   /**
    * 占位关卡 ×2：复用引擎演示地形（js/engine.js demoLevel），
-   * 以最小组件（出生点/星星/NPC/传送门）驱动六态状态机往返验收。
-   * Issue #11 地图数据落地后由 window.GAME 取代，本函数整体移除。
+   * 关 1 带「礼物盒 → 压力开关 → 门」闭环与 ★3 门后星，用于 #9 验收；
+   * 关 2 维持最小配置验证换关/结局。Issue #11 地图落地后本函数整体移除。
    */
   function buildBootLevels() {
     const map = engine.demoLevel.map;
@@ -138,7 +151,11 @@
           { type: 'star', id: 's2', x: 25, y: 14 },
           { type: 'star', id: 's3', x: 33, y: 7 },
           { type: 'npc', id: 'byeori', x: 10, y: 15, dialogue: 'boot.hi' },
-          { type: 'portal', x: 38, y: 10 },
+          // #9 机关闭环：把礼物盒推上彩色地垫 → 折叠屏风门打开 → 进入小屋取 ★3
+          { type: 'box', id: 'box1', x: 32, y: 12 },
+          { type: 'switch', id: 'sw1', x: 33, y: 12, target: 'gate1' },
+          { type: 'gate', id: 'gate1', x: 33, y: 10, open: false },
+          { type: 'portal', x: 38, y: 10, to: 2 },
         ],
       },
       {
@@ -360,6 +377,7 @@
      * @param {HTMLCanvasElement} canvas  #game
      * @param {object} [opts]  { doc, root, onEvent, storage }
      *   onEvent(name, data)：测试/冒烟钩子，'state' | 'collect' | 'clear' | 'restart' | 'save'
+     *     | 'push' | 'switch' | 'gate' | 'portal' | 'portal-enter'（#9 机制事件）
      *   storage：可注入的 localStorage 兼容对象（测试用）；传 null 模拟存储不可用
      */
     constructor(canvas, opts) {
@@ -401,10 +419,14 @@
       this.collected = [];     // 本关已收集星 id（运行时记录）
       this.runTime = 0;        // 本关用时（秒，仅 PLAYING 累计）
       this._dialog = null;     // 对话进行态 { lines, idx, shown, t, typing, holdTyping, holdTime }，离开对话态即清空
+      this.particles = engine.createParticles(); // #9 拾取/传送门粒子
+      this.mechanics = null;   // #9 每关机制辅助（碰撞/推箱/开关门）
+      this._portalWasActive = false; // 传送门激活演出只在「从未激活 → 激活」时播一次
       this._playedNodes = new Set(); // 已播放过的 once 节点（随存档 slot.played 持久化）
       this._npcTarget = {};   // <关卡id>:<实体id> → 开场 intro 结束后指向的后续节点（hint）
       this.sheepCount = 0;    // 黑羊彩蛋计数 0–6（随存档持久化）
       this._pendingNextIsEnding = false; // 结算按钮指向结局（最后一关）
+      this._pendingNextIndex = -1;       // 结算后要进入的关卡下标（portal.to 或下一关）
       this._portraitSrc = null;          // 头像当前 src 缓存（避免重复赋值导致闪动）
       this._failedPortraits = new Set(); // 加载失败的路径，后续渲染保持隐藏
 
@@ -581,6 +603,10 @@
         default:
           break; // TITLE/CLEAR/ENDING：输入已禁用，由按钮驱动
       }
+      // 粒子只在游玩/对话中推进（暂停、结算、标题冻结/清空，避免跨状态残留）
+      if (this.state === STATE.PLAYING || this.state === STATE.DIALOGUE) {
+        this.particles.update(dt);
+      }
       if (this.input.wasPressed('mute')) this._toggleSound();
     }
 
@@ -588,14 +614,9 @@
       if (this.input.wasPressed('pause')) { this._setState(STATE.PAUSED); return; }
       if (this.input.wasPressed('confirm') && this._interact()) return; // 进入对话
       const axis = this.input.getAxis();
-      if (axis.x) {
-        const nx = this.player.x + axis.x * MOVE_SPEED * dt;
-        if (!this._blockedAt(nx, this.player.y)) this.player.x = nx;
-      }
-      if (axis.y) {
-        const ny = this.player.y + axis.y * MOVE_SPEED * dt;
-        if (!this._blockedAt(this.player.x, ny)) this.player.y = ny;
-      }
+      if (axis.x) this._moveAxis(axis.x * MOVE_SPEED * dt, 0);
+      if (axis.y) this._moveAxis(0, axis.y * MOVE_SPEED * dt);
+      this._syncSwitches();
       this.camera.follow(
         this.player.x + PLAYER_SIZE / 2,
         this.player.y + PLAYER_SIZE / 2,
@@ -609,25 +630,85 @@
       this.runTime += dt;
     }
 
-    /* ── 占位机制（#9 接管前的最小实现） ── */
+    /* ── 碰撞、推箱与开关门（Issue #9） ── */
 
-    /** 玩家 AABB 四角所在瓦片是否实心（占位碰撞，#9 提供正式碰撞与实体阻挡） */
-    _blockedAt(px, py) {
-      const map = this.level.map;
-      const x0 = Math.floor(px / TILE);
-      const x1 = Math.floor((px + PLAYER_SIZE - 1) / TILE);
-      const y0 = Math.floor(py / TILE);
-      const y1 = Math.floor((py + PLAYER_SIZE - 1) / TILE);
-      for (let ty = y0; ty <= y1; ty++) {
-        const row = map.rows[ty];
-        for (let tx = x0; tx <= x1; tx++) {
-          if (SOLID_TILES[row && row[tx]]) return true;
-        }
+    /**
+     * 分轴移动：撞墙本轴不动；撞到箱子时尝试推动一格。
+     * 推箱成功时本帧玩家不前进，等箱子落位后再走，避免与箱子重叠。
+     */
+    _moveAxis(dx, dy) {
+      if (!dx && !dy) return false;
+      const p = this.player;
+      const nx = p.x + dx;
+      const ny = p.y + dy;
+      if (!this.mechanics.blockedAt(nx, ny, PLAYER_SIZE)) {
+        p.x = nx;
+        p.y = ny;
+        return true;
       }
+      const box = this.mechanics.pushBox(p.x, p.y, PLAYER_SIZE, dx, dy);
+      if (!box) return false;
+      // 推箱反馈：小尘屑 + 音效 + 立即同步开关（箱子可能正压上压力板）
+      this.particles.burst(
+        (box.x + 0.5) * TILE, (box.y + 0.5) * TILE,
+        { count: 4, colors: [[240, 230, 210], [255, 143, 163]], speed: 22, life: 0.28, gravity: 60, size: 1 }
+      );
+      this._sfx('box');
+      this._emit('push', { level: this.level.id, x: box.x, y: box.y });
+      this._syncSwitches();
       return false;
     }
 
-    /** 附近是否有可互动实体（NPC / 黑羊；#9 扩展开关/门/传送门等） */
+    /** 同步压力开关/门状态；silent 用于关卡载入时避免开场音效 */
+    _syncSwitches(silent) {
+      if (!this.mechanics || !this.player) return null;
+      const result = this.mechanics.syncSwitches(this.player.x, this.player.y, PLAYER_SIZE);
+      if (silent) return result;
+      for (let i = 0; i < result.switches.length; i++) {
+        const sw = result.switches[i];
+        this._sfx('switch');
+        this._emit('switch', { level: this.level.id, id: sw.id, pressed: sw.pressed });
+      }
+      for (let i = 0; i < result.gates.length; i++) {
+        const g = result.gates[i];
+        this._sfx(g.open ? 'gate-open' : 'gate-close');
+        if (g.open) {
+          // 门打开时在门框位置撒一点金光
+          this.particles.burst(
+            (g.gate.x + 0.5) * TILE, (g.gate.y + 0.5) * TILE,
+            { count: 6, colors: [[255, 200, 87], [240, 230, 210]], speed: 30, life: 0.35, gravity: 40, size: 1 }
+          );
+        }
+        this._emit('gate', { level: this.level.id, id: g.gate.id, open: g.open });
+      }
+      return result;
+    }
+
+    /** 本关星星是否已集齐且存在传送门（传送门激活条件） */
+    _portalActive() {
+      const total = this._starCount();
+      return total > 0 && this.stars >= total && this._entitiesOf('portal').length > 0;
+    }
+
+    /** 从未激活到激活：粒子 + 音效 + 事件（每关只播一次） */
+    _activatePortalIfReady() {
+      if (this._portalWasActive || !this._portalActive()) return false;
+      this._portalWasActive = true;
+      const portal = this._entitiesOf('portal')[0];
+      if (portal) {
+        this.particles.burst(
+          (portal.x + 0.5) * TILE, (portal.y + 0.5) * TILE,
+          { count: 18, colors: [[255, 200, 87], [255, 143, 163], [240, 230, 210]], speed: 70, life: 0.8, gravity: 50, size: 2 }
+        );
+      }
+      this._sfx('portal');
+      this._emit('portal', { level: this.level.id, active: true });
+      return true;
+    }
+
+    /* ── 互动 ── */
+
+    /** 附近是否有可互动实体（NPC / 黑羊） */
     _nearInteractable() {
       const cx = this.player.x + PLAYER_SIZE / 2;
       const cy = this.player.y + PLAYER_SIZE / 2;
@@ -661,7 +742,7 @@
       return true;
     }
 
-    /** 收集星星（#9 接入正式收集与反馈演出；star:<星id> 台词由 #12 分发） */
+    /** 收集星星：接触判定 + 金色粒子 + 音效 + star:<星id> 台词（#12） */
     _checkPickups() {
       const px = this.player.x;
       const py = this.player.y;
@@ -673,25 +754,37 @@
           e.collected = true;
           this.collected.push(e.id);
           this.stars++;
+          // 拾取反馈（#9）：星星中心金色爆散 + 芯片音
+          this.particles.burst(
+            rx + TILE / 2, ry + TILE / 2,
+            { count: 14, speed: 60, life: 0.6, gravity: 130, size: 2 }
+          );
+          this._sfx('star');
           this._refreshHud();
-          if (this.onEvent) {
-            try { this.onEvent('collect', { id: e.id, stars: this.stars }); } catch (err) { /* 忽略钩子异常 */ }
-          }
+          this._emit('collect', { id: e.id, stars: this.stars });
+          const activated = this._activatePortalIfReady();
           // 收集反馈台词（once）：进入对话则本帧停止继续收集，避免连吞台词
           if (this._dispatchAuto('star:' + e.id)) return;
+          if (activated) return; // 同帧又激活传送门：仍按顺序，本帧到此为止
         }
       }
     }
 
-    /** 集齐星星后接触传送门 → 先播过关台词（clear:<关卡id>，once），播完进入结算 */
+    /** 集齐星星后传送门激活；接触传送门 → 先播过关台词（clear:<关卡id>，once），播完结算 */
     _checkPortal() {
-      if (this.stars < this._starCount()) return;
+      if (!this._portalActive()) return;
       const px = this.player.x;
       const py = this.player.y;
       for (const e of this._entitiesOf('portal')) {
         const rx = e.x * TILE;
         const ry = e.y * TILE;
         if (px < rx + TILE && px + PLAYER_SIZE > rx && py < ry + TILE && py + PLAYER_SIZE > ry) {
+          this.particles.burst(
+            rx + TILE / 2, ry + TILE / 2,
+            { count: 20, colors: [[255, 200, 87], [255, 143, 163], [240, 230, 210]], speed: 78, life: 0.75, gravity: 30, size: 2 }
+          );
+          this._sfx('portal-enter');
+          this._emit('portal-enter', { level: this.level.id });
           this._dispatchAuto('clear:' + this.level.id, () => this._onLevelClear());
           return;
         }
@@ -924,6 +1017,10 @@
     /** 声音按钮文案与当前设置一致（构造函数 / 切换 / 读设置后调用） */
     _applySoundState() {
       this._text(this._ui.btnSound, this.soundOn ? '♪ 声音：开' : '♪ 声音：关');
+      const audio = this.root.MIXX && this.root.MIXX.audio;
+      if (audio && typeof audio.setEnabled === 'function') {
+        try { audio.setEnabled(this.soundOn); } catch (e) { /* 音频不可用不阻断游戏 */ }
+      }
     }
 
     /** 读独立的声音设置（与存档位无关；损坏或缺失时按默认开） */
@@ -961,6 +1058,9 @@
       this.level = Object.assign({}, lv, {
         entities: (lv.entities || []).map((e) => Object.assign({}, e)),
       });
+      this.mechanics = engine.createMechanics(this.level); // #9 碰撞/推箱/开关门
+      this.particles.clear();
+      this._pendingNextIndex = -1;
       const spawn = this._entitiesOf('spawn')[0] || { x: 2, y: 2 };
       this.player = { x: spawn.x * TILE, y: spawn.y * TILE };
       this.stars = 0;
@@ -976,6 +1076,7 @@
         this.stars = this.collected.length;
         this.saveData.current = this.level.id;
       }
+      this._portalWasActive = this._portalActive(); // 读档已集齐时不重播激活演出
       this.runTime = 0;
       this._dialog = null;
       this.camera.x = 0;
@@ -986,6 +1087,7 @@
         this.level.map.w * TILE,
         this.level.map.h * TILE
       );
+      this._syncSwitches(true); // 初始化开关/门状态（spawn 压住开关等边界情况）
       this._refreshHud();
       this._setState(STATE.PLAYING);
       if (this.onEvent) {
@@ -1009,6 +1111,10 @@
       this.collected = [];
       this.runTime = 0;
       this._dialog = null;
+      this.mechanics = null;
+      this.particles.clear();
+      this._portalWasActive = false;
+      this._pendingNextIndex = -1;
       this.levelIndex = 0;
       this.saveData = null;
       this.saveSlotIndex = -1;
@@ -1027,14 +1133,16 @@
       const starCount = this._starCount();
       const clearText = '星星 ' + this.stars + '/' + starCount + ' · 用时 ' + formatTime(this.runTime);
       this._text(this._ui.clearText, clearText);
-      const isLast = this.levelIndex >= this.levels.length - 1;
+      const nextIndex = this._nextLevelIndex(); // 优先 portal.to，其次线性下一关
+      const isLast = nextIndex < 0;
       this._pendingNextIsEnding = isLast;
+      this._pendingNextIndex = nextIndex;
       this._text(this._ui.btnNext, isLast ? '▶ 见证结局' : '▶ 下一关');
       // 通关自动存档：记录已收集星、cleared、unlocked，current 指向下一关（末关停留在本关）
       if (this.saveData) {
         const cleared = this.saveData.cleared.slice();
         if (cleared.indexOf(lv.id) < 0) cleared.push(lv.id);
-        const next = this.levels[this.levelIndex + 1];
+        const next = isLast ? null : this.levels[nextIndex];
         const nextId = next ? next.id : lv.id;
         if (!this._writeSave({
           current: nextId,
@@ -1056,9 +1164,31 @@
       if (this.state !== STATE.CLEAR) return;
       if (this._pendingNextIsEnding) {
         this._enterEnding();
+      } else if (this._pendingNextIndex >= 0) {
+        this._loadLevel(this._pendingNextIndex);
       } else {
-        this._loadLevel(this.levelIndex + 1);
+        this._loadLevel(this.levelIndex + 1); // 兜底（#11 数据未写 portal.to 时）
       }
+    }
+
+    /** 关卡 id → 下标；找不到返回 -1 */
+    _levelIndexById(id) {
+      for (let i = 0; i < this.levels.length; i++) {
+        if (this.levels[i].id === id) return i;
+      }
+      return -1;
+    }
+
+    /** 下一关下标：portal.to 优先；无 portal.to 按数组下一关；末关返回 -1 */
+    _nextLevelIndex() {
+      const portal = this._entitiesOf('portal')[0];
+      const to = portal && Number(portal.to);
+      if (isFinite(to) && to > 0) {
+        const byPortal = this._levelIndexById(to);
+        if (byPortal >= 0) return byPortal;
+      }
+      const next = this.levelIndex + 1;
+      return next < this.levels.length ? next : -1;
     }
 
     /** 进入结局：占位文案（#12 接入 l6.end 台词、#15 接入演出） */
@@ -1458,10 +1588,24 @@
       if (!this.level) return;
       this._text(this._ui.hudLevel, this.level.title);
       this._text(this._ui.hudShards, '★ ' + this.stars + '/' + this._starCount());
-      // 注：关 6 总进度「★ x/25」等 HUD 扩展随 #9/#11 接入
+      // 注：关 6 总进度「★ x/25」等 HUD 扩展随 #11 接入
     }
 
     /* ── 工具 ── */
+
+    /** 播放具名音效（声音关闭/音频模块缺失时安静跳过） */
+    _sfx(name) {
+      if (!this.soundOn) return false;
+      const audio = this.root.MIXX && this.root.MIXX.audio;
+      if (!audio || typeof audio.play !== 'function') return false;
+      try { return audio.play(name); } catch (e) { return false; }
+    }
+
+    /** onEvent 钩子（测试/冒烟用；钩子异常不阻断游戏） */
+    _emit(name, data) {
+      if (!this.onEvent) return;
+      try { this.onEvent(name, data); } catch (e) { /* 忽略钩子异常 */ }
+    }
 
     _entitiesOf(type) {
       if (!this.level || !this.level.entities) return [];
@@ -1486,7 +1630,6 @@
       this._settings.sound = this.soundOn;
       this._applySoundState();
       this._writeSettings(); // 设置独立于存档位，立即生效
-      // #14 音频落地后接入 MIXX.audio
     }
 
     _show(el) { if (el && el.classList) el.classList.remove('hidden'); }
@@ -1608,6 +1751,7 @@
       this.renderer.renderLevel(this.level, this.camera);
       this._drawEntities();
       this._drawPlayer();
+      this.particles.draw(ctx, this.camera); // #9 拾取/开门/传送门粒子（画在角色之上）
     }
 
     /** 占位实体绘制：仅用 fillRect（兼容测试桩与后续替换） */
@@ -1615,7 +1759,10 @@
       const ctx = this.renderer.ctx;
       const camX = this.camera.x;
       const camY = this.camera.y;
-      for (const e of this.level.entities || []) {
+      const list = (this.level.entities || []).slice().sort((a, b) =>
+        (ENTITY_DRAW_LAYER[a.type] || ENTITY_DRAW_LAYER_DEFAULT)
+        - (ENTITY_DRAW_LAYER[b.type] || ENTITY_DRAW_LAYER_DEFAULT));
+      for (const e of list) {
         const sx = Math.round(e.x * TILE - camX);
         const sy = Math.round(e.y * TILE - camY);
         if (sx < -TILE || sy < -TILE || sx > VIEW_W || sy > VIEW_H) continue;
@@ -1638,8 +1785,51 @@
             ctx.fillRect(sx + 9, sy + 6, 2, 2);
             break;
           }
+          case 'box': {
+            // 生日礼物盒：粉盒 + 奶油缎带 + 金星结
+            ctx.fillStyle = 'rgb(255,143,163)';
+            ctx.fillRect(sx + 1, sy + 1, 14, 14);
+            ctx.fillStyle = 'rgb(240,230,210)';
+            ctx.fillRect(sx + 7, sy + 1, 2, 14);
+            ctx.fillRect(sx + 1, sy + 7, 14, 2);
+            ctx.fillStyle = 'rgb(255,200,87)';
+            ctx.fillRect(sx + 6, sy + 6, 4, 4);
+            break;
+          }
+          case 'switch': {
+            // 彩色音乐地垫：按下时变成薄荷绿
+            ctx.fillStyle = 'rgb(26,16,51)';
+            ctx.fillRect(sx, sy, 16, 16);
+            const on = !!e.pressed;
+            ctx.fillStyle = on ? 'rgb(94,230,184)' : 'rgb(255,143,163)';
+            ctx.fillRect(sx + 2, sy + 2, 5, 5);
+            ctx.fillRect(sx + 9, sy + 2, 5, 5);
+            ctx.fillStyle = on ? 'rgb(255,200,87)' : 'rgb(180,155,255)';
+            ctx.fillRect(sx + 2, sy + 9, 5, 5);
+            ctx.fillRect(sx + 9, sy + 9, 5, 5);
+            break;
+          }
+          case 'gate': {
+            // 舞台折叠屏风：关闭时是金色竖条栅栏，打开时只留两侧门柱
+            if (e.open) {
+              ctx.fillStyle = 'rgb(255,200,87)';
+              ctx.fillRect(sx, sy, 2, 16);
+              ctx.fillRect(sx + 14, sy, 2, 16);
+              ctx.fillStyle = 'rgb(255,143,163)';
+              ctx.fillRect(sx + 2, sy, 1, 16);
+              ctx.fillRect(sx + 13, sy, 1, 16);
+            } else {
+              ctx.fillStyle = 'rgb(26,16,51)';
+              ctx.fillRect(sx, sy, 16, 16);
+              ctx.fillStyle = 'rgb(255,200,87)';
+              for (let i = 0; i < 4; i++) ctx.fillRect(sx + 2 + i * 4, sy + 1, 2, 14);
+              ctx.fillStyle = 'rgb(255,143,163)';
+              ctx.fillRect(sx, sy + 7, 16, 2);
+            }
+            break;
+          }
           case 'portal': {
-            const active = this.stars >= this._starCount();
+            const active = this._portalActive();
             ctx.fillStyle = active ? 'rgb(255,200,87)' : 'rgb(110,100,140)';
             ctx.fillRect(sx, sy, 16, 2);
             ctx.fillRect(sx, sy + 14, 16, 2);
@@ -1647,10 +1837,14 @@
             ctx.fillRect(sx + 14, sy, 2, 16);
             ctx.fillStyle = active ? 'rgb(255,143,163)' : 'rgb(60,55,90)';
             ctx.fillRect(sx + 4, sy + 4, 8, 8);
+            if (active) {
+              ctx.fillStyle = 'rgb(255,242,200)';
+              ctx.fillRect(sx + 7, sy + 6, 2, 4);
+            }
             break;
           }
           default:
-            break; // 其余实体由 #9/#13 渲染
+            break; // 其余实体（NPC 精灵、告示牌等）由 #13 渲染
         }
       }
     }
