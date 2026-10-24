@@ -416,7 +416,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | 节点类型 | 触发来源 | once | 说明 / 示例 |
 |---|---|---|---|
 | intro | NPC 互动（首次） | true | 开场剧情；结束后该 NPC 互动经 `next` 指向 hint |
-| hint | NPC 互动（此后） | repeat | 提示类，如 `l1.lily.hint`、`l2.jiwoo.hint`、`l3.hint`、`l4.lily.hint`、`l4.haewon.hint`、`l5.sullyoon.hint`、`l5.bae.hint`、`l6.hint` |
+| hint | NPC 互动（此后） | false（可重复） | 提示类，如 `l1.lily.hint`、`l2.jiwoo.hint`、`l3.hint`、`l4.lily.hint`、`l4.haewon.hint`、`l5.sullyoon.hint`、`l5.bae.hint`、`l6.hint` |
 | npc | NPC 互动 | true | 一次性自我介绍 / 氛围台词，如 `l1.npc.lily`、`l4.npc.sullyoon`、`l5.npc.lily` |
 | check | NPC 互动 | false | 可重复的选项检查，如 `l3.dj.check` |
 | star | 收集星星事件（自动） | true | 收集反馈台词，如 `l1.star1` |
@@ -425,7 +425,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | cutscene | 关卡加载 / TRIGGER / CAKE 自动 | true | 序章 `p0.*`、结局 `l6.end.*` |
 
 - **`trigger` 取值约定**（与上表触发来源一一对应，规则 7 校验）：NPC 互动 → `npc:<speaker>`（首次/此后由节点类型决定）；收集星星 → `star:<星id>`；过关 → `clear:<scopeId>`；黑羊 → `sheep:<黑羊实体id>`；关卡 / 场景加载 → `load:<scopeId>`；TRIGGER 区域 → `trigger:<trigger实体id>`；蛋糕 → `cake`。
-- **字段约束**：每个节点必填 `type`（上表 8 种之一）与 `trigger`（按取值约定），二者冗余声明、不可矛盾（如 `type:'check'` 配 `trigger:'npc:dj'`）。
+- **字段约束**：每个节点必填 `type`（上表 8 种之一）、`trigger`（按取值约定）与布尔值 `once`（上表 `once` 列的 `true` / `false`，不从节点 id、类型或运行时行为推导），`type` 与 `trigger` 冗余声明、不可矛盾（如 `type:'check'` 配 `trigger:'npc:dj'`）。
 - **自动对话作用域**：trigger 为 `clear:<scopeId>` / `load:<scopeId>` 的节点另须填写所属关卡或场景的 `scopeId`，其字符串形式必须等于 trigger 的后缀：关卡节点 `lN.*` 的 `scopeId` 必须为 N（如 `scopeId:1` 对应 `clear:1`），序章节点 `p0` 的 `scopeId` 必须为 `'p0'`（对应 `load:p0`）。关卡 ID 来自 `GAME.levels[].id`，独立场景 ID 来自 `GAME.scenes` 的键（见 §11），二者字符串形式不得重名；`clear` 仅用于关卡。每个已配置的「作用域 + 事件类型」恰有一个 `entry:true` 入口，事件仅调度该入口；同一演出的后续节点保留相同 `scopeId` 与 `trigger`、设 `entry:false`（缺省 false），由 `next` 串联且均须从入口可达，不能再次注册为自动入口。**`entry` 机制仅适用于 `clear:` / `load:` 自动作用域；`star:<星id>` / `sheep:<id>` / `cake` 的自动节点按 trigger 直接调度，不设 `entry`**（与 tools/validate.js #30 校验约定一致）。
 - **黑羊绑定**：关 N 的黑羊实体使用全局唯一 `id:'sheepN'`、`dialogue:'lN.sheep'`（N = 1–6），对应节点为 `type:'sheep'`、`trigger:'sheep:sheepN'`、`once:true`。互动只播放该实体绑定的节点，首次播放计数 +1；保留每关一句、集齐 6 句追加结局画面的行为。
 
@@ -778,7 +778,7 @@ const GAME = {
 5. switch.target 与 lamp.target 引用的 gate 存在；trigger.rect 完整落在地图范围内（0 ≤ x 且 x+w ≤ 地图宽，0 ≤ y 且 y+h ≤ 地图高）；关 2 灯柱数 = 灯油数 = 门数 = 3；
 6. oneway.dir ∈ {N,E,S,W}；wind.dir 同理；关 4 每个 `~` 格恰有一个同坐标 WATER，每个 WATER 必在 `~` 上，`shallow` 为布尔值，初始 `waterLevel` 均为 `high`（运行时仅允许 `high` / `low`）；每个 STEPSTONE 必须与 WATER 同格；
 7. 对话引用、触发来源与作用域：
-   - npc.dialogue、sheep.dialogue 与 trigger.dialogue 引用的对话节点存在；dialogue.next、option.goto 指向的节点存在；每个对话节点必有 `type` ∈ {intro,hint,npc,check,star,clear,sheep,cutscene} 与 `trigger`，且符合 §7 的类型与触发来源约定；trigger 引用的实体存在（`npc:<speaker>` 的 NPC、`star:<星id>` 的星、`trigger:<id>` 的 trigger 实体）；
+   - npc.dialogue、sheep.dialogue 与 trigger.dialogue 引用的对话节点存在；dialogue.next、option.goto 指向的节点存在；每个对话节点必有 `type` ∈ {intro,hint,npc,check,star,clear,sheep,cutscene}、`trigger` 与布尔值 `once`（缺失或非布尔值均报错，不从节点 id 或类型推导），且符合 §7 的类型与触发来源约定；trigger 引用的实体存在（`npc:<speaker>` 的 NPC、`star:<星id>` 的星、`trigger:<id>` 的 trigger 实体）；
    - 每个黑羊实体必有全局唯一 ID，`sheep.dialogue` 指向的节点必须为 `type:'sheep'`、`once:true`，trigger 必为 `sheep:<该实体id>`；反向检查每个 `sheep:<id>` 引用的黑羊实体存在且其 `dialogue` 指回此节点，实体所属关卡与节点 `lN.sheep` 的关卡一致；
    - `clear:<scopeId>` / `load:<scopeId>` 的后缀必须与节点 `scopeId` 的字符串形式一致，并引用已存在且无歧义的所属关卡 / 场景 ID（`clear` 仅限关卡）；按 §7 校验节点 ID 所属关卡 / 场景与 scopeId 一致；同一作用域与事件类型恰有一个 `entry:true` 入口，其余节点非入口且由该入口通过 `next` 可达，链内 `scopeId` 与 trigger 相同（`entry` 仅对 `clear:` / `load:` 生效；`star:` / `sheep:` / `cake` 节点按 trigger 直接调度，不设 entry）；
    - 每条对话行的 speaker（`lines[].s`）在 characters 字典（id 全集见 §3 对照注，含 `dj`/`sheep`/`nar`/`all`；伪说话人 `nar`/`all` 同样校验，不要求有对应 NPC 实体）；
