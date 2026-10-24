@@ -213,7 +213,7 @@
       this.soundOn = true;     // #14 音频落地前仅驱动按钮文案
       this._dialog = null;     // 对话进行态 { lines, idx, shown, t, typing, holdTyping, holdTime }，离开对话态即清空
       this._playedNodes = new Set(); // 已播放过的 once 节点（会话内记忆；Issue #8 存档落地后持久化）
-      this._npcTarget = {};   // npc:<实体id> → 开场 intro 结束后指向的后续节点（hint）
+      this._npcTarget = {};   // <关卡id>:<实体id> → 开场 intro 结束后指向的后续节点（hint）
       this.sheepCount = 0;    // 黑羊彩蛋计数 0–6（会话内；存档见 #8）
       this._pendingNextIsEnding = false; // 结算按钮指向结局（最后一关）
       this._portraitSrc = null;          // 头像当前 src 缓存（避免重复赋值导致闪动）
@@ -678,10 +678,12 @@
         }
       }
       const key = 'npc:' + ent.id;
+      const levelPrefix = 'l' + this.level.id + '.';
+      const targetKey = this.level.id + ':' + ent.id;
       const cands = [];
       for (const id in this.dialogue) {
         const n = this.dialogue[id];
-        if (n.trigger === key && !n.entry) cands.push({ id: id, node: n });
+        if (id.indexOf(levelPrefix) === 0 && n.trigger === key && !n.entry) cands.push({ id: id, node: n });
       }
       const unplayed = (type) => {
         for (const c of cands) {
@@ -689,7 +691,7 @@
         }
         return null;
       };
-      const target = this._npcTarget[ent.id];
+      const target = this._npcTarget[targetKey];
       if (target && this.dialogue[target]) {
         // intro 已播：先补播未播的同 trigger npc 自我介绍（once），再回到 hint
         const npcOnce = unplayed('npc');
@@ -698,7 +700,7 @@
       }
       const intro = unplayed('intro');
       if (intro) {
-        if (intro.node.next) this._npcTarget[ent.id] = intro.node.next;
+        if (intro.node.next) this._npcTarget[targetKey] = intro.node.next;
         return intro.id;
       }
       const npcOnce = unplayed('npc');
@@ -829,6 +831,7 @@
         } else if (pressed) {
           const opt = d.options[d.optIdx];
           const onEnd = d.onEnd;
+          this._clearOptionsBox();
           this._playNode(opt.goto, { onEnd: onEnd });
         }
         return;
