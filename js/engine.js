@@ -601,7 +601,7 @@
       if (tx < 0 || ty < 0 || tx >= this.map.w || ty >= this.map.h) return false;
       if (this.isSolidTile(tx, ty)) return false;
       const gate = this.entityAtTile(tx, ty, 'gate');
-      if (gate && !gate.open) return false;
+      if (gate) return false; // 门格不接受箱子，避免箱子在门闭合后阻挡通路
       const other = this.entityAtTile(tx, ty, 'box');
       if (other && other !== box) return false;
       return true;
