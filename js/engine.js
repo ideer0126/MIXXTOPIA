@@ -684,8 +684,10 @@
     _touchUp(action, pointerId, btn) {
       const ids = this._touchPtr.get(action);
       if (!ids || !ids.delete(pointerId)) return;
-      if (ids.size === 0) this._touchPtr.delete(action);
-      if (btn && btn.classList) btn.classList.remove('pressed');
+      if (ids.size === 0) {
+        this._touchPtr.delete(action);
+        if (btn && btn.classList) btn.classList.remove('pressed');
+      }
       if (!this.isDown(action)) this._releaseEdge(action);
     }
 
