@@ -38,6 +38,8 @@
     <button id="btn-help-back" class="menu-btn small">← 返回</button>
   </div>
 
+  <div id="dialog-backdrop" class="hidden"></div>
+
   <div id="dialog" class="hidden">
     <img id="dialog-portrait" alt="" aria-hidden="true" />
     <div id="dialog-name"></div>
@@ -120,6 +122,7 @@
       press('e');
       frame();
       ok('→ dialogue', game.state === 'dialogue' && shown('dialog') && text('dialog-name') === 'Byeori');
+      ok('对话背景虚化层显示', shown('dialog-backdrop'));
       var portrait = document.getElementById('dialog-portrait');
       ok('头像 src 指向素材', portrait.getAttribute('src') === 'assets/characters/byeori/art/byeori-portrait.png');
       ok('头像显示 + has-portrait', !portrait.classList.contains('hidden')
@@ -137,6 +140,7 @@
       press('e'); frame(); // 快进第 3 行
       press('e'); frame(); // 翻页 → 退出
       ok('dialogue → playing 清空', game.state === 'playing' && !shown('dialog') && text('dialog-text') === '');
+      ok('退出后虚化层隐藏', !shown('dialog-backdrop'));
       ok('退出后头像位复位', portrait.classList.contains('hidden') && portrait.getAttribute('src') === null);
 
       // 4) 暂停往返

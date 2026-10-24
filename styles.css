@@ -11,15 +11,27 @@ body {
 }
 
 #app {
-  position: relative; /* HUD/对话框/屏幕层以窗口为锚定位 */
+  position: relative; /* HUD/屏幕层以窗口为锚定位 */
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+/* 游戏画面舞台：HUD 带 + 画布的竖排容器；对话框/虚化层以画布为锚（而非窗口），
+   随画布整数缩放一起居中、一起移动（画布 display:block 消除行内基线空隙）。
+   引擎 resize 时为 HUD 带预留了高度（main.js 传入 hudReserve），保证 HUD 不进画面 */
+#stage {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 /* 像素风格缩放：整数倍放大 + nearest 采样，无模糊（引擎也通过 JS 兜底设置） */
 #game {
+  display: block;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
   background: #0b0b1e;
@@ -254,21 +266,28 @@ body {
   margin: 8px 0;
 }
 
-/* ── HUD（Issue #6）：左上角关卡名 + 星数 ── */
-
+/* ── HUD（Issue #6）：游戏画面上方、左缘对齐的关卡名 + 星数，不压画面。
+   引擎已为这一行预留空间（hudReserve=24px），HUD 隐藏时仍占位避免画布跳动 */
 #hud {
-  position: absolute;
-  top: 8px;
-  left: 10px;
   z-index: 10;
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 14px;
+  height: 17px;        /* 固定带宽：有字/无字/隐藏都占同样高度，画布不跳动 */
+  margin: 0 0 6px;
   font-family: "Press Start 2P", monospace;
-  font-size: 9px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1;
   color: #f0e6d2;
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
   pointer-events: none;
+  white-space: nowrap;
+}
+
+/* 隐藏态只不可见、仍占位：保证标题/游玩切换时画布不上下跳动 */
+#hud.hidden {
+  display: flex !important;
+  visibility: hidden;
 }
 
 #hud-level {
@@ -279,16 +298,17 @@ body {
   color: #ffffff;
 }
 
-/* ── 对话框（Issue #6 外壳；打字机/快进/翻页由 Issue #7 扩充）── */
-
+/* ── 对话框（Issue #6 外壳；打字机/快进/翻页由 Issue #7 扩充）──
+ * 星露谷式：锚定游戏画面底部、左右各留 10px 间距，横向通栏；
+ * 说话人头像位（Issue #28）位于对话框右上方、探出框顶；
+ * 对话期间背景虚化（#dialog-backdrop），只突出对话框与头像 */
 #dialog {
   position: absolute;
-  left: 50%;
+  left: 10px;
+  right: 10px;
   bottom: 10px;
-  transform: translateX(-50%);
   z-index: 15;
-  width: min(300px, calc(100% - 20px));
-  padding: 10px 12px;
+  padding: 12px 16px;
   box-sizing: border-box;
   font-family: "Press Start 2P", monospace;
   color: #f0e6d2;
@@ -300,14 +320,27 @@ body {
   -webkit-user-select: none;
 }
 
-/* 说话人头像位（Issue #28）：对话框右上方，128×128 原图缩至 56px 显示；
-   缺图时由 main.js 挂 .hidden 隐藏（nar/all 无立绘） */
+/* 对话背景虚化层：对话态显示，盖住画布与 HUD（z 12 < 对话框 z 15），
+   压暗 + 毛玻璃，让视线集中在对话框与头像上 */
+#dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  background: rgba(11, 11, 30, 0.4);
+  backdrop-filter: blur(4px) brightness(0.75);
+  -webkit-backdrop-filter: blur(4px) brightness(0.75);
+  pointer-events: none; /* 点击穿透，不影响游戏区（对话页由对话框处理） */
+}
+
+/* 说话人头像位（Issue #28）：贴在对话框右上方、底边压在框顶上沿向上延伸；
+   3:4 竖版半身照，宽 = 对话框宽 × 2/6；缺图时由 main.js 挂 .hidden 隐藏（nar/all 无立绘） */
 #dialog-portrait {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 56px;
-  height: 56px;
+  right: -2px;           /* 外边框与对话框右边框对齐 */
+  bottom: 100%;          /* 底边贴对话框上边沿，向上延伸 */
+  width: 33.333%;        /* 对话框宽 × 2/6 */
+  aspect-ratio: 3 / 4;   /* 宽:高 = 3:4 竖版半身照 */
+  box-sizing: border-box;
   image-rendering: pixelated;
   object-fit: cover;
   background: #1a1033;
@@ -316,29 +349,24 @@ body {
   pointer-events: none;
 }
 
-/* 头像显示时正文让出右侧空间，避免文字压到立绘 */
-#dialog.has-portrait #dialog-text {
-  padding-right: 64px;
-}
-
 #dialog-name {
   display: inline-block;
   margin-bottom: 8px;
   padding: 2px 8px;
-  font-size: 9px;
+  font-size: 10px;
   background: #1a1033;
   border: 1px solid #ffc857;
 }
 
 #dialog-text {
-  min-height: 38px;
-  font-size: 10px;
+  min-height: 42px;
+  font-size: 11px;
   line-height: 1.9;
 }
 
 #dialog-hint {
   margin-top: 8px;
-  font-size: 8px;
+  font-size: 9px;
   color: #c9b8e8;
   text-align: right;
   animation: hint-blink 1s steps(2, start) infinite;
@@ -358,7 +386,7 @@ body {
 
 .dialog-option {
   padding: 4px 8px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.6;
   color: #c9b8e8;
   border: 1px dashed rgba(201, 184, 232, 0.45);

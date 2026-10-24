@@ -65,6 +65,10 @@
   const PORTRAIT_BASE = 'assets/characters/';
   const PORTRAIT_NO_ART = { nar: true, all: true }; // 伪说话人无立绘（GAME_DESIGN §3）
 
+  /* HUD 带：位于游戏画面上方（styles.css #stage 竖排），渲染器缩放时
+     预留这 24px 高度，保证 HUD 与画布整体不超出窗口、HUD 不压进游戏画面 */
+  const HUD_RESERVE = 24;
+
   // ── 对话系统（Issue #7，规格 GAME_DESIGN.md §7）──
   const DIALOG_MS = 25;           // 打字机逐字间隔（25ms/字）
   const DIALOG_FAST_MS = 6;       // 按住互动键加速打字间隔（快进）
@@ -188,7 +192,7 @@
       this.onEvent = opts.onEvent || null;
 
       this.canvas = canvas;
-      this.renderer = engine.createRenderer(canvas);
+      this.renderer = engine.createRenderer(canvas, { hudReserve: HUD_RESERVE });
       this.camera = engine.createCamera();
       this.input = engine.createInput();
 
@@ -309,6 +313,7 @@
         case STATE.DIALOGUE:
           // HUD 保持可见（对话仍在关卡内）；输入保持启用（confirm 快进/翻页）
           this._show(this._ui.dialog);
+          this._show(this._ui.dialogBackdrop); // 背景虚化：只突出对话框与头像
           break;
         case STATE.PAUSED:
           this._show(this._ui.pauseScreen);
@@ -342,6 +347,7 @@
           break; // HUD 由目标状态决定显隐
         case STATE.DIALOGUE:
           this._hide(this._ui.dialog);
+          this._hide(this._ui.dialogBackdrop);
           this._clearDialog();
           this._dialog = null;
           break;
@@ -763,7 +769,8 @@
     }
 
     /**
-     * 说话人头像位（Issue #28）：按 speaker 加载素材立绘。
+     * 说话人头像位（Issue #28）：按 speaker 加载素材立绘（对话框右上方框外、
+     * 探出框顶，3:4 半身照，规格见 assets/characters/README.md）。
      * nar/all 等伪说话人直接隐藏；图片缺失由 onerror 降级隐藏，不影响对话流程。
      */
     _setPortrait(speaker) {
@@ -1037,6 +1044,7 @@
         'help-screen': 'helpScreen',
         'btn-help-back': 'btnHelpBack',
         'dialog': 'dialog',
+        'dialog-backdrop': 'dialogBackdrop',
         'dialog-portrait': 'dialogPortrait',
         'dialog-name': 'dialogName',
         'dialog-text': 'dialogText',

@@ -13,13 +13,28 @@
 </head>
 <body>
   <div id="app">
-    <!-- 游戏画布 -->
-    <canvas id="game" width="320" height="224"></canvas>
+    <!-- 游戏画面舞台：HUD 带 + 画布 + 以画布为锚的对话框（星露谷式底部对话框） -->
+    <div id="stage">
+      <!-- 顶部 HUD：位于游戏画面上方、左缘对齐，不压画面 -->
+      <div id="hud" class="hidden">
+        <span id="hud-level"></span>
+        <span id="hud-shards"></span>
+      </div>
 
-    <!-- 顶部 HUD -->
-    <div id="hud" class="hidden">
-      <span id="hud-level"></span>
-      <span id="hud-shards"></span>
+      <!-- 游戏画布 -->
+      <canvas id="game" width="320" height="224"></canvas>
+
+      <!-- 对话背景虚化层（对话时显示，叠在画布/HUD 之上、对话框之下） -->
+      <div id="dialog-backdrop" class="hidden"></div>
+
+      <!-- 对话框（说话人头像位于右上方框外、探出框顶，Issue #28；选项列表 Issue #12） -->
+      <div id="dialog" class="hidden">
+        <img id="dialog-portrait" alt="" aria-hidden="true" />
+        <div id="dialog-name"></div>
+        <div id="dialog-text"></div>
+        <div id="dialog-options"></div>
+        <div id="dialog-hint">▼ E / 空格</div>
+      </div>
     </div>
 
     <!-- 标题界面 -->
@@ -59,15 +74,6 @@
         <p><b>目标</b>　收集本关全部愿望之星，点亮传送门，前往下一关</p>
       </div>
       <button id="btn-help-back" class="menu-btn small">← 返回</button>
-    </div>
-
-    <!-- 对话框（右上方为说话人头像位，Issue #28；选项列表 Issue #12） -->
-    <div id="dialog" class="hidden">
-      <img id="dialog-portrait" alt="" aria-hidden="true" />
-      <div id="dialog-name"></div>
-      <div id="dialog-text"></div>
-      <div id="dialog-options"></div>
-      <div id="dialog-hint">▼ E / 空格</div>
     </div>
 
     <!-- 暂停菜单 -->
