@@ -45,21 +45,43 @@
         <p class="title-flavor">生日夜许下的愿望化作星星散落梦境 —— 与六位缪斯一起把它们找回来</p>
       </div>
       <div class="menu">
-        <button id="btn-start" class="menu-btn">▶ 开始游戏</button>
         <button id="btn-continue" class="menu-btn hidden">↻ 继续冒险</button>
-        <!-- 选关界面由 Issue #10 落地后开放，当前暂隐 -->
-        <button id="btn-levels" class="menu-btn hidden">★ 选择关卡</button>
+        <button id="btn-start" class="menu-btn">▶ 新游戏</button>
+        <button id="btn-saves" class="menu-btn">▤ 选择存档</button>
         <button id="btn-help" class="menu-btn">? 操作说明</button>
         <button id="btn-sound" class="menu-btn">♪ 声音：开</button>
       </div>
       <p class="footer-note">粉丝自制同人小游戏 · 非官方 · 灵感来自 NMIXX《Strange Muse》</p>
     </div>
 
-    <!-- 选关界面 -->
-    <div id="level-screen" class="screen hidden">
-      <h2 class="screen-title">选择关卡</h2>
-      <div id="level-grid" class="level-grid"></div>
-      <button id="btn-back" class="menu-btn small">← 返回</button>
+    <!-- 选择存档（3 个存档位；Issue #8。不做选关，关卡线性推进） -->
+    <div id="save-screen" class="screen hidden">
+      <h2 class="screen-title">选择存档</h2>
+      <p id="save-note" class="save-note">存档保存在本机浏览器 · 仅「保存并退出」与通关自动存档会写入</p>
+      <div class="save-list">
+        <div class="slot-row">
+          <button type="button" id="btn-slot-1" class="menu-btn slot-btn">
+            <span class="slot-name">存档 1</span>
+            <span id="slot-meta-1" class="slot-meta">空档</span>
+          </button>
+          <button type="button" id="btn-slot-del-1" class="menu-btn slot-del hidden" aria-label="删除存档 1" title="删除存档 1">✕</button>
+        </div>
+        <div class="slot-row">
+          <button type="button" id="btn-slot-2" class="menu-btn slot-btn">
+            <span class="slot-name">存档 2</span>
+            <span id="slot-meta-2" class="slot-meta">空档</span>
+          </button>
+          <button type="button" id="btn-slot-del-2" class="menu-btn slot-del hidden" aria-label="删除存档 2" title="删除存档 2">✕</button>
+        </div>
+        <div class="slot-row">
+          <button type="button" id="btn-slot-3" class="menu-btn slot-btn">
+            <span class="slot-name">存档 3</span>
+            <span id="slot-meta-3" class="slot-meta">空档</span>
+          </button>
+          <button type="button" id="btn-slot-del-3" class="menu-btn slot-del hidden" aria-label="删除存档 3" title="删除存档 3">✕</button>
+        </div>
+      </div>
+      <button id="btn-save-back" class="menu-btn small">← 返回</button>
     </div>
 
     <!-- 帮助界面 -->
@@ -69,8 +91,9 @@
         <p><b>移动</b>　WASD / 方向键　（手机：屏幕方向键）</p>
         <p><b>对话 / 确认</b>　E 或 空格　（手机：A 键）</p>
         <p><b>对话快进</b>　打字中按住加速 · 点按显示全文 · 点击对话框翻页</p>
-        <p><b>暂停</b>　Esc</p>
-        <p><b>声音</b>　M 键开关</p>
+        <p><b>暂停 / 存档</b>　Esc 暂停 →「保存并退出」写入存档；「回到标题（不保存）」丢弃未保存进度</p>
+        <p><b>自动存档</b>　每关通关结算时自动写入当前存档位</p>
+        <p><b>声音</b>　M 键开关（独立保存）</p>
         <p><b>目标</b>　收集本关全部愿望之星，点亮传送门，前往下一关</p>
       </div>
       <button id="btn-help-back" class="menu-btn small">← 返回</button>
@@ -82,8 +105,10 @@
       <div class="menu">
         <button id="btn-resume" class="menu-btn">▶ 继续</button>
         <button id="btn-restart" class="menu-btn">↻ 重玩本关</button>
-        <button id="btn-quit" class="menu-btn">✖ 回到标题</button>
+        <button id="btn-quit" class="menu-btn">✖ 回到标题（不保存）</button>
+        <button id="btn-save-quit" class="menu-btn">💾 保存并退出</button>
       </div>
+      <p id="pause-note" class="pause-note"></p>
     </div>
 
     <!-- 过关结算 -->
