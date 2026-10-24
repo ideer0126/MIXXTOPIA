@@ -16,8 +16,12 @@
  *   - 触屏：pointer:coarse 设备显示虚拟十字键与 A 键，与键盘输入等价
  *   - Input 管理器（engine.createInput）统一两路输入，供演示与 main.js 使用
  *
+ * Issue #9：收集与解谜机制（瓦片/实体碰撞、推箱、压力开关门、传送门所需的
+ *   AABB 判定）与本 Issue 专用的星星拾取粒子（Particles）。#15 在此之上扩展
+ *   过场/结算等表现粒子。
+ *
  * 后续 Issue 在本文件内追加（勿新建渲染文件）：
- *   #9 碰撞与机制  ·  #15 粒子
+ *   #9 碰撞与机制（已实现）  ·  #15 表现粒子扩展
  *
  * 演示模式说明：
  *   js/data.js 与 js/main.js 就位前，本文件内置演示（默认地图 + 输入系统驱动小人移动）
@@ -400,6 +404,277 @@
         }
       }
       ctx.restore();
+    }
+  }
+
+  /* ════════════════════════ 粒子（Issue #9 星星拾取反馈） ════════════════════════ */
+
+  /** 星星爆散配色：金 → 粉 → 奶油白（世界坐标，draw 时只画 rgb 方块） */
+  const STAR_BURST_COLORS = [
+    [255, 200, 87],
+    [255, 143, 163],
+    [240, 230, 210],
+  ];
+
+  /**
+   * 轻量粒子系统（Issue #9）：星星拾取/传送门激活的即时反馈。
+   * 坐标使用世界像素；update 受主循环 dt 驱动，draw 由 renderer 平移摄像机。
+   * #15 可在此基础上扩展更丰富的演出粒子，避免另起一套对象池。
+   */
+  class Particles {
+    constructor(opts) {
+      this.items = [];
+      this.max = (opts && Number(opts.max) > 0) ? Math.floor(Number(opts.max)) : 240;
+    }
+
+    get count() { return this.items.length; }
+
+    /**
+     * 在 (x,y) 世界坐标爆发一簇粒子。
+     * @param {object} [opts] { count, colors:[[r,g,b]...], speed, life, gravity, size }
+     * @returns {number} 本次生成的粒子数
+     */
+    burst(x, y, opts) {
+      opts = opts || {};
+      const count = Math.max(0, Math.floor(opts.count == null ? 12 : Number(opts.count) || 0));
+      const colors = Array.isArray(opts.colors) && opts.colors.length
+        ? opts.colors : STAR_BURST_COLORS;
+      const speed = opts.speed == null ? 56 : Number(opts.speed) || 0;
+      const life = opts.life == null ? 0.55 : Number(opts.life) || 0;
+      const gravity = opts.gravity == null ? 140 : Number(opts.gravity) || 0;
+      const size = opts.size == null ? 2 : Number(opts.size) || 1;
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const v = speed * (0.35 + Math.random() * 0.65);
+        this.items.push({
+          x: x,
+          y: y,
+          vx: Math.cos(angle) * v,
+          vy: Math.sin(angle) * v,
+          gravity: gravity,
+          life: life,
+          ttl: life,
+          size: size,
+          color: colors[i % colors.length],
+        });
+      }
+      if (this.items.length > this.max) {
+        this.items.splice(0, this.items.length - this.max); // 超出上限丢弃最旧粒子
+      }
+      return count;
+    }
+
+    /** 推进 dt 秒，寿命耗尽的粒子移除；返回剩余数量 */
+    update(dt) {
+      const d = Math.max(0, Number(dt) || 0);
+      if (!this.items.length || d === 0) return this.items.length;
+      const alive = [];
+      for (let i = 0; i < this.items.length; i++) {
+        const p = this.items[i];
+        p.life -= d;
+        if (p.life <= 0) continue;
+        p.vy += p.gravity * d;
+        p.x += p.vx * d;
+        p.y += p.vy * d;
+        alive.push(p);
+      }
+      this.items = alive;
+      return this.items.length;
+    }
+
+    /** 以摄像机为基准绘制（尺寸随寿命缩小，末段最小 1px） */
+    draw(ctx, camera) {
+      const camX = camera ? camera.x : 0;
+      const camY = camera ? camera.y : 0;
+      for (let i = 0; i < this.items.length; i++) {
+        const p = this.items[i];
+        const k = Math.max(0.25, p.ttl > 0 ? p.life / p.ttl : 0);
+        const s = Math.max(1, Math.round(p.size * (0.5 + 0.5 * k)));
+        ctx.fillStyle = rgbStr(p.color);
+        ctx.fillRect(
+          Math.round(p.x - camX - s / 2),
+          Math.round(p.y - camY - s / 2),
+          s, s
+        );
+      }
+    }
+
+    clear() { this.items.length = 0; }
+  }
+
+  /* ════════════════════════ 机制（Issue #9） ════════════════════════ */
+
+  /** 永久阻挡通行的地形类型（WATER 在 #9 仍按不可通行占位，水面机制留给关 4） */
+  const BLOCKING_TILES = { wall: true, water: true };
+
+  /**
+   * 关卡机制辅助（Issue #9）：地形/实体碰撞、推箱、压力开关 → 门。
+   *
+   * 约定（与 GAME_DESIGN.md §6、tools/validate.js 规则 9 一致）：
+   *   - 永久可通行性：legend 解析为 wall / water 的瓦片阻挡；超界按墙处理；
+   *   - 实体阻挡：关闭的 gate、box；portar/star/switch/npc 等可从上方经过；
+   *   - 推箱：玩家朝箱子移动且箱后一格可站立时，箱子沿该方向滑动一格；
+   *   - 压力开关：玩家或箱子压住开关期间 target 门开启，离开即关闭；
+   *     门初始 open:true 视为常开，玩家正踩在门上时暂不关门（避免夹住）。
+   *
+   * 实体状态写在关卡运行时副本上（main.js 每关浅克隆实体），不改 data.js。
+   */
+  class Mechanics {
+    constructor(level) {
+      if (!level || !level.map) throw new TypeError('createMechanics: level.map 不能为空');
+      this.level = level;
+      this.map = level.map;
+      this.legend = this.map.legend || DEFAULT_LEGEND;
+      this._initialGateOpen = new Map();
+      const gates = this.entitiesOf('gate');
+      for (let i = 0; i < gates.length; i++) {
+        this._initialGateOpen.set(gates[i], gates[i].open === true); // 数据初始态
+        gates[i].open = gates[i].open === true;
+      }
+      const switches = this.entitiesOf('switch');
+      for (let i = 0; i < switches.length; i++) switches[i].pressed = switches[i].pressed === true;
+    }
+
+    /** 按类型取运行时实体（不复制） */
+    entitiesOf(type) {
+      const out = [];
+      const list = (this.level && this.level.entities) || [];
+      for (let i = 0; i < list.length; i++) {
+        if (list[i] && list[i].type === type) out.push(list[i]);
+      }
+      return out;
+    }
+
+    /** 指定瓦片上的某类实体（无则 null） */
+    entityAtTile(tx, ty, type) {
+      const list = (this.level && this.level.entities) || [];
+      for (let i = 0; i < list.length; i++) {
+        const e = list[i];
+        if (e && e.type === type && e.x === tx && e.y === ty) return e;
+      }
+      return null;
+    }
+
+    /** 瓦片地形类型：'wall' / 'floor' / 'water' …；超界与未知字符按墙处理 */
+    tileType(tx, ty) {
+      if (tx < 0 || ty < 0 || tx >= this.map.w || ty >= this.map.h) return 'wall';
+      const row = this.map.rows[ty];
+      const ch = row && row[tx];
+      const type = this.legend[ch];
+      return type === undefined ? 'wall' : type;
+    }
+
+    isSolidTile(tx, ty) {
+      return BLOCKING_TILES[this.tileType(tx, ty)] === true;
+    }
+
+    /** AABB 是否与某瓦片重叠（px/py 为 AABB 左上角，size 为边长） */
+    overlapsTile(px, py, size, tx, ty) {
+      return px < (tx + 1) * TILE && px + size > tx * TILE
+        && py < (ty + 1) * TILE && py + size > ty * TILE;
+    }
+
+    /**
+     * 玩家/AABB 在 (px,py) 是否被阻挡：地形 + 关闭的门 + 箱子。
+     * @param {object} [opts] { ignoreBox } 允许忽略某个箱子（推箱落点检查用）
+     */
+    blockedAt(px, py, size, opts) {
+      const ignore = opts && opts.ignoreBox;
+      const x0 = Math.floor(px / TILE);
+      const x1 = Math.floor((px + size - 1) / TILE);
+      const y0 = Math.floor(py / TILE);
+      const y1 = Math.floor((py + size - 1) / TILE);
+      for (let ty = y0; ty <= y1; ty++) {
+        for (let tx = x0; tx <= x1; tx++) {
+          if (this.isSolidTile(tx, ty)) return true;
+          const gate = this.entityAtTile(tx, ty, 'gate');
+          if (gate && !gate.open) return true;
+          const box = this.entityAtTile(tx, ty, 'box');
+          if (box && box !== ignore) return true;
+        }
+      }
+      return false;
+    }
+
+    /** 箱子能否落到目标瓦片：地形、关闭的门、其他箱子均阻挡 */
+    _canPlaceBox(tx, ty, box) {
+      if (tx < 0 || ty < 0 || tx >= this.map.w || ty >= this.map.h) return false;
+      if (this.isSolidTile(tx, ty)) return false;
+      const gate = this.entityAtTile(tx, ty, 'gate');
+      if (gate && !gate.open) return false;
+      const other = this.entityAtTile(tx, ty, 'box');
+      if (other && other !== box) return false;
+      return true;
+    }
+
+    /**
+     * 推箱：AABB 朝 (dx,dy)（取符号）贴住箱子且箱后一格可站立时，箱子滑动一格。
+     * @returns {object|null} 被推动的箱子；未推动返回 null
+     */
+    pushBox(px, py, size, dx, dy) {
+      if (!dx && !dy) return null;
+      const sx = dx > 0 ? 1 : dx < 0 ? -1 : 0;
+      const sy = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+      const probeX = px + sx; // 向移动方向探 1px，贴边也能命中
+      const probeY = py + sy;
+      const boxes = this.entitiesOf('box');
+      let hit = null;
+      for (let i = 0; i < boxes.length; i++) {
+        const box = boxes[i];
+        if (this.overlapsTile(probeX, probeY, size, box.x, box.y)) { hit = box; break; }
+      }
+      if (!hit) return null;
+      const nx = hit.x + sx;
+      const ny = hit.y + sy;
+      if (!this._canPlaceBox(nx, ny, hit)) return null;
+      hit.x = nx;
+      hit.y = ny;
+      return hit;
+    }
+
+    /**
+     * 同步压力开关与门（玩家或箱子压住 → 开门；离开 → 关门）。
+     * 门还支持 lamp.lit 控制器（关 2 灯柱复用同一扇门），#9 先留好判定。
+     * @returns {{switches:Array, gates:Array<{gate:object,open:boolean}>}}
+     */
+    syncSwitches(px, py, size) {
+      const boxes = this.entitiesOf('box');
+      const switches = this.entitiesOf('switch');
+      const changedSwitches = [];
+      for (let i = 0; i < switches.length; i++) {
+        const sw = switches[i];
+        let pressed = this.overlapsTile(px, py, size, sw.x, sw.y);
+        if (!pressed) {
+          for (let j = 0; j < boxes.length; j++) {
+            const b = boxes[j];
+            if (b.x === sw.x && b.y === sw.y) { pressed = true; break; }
+          }
+        }
+        if (pressed !== sw.pressed) {
+          sw.pressed = pressed;
+          changedSwitches.push(sw);
+        }
+      }
+
+      const lamps = this.entitiesOf('lamp');
+      const gates = this.entitiesOf('gate');
+      const changedGates = [];
+      for (let i = 0; i < gates.length; i++) {
+        const gate = gates[i];
+        const ctlSwitches = switches.filter((s) => s.target === gate.id);
+        const ctlLamps = lamps.filter((l) => l.target === gate.id && l.lit === true);
+        if (ctlSwitches.length + ctlLamps.length === 0) continue; // 无控制器的门保持数据初始态
+        let next = this._initialGateOpen.get(gate) === true
+          || ctlSwitches.some((s) => s.pressed === true)
+          || ctlLamps.length > 0;
+        // 玩家正踩在门上：暂不关闭，避免门在脚下闭合把玩家夹死
+        if (!next && gate.open && this.overlapsTile(px, py, size, gate.x, gate.y)) next = true;
+        if (next !== gate.open) {
+          gate.open = next;
+          changedGates.push({ gate: gate, open: next });
+        }
+      }
+      return { switches: changedSwitches, gates: changedGates };
     }
   }
 
@@ -911,7 +1186,7 @@
   /* ════════════════════════ 公开 API ════════════════════════ */
 
   const engine = {
-    VERSION: '0.2.0',
+    VERSION: '0.3.0',
     TILE: TILE,
     VIEW_W: VIEW_W,
     VIEW_H: VIEW_H,
@@ -921,9 +1196,13 @@
     Camera: Camera,
     Renderer: Renderer,
     Input: Input,
+    Particles: Particles,
+    Mechanics: Mechanics,
     createRenderer: (canvas, opts) => new Renderer(canvas, opts),
     createCamera: () => new Camera(),
     createInput: (opts) => new Input(opts),
+    createParticles: (opts) => new Particles(opts),
+    createMechanics: (level) => new Mechanics(level),
     KEY_BINDINGS: KEY_BINDINGS,
     detectCoarsePointer: detectCoarsePointer,
     registerTileset: registerTileset,

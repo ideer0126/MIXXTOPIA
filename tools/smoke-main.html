@@ -8,11 +8,12 @@
 </head>
 <body>
   <!--
-    tools/smoke-main.html —— 游戏状态机（Issue #6）+ 对话系统（Issue #7）+ 存档（Issue #8）冒烟测试
+    tools/smoke-main.html —— 游戏状态机（Issue #6）+ 对话系统（Issue #7）+ 存档（Issue #8）+ 机制（Issue #9）冒烟测试
     运行：静态服务器或 file:// + 无头浏览器 dump-dom，断言 <body data-smoke="ok">。
     覆盖真实浏览器环境下六态往返（标题/游玩/对话/暂停/结算/结局）与无状态泄漏，
-    打字机逐字显示、点按快进、翻页退出（Issue #7），以及手动保存并退出、
-    通关自动存档、继续冒险读档（Issue #8）。
+    打字机逐字显示、点按快进、翻页退出（Issue #7），手动保存并退出、
+    通关自动存档、继续冒险读档（Issue #8），以及关门阻挡/推箱压开关/开门通行、
+    星星粒子、传送门激活与踩入结算（Issue #9）。
     UI 骨架与 index.html 一致（main.js 按 id 接线）。
   -->
   <canvas id="game" width="320" height="224"></canvas>
@@ -94,6 +95,7 @@
 
   <script>window.MIXX_NO_BOOT = true;</script>
   <script src="../js/engine.js"></script>
+  <script src="../js/audio.js"></script>
   <script src="../js/main.js"></script>
   <script>
     (function () {
@@ -121,11 +123,23 @@
       }
       game.stop(); // 手动驱动帧，保证断言确定性
 
+      // 音效探针：记录 #9 机制音效是否被调用（不改动真实音频链路之外的行为）
+      var sfx = [];
+      if (window.MIXX.audio) {
+        window.MIXX.audio.play = function (name) { sfx.push(name); return true; };
+      }
+
       var now = 0;
       function frame() { now += 16; game.frame(now); }
       function press(k) {
         window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
         window.dispatchEvent(new KeyboardEvent('keyup', { key: k, bubbles: true, cancelable: true }));
+      }
+      function hold(k, n) {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+        for (var i = 0; i < n; i++) frame();
+        window.dispatchEvent(new KeyboardEvent('keyup', { key: k, bubbles: true, cancelable: true }));
+        frame();
       }
       function tp(tx, ty) { game.player.x = tx * 16; game.player.y = ty * 16; }
       function collectAll() {
@@ -178,6 +192,30 @@
       ok('退出后虚化层隐藏', !shown('dialog-backdrop'));
       ok('退出后头像位复位', portrait.classList.contains('hidden') && portrait.getAttribute('src') === null);
 
+      // 3b) 收集与解谜机制（Issue #9）：关门阻挡 → 推箱压开关 → 开门通行 → 星星粒子
+      var gate = game.level.entities.filter(function (e) { return e.type === 'gate'; })[0];
+      var sw = game.level.entities.filter(function (e) { return e.type === 'switch'; })[0];
+      var box = game.level.entities.filter(function (e) { return e.type === 'box'; })[0];
+      ok('机关实体齐全', !!gate && !!sw && !!box);
+      tp(33, 11); frame();
+      var gateY = game.player.y;
+      hold('w', 6);
+      ok('关门阻挡', game.player.y === gateY);
+      tp(31, 12); frame();
+      hold('d', 2);
+      ok('推箱一格', box.x === 33 && box.y === 12);
+      ok('箱压开关开门', gate.open === true && sw.pressed === true);
+      ok('机关音效', sfx.indexOf('switch') >= 0 && sfx.indexOf('gate-open') >= 0);
+      tp(30, 12); frame();
+      ok('箱压保持开门', gate.open === true);
+      tp(33, 11); frame();
+      var gateY2 = game.player.y;
+      hold('w', 6);
+      ok('开门通行', game.player.y < gateY2);
+      tp(8, 20); frame();
+      ok('星星拾取粒子', game.collected.indexOf('s1') >= 0 && game.particles.count > 0);
+      ok('拾取音效', sfx.indexOf('star') >= 0);
+
       // 4) 暂停往返
       press('Escape');
       frame();
@@ -196,9 +234,12 @@
       // 5) 收集 + 结算 + 通关自动存档
       collectAll();
       ok('收集 3 星', text('hud-shards') === '★ 3/3');
+      ok('传送门激活', game._portalActive() === true);
+      ok('传送门激活音效', sfx.indexOf('portal') >= 0);
       tp(38, 10);
       frame();
       ok('→ clear', game.state === 'clear' && shown('clear-screen') && /星星 3\/3/.test(text('clear-text')));
+      ok('进入传送门音效', sfx.indexOf('portal-enter') >= 0);
       var saveRaw = JSON.parse(localStorage.getItem('mixxtopia.save.v1'));
       ok('通关自动存档', !!saveRaw && !!saveRaw.slots[0]
         && saveRaw.slots[0].current === 2 && saveRaw.slots[0].cleared.indexOf(1) >= 0);

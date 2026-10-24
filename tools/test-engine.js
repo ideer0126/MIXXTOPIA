@@ -14,6 +14,7 @@
  *   6. 整数倍放大计算与 imageSmoothingEnabled 关闭
  *   7. 未知地形符号不崩溃
  *   8. 输入系统（Issue #5）：键盘绑定/边沿/轴向量、触屏虚拟按键、粗指针检测、开关与销毁
+ *   9. 机制与粒子（Issue #9）：地形/实体碰撞、推箱、压力开关门、粒子生命周期与绘制
  */
 'use strict';
 
@@ -744,6 +745,181 @@ test('销毁：解绑后键盘与触屏不再产生输入', () => {
   up._fire('pointerdown', { pointerId: 9, preventDefault() {} });
   assert.strictEqual(input.isDown('up'), false);
   document.querySelectorAll = savedQSA;
+});
+
+/* ─────────────────── 9. 机制与粒子（Issue #9） ─────────────────── */
+
+/** 8×6 测试关卡：四周墙，内部全地面；entities 按需传入 */
+function mechanicsLevel(entities) {
+  return {
+    map: {
+      w: 8,
+      h: 6,
+      rows: [
+        '########',
+        '#......#',
+        '#......#',
+        '#......#',
+        '#......#',
+        '########',
+      ],
+      legend: { '#': 'wall', '.': 'floor', '~': 'water' },
+    },
+    entities: entities || [],
+  };
+}
+
+test('机制 API：createMechanics / createParticles 暴露，非法关卡抛错', () => {
+  assert.strictEqual(typeof engine.createMechanics, 'function');
+  assert.strictEqual(typeof engine.createParticles, 'function');
+  assert.strictEqual(typeof engine.Mechanics, 'function');
+  assert.strictEqual(typeof engine.Particles, 'function');
+  assert.throws(() => engine.createMechanics(null), /level\.map/);
+});
+
+test('碰撞：墙/水阻挡、关闭的门与箱子阻挡、开门与忽略箱子可通行', () => {
+  const level = mechanicsLevel([
+    { type: 'gate', id: 'g1', x: 3, y: 2, open: false },
+    { type: 'box', x: 5, y: 2 },
+  ]);
+  const mech = engine.createMechanics(level);
+  const S = engine.TILE;
+  assert.strictEqual(mech.blockedAt(2 * S, 2 * S, S), false, '地面可走');
+  assert.strictEqual(mech.blockedAt(0, 1 * S, S), true, '墙阻挡');
+  assert.strictEqual(mech.blockedAt(1 * S, 1 * S, S), false, '内墙边可走');
+  assert.strictEqual(mech.blockedAt(3 * S, 2 * S, S), true, '关门阻挡');
+  const gate = level.entities[0];
+  gate.open = true;
+  assert.strictEqual(mech.blockedAt(3 * S, 2 * S, S), false, '开门可通行');
+  assert.strictEqual(mech.blockedAt(5 * S, 2 * S, S), true, '箱子阻挡');
+  assert.strictEqual(mech.blockedAt(5 * S, 2 * S, S, { ignoreBox: level.entities[1] }), false, '忽略指定箱子');
+});
+
+test('地形判定：超界按墙、水面阻挡、未知字符按墙', () => {
+  const level = mechanicsLevel([]);
+  level.map.rows[1] = '#~.....#';
+  level.map.rows[2] = '#?.....#';
+  const mech = engine.createMechanics(level);
+  const S = engine.TILE;
+  assert.strictEqual(mech.tileType(-1, 0), 'wall', '超界为墙');
+  assert.strictEqual(mech.blockedAt(1 * S, 1 * S, S), true, '水阻挡');
+  assert.strictEqual(mech.blockedAt(1 * S, 2 * S, S), true, '未知字符按墙');
+});
+
+test('推箱：沿移动方向滑一格；箱后一格被墙/门/其他箱子占住则不动', () => {
+  const level = mechanicsLevel([
+    { type: 'box', id: 'b1', x: 3, y: 2 },
+    { type: 'box', id: 'b2', x: 5, y: 2 },
+    { type: 'gate', id: 'g1', x: 5, y: 3, open: false },
+  ]);
+  const mech = engine.createMechanics(level);
+  const S = engine.TILE;
+  const b1 = level.entities[0];
+  const b2 = level.entities[1];
+  // 玩家在箱子左侧，向右推：b1 3→4
+  assert.strictEqual(mech.pushBox(2 * S, 2 * S, S, 1, 0), b1);
+  assert.deepStrictEqual([b1.x, b1.y], [4, 2]);
+  // b1 再往右会撞上 b2（4→5 被 b2 占住）
+  assert.strictEqual(mech.pushBox(3 * S, 2 * S, S, 1, 0), null, '其他箱子阻挡');
+  // b2 向下推：目标 (5,3) 是关闭的门
+  assert.strictEqual(mech.pushBox(5 * S, 1 * S, S, 0, 1), null, '关闭的门阻挡');
+  // 把 b1 向上推开，再测 b2 向右推、抵墙
+  assert.strictEqual(mech.pushBox(4 * S, 3 * S, S, 0, -1), b1);
+  assert.deepStrictEqual([b1.x, b1.y], [4, 1]);
+  assert.strictEqual(mech.pushBox(4 * S, 2 * S, S, 1, 0), b2);
+  assert.deepStrictEqual([b2.x, b2.y], [6, 2]);
+  assert.strictEqual(mech.pushBox(5 * S, 2 * S, S, 1, 0), null, '墙阻挡');
+});
+
+test('压力开关：玩家踩上开门、离开关门，返回值只含变化项', () => {
+  const level = mechanicsLevel([
+    { type: 'switch', id: 'sw1', x: 2, y: 2, target: 'g1' },
+    { type: 'gate', id: 'g1', x: 5, y: 2, open: false },
+  ]);
+  const mech = engine.createMechanics(level);
+  const S = engine.TILE;
+  const sw = level.entities[0];
+  const gate = level.entities[1];
+
+  let r = mech.syncSwitches(2 * S, 2 * S, S);
+  assert.strictEqual(sw.pressed, true);
+  assert.strictEqual(gate.open, true);
+  assert.strictEqual(r.switches.length, 1);
+  assert.strictEqual(r.gates.length, 1);
+  assert.strictEqual(r.gates[0].open, true);
+
+  r = mech.syncSwitches(2 * S, 2 * S, S);
+  assert.strictEqual(r.switches.length, 0, '状态未变不重复上报');
+  assert.strictEqual(r.gates.length, 0);
+
+  r = mech.syncSwitches(1 * S, 2 * S, S);
+  assert.strictEqual(sw.pressed, false);
+  assert.strictEqual(gate.open, false);
+  assert.strictEqual(r.gates[0].open, false);
+});
+
+test('压力开关：箱子压住即保持开门，玩家可离开', () => {
+  const level = mechanicsLevel([
+    { type: 'switch', id: 'sw1', x: 2, y: 2, target: 'g1' },
+    { type: 'gate', id: 'g1', x: 5, y: 2, open: false },
+    { type: 'box', id: 'b1', x: 2, y: 2 },
+  ]);
+  const mech = engine.createMechanics(level);
+  const S = engine.TILE;
+  const gate = level.entities[1];
+  const r = mech.syncSwitches(6 * S, 4 * S, S); // 玩家远在别处
+  assert.strictEqual(level.entities[0].pressed, true, '箱子压住开关');
+  assert.strictEqual(gate.open, true);
+  assert.strictEqual(r.gates.length, 1);
+});
+
+test('压力开关：玩家踩在门上时暂不关门，离开后关闭；初始常开门不受开关关闭影响', () => {
+  const level = mechanicsLevel([
+    { type: 'switch', id: 'sw1', x: 2, y: 2, target: 'g1' },
+    { type: 'gate', id: 'g1', x: 4, y: 2, open: false },
+    { type: 'switch', id: 'sw2', x: 2, y: 3, target: 'g2' },
+    { type: 'gate', id: 'g2', x: 4, y: 3, open: true },
+  ]);
+  const mech = engine.createMechanics(level);
+  const S = engine.TILE;
+  const gate1 = level.entities[1];
+  const gate2 = level.entities[3];
+  mech.syncSwitches(2 * S, 2 * S, S);
+  assert.strictEqual(gate1.open, true);
+  // 玩家站在门格上，开关已离开：门保持开启
+  let r = mech.syncSwitches(4 * S, 2 * S, S);
+  assert.strictEqual(gate1.open, true, '玩家踩在门上时不关门');
+  assert.strictEqual(r.gates.length, 0);
+  // 玩家离开门格：门关闭
+  r = mech.syncSwitches(3 * S, 2 * S, S);
+  assert.strictEqual(gate1.open, false);
+  assert.strictEqual(r.gates[0].open, false);
+  // 初始 open:true 的门即使开关松开也保持开
+  mech.syncSwitches(1 * S, 1 * S, S);
+  assert.strictEqual(gate2.open, true, '数据初始常开门不被开关关闭');
+});
+
+test('粒子：burst 计数、寿命更新、上限与绘制', () => {
+  const ps = engine.createParticles({ max: 5 });
+  assert.strictEqual(ps.count, 0);
+  assert.strictEqual(ps.burst(20, 20, { count: 3 }), 3);
+  assert.strictEqual(ps.count, 3);
+  ps.burst(20, 20, { count: 4 });
+  assert.strictEqual(ps.count, 5, '超过 max 丢弃最旧粒子');
+  assert.strictEqual(ps.update(0.1), 5);
+  assert.strictEqual(ps.update(10), 0, '寿命耗尽全部移除');
+  ps.clear();
+  assert.strictEqual(ps.count, 0);
+
+  // 静止单粒子：绘制后该像素被点亮
+  const canvas = new FakeCanvas(320, 224);
+  const ctx = canvas.getContext('2d');
+  ps.burst(50, 50, { count: 1, speed: 0, life: 1, gravity: 0, size: 4, colors: [[255, 200, 87]] });
+  ps.draw(ctx, { x: 0, y: 0 });
+  const i = (50 * canvas.width + 50) * 4;
+  assert.ok(ctx.pixels[i + 3] > 0, '粒子像素已绘制');
+  assert.strictEqual(ctx.pixels[i], 255);
+  assert.strictEqual(ctx.pixels[i + 1], 200);
 });
 
 /* ─────────────────── 汇总 ─────────────────── */
