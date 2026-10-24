@@ -19,6 +19,8 @@
  *   8. 存档系统（Issue #8）：3 存档位、继续/新游戏/选择存档、手动保存并退出、
  *      回到标题不写盘、通关自动存档、读档恢复星数/once/黑羊、损坏存档容错、
  *      存储不可用提示、声音设置独立持久化
+ *   9. 收集与解谜机制（Issue #9）：门阻挡/开关开门、推箱压开关、星星粒子与音效、
+ *      传送门激活、单关完整闭环（开门 → 取星 → 传送门 → 下一关）
  */
 'use strict';
 
@@ -179,11 +181,13 @@ vm.createContext(sandbox);
 
 const repoRoot = path.join(__dirname, '..');
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/engine.js'), 'utf8'), sandbox, { filename: 'js/engine.js' });
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/audio.js'), 'utf8'), sandbox, { filename: 'js/audio.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/main.js'), 'utf8'), sandbox, { filename: 'js/main.js' });
 
 const main = sandbox.MIXX.main;
 const STATE = main.STATE;
 const engine = sandbox.MIXX.engine;
+const audio = sandbox.MIXX.audio;
 
 /* ─────────────────── 断言工具 ─────────────────── */
 
@@ -270,7 +274,7 @@ test('公开 API：STATE 六态齐全、Game/boot/formatTime 暴露', () => {
   assert.strictEqual(main.formatTime(605), '10:05');
 });
 
-test('占位关卡：2 关、实体齐全（spawn/star/npc/portal）', () => {
+test('占位关卡：2 关、实体齐全（spawn/star/npc/portal）+ 关 1 机制闭环', () => {
   const levels = main.buildBootLevels();
   assert.strictEqual(levels.length, 2);
   for (const lv of levels) {
@@ -280,6 +284,14 @@ test('占位关卡：2 关、实体齐全（spawn/star/npc/portal）', () => {
     assert.ok(lv.entities.filter((e) => e.type === 'star').length >= 1);
     assert.ok(lv.entities.filter((e) => e.type === 'npc').length >= 1);
   }
+  const l1 = levels[0];
+  assert.strictEqual(l1.entities.filter((e) => e.type === 'box').length, 1, '关 1 礼物盒');
+  assert.strictEqual(l1.entities.filter((e) => e.type === 'switch').length, 1, '关 1 压力开关');
+  assert.strictEqual(l1.entities.filter((e) => e.type === 'gate').length, 1, '关 1 门');
+  const gate = l1.entities.find((e) => e.type === 'gate');
+  const sw = l1.entities.find((e) => e.type === 'switch');
+  assert.strictEqual(sw.target, gate.id, '开关 target 指向门');
+  assert.strictEqual(gate.open, false, '门默认关闭');
 });
 
 /* ─────────────────── 2. 初始标题态 ─────────────────── */
@@ -754,6 +766,172 @@ test('下一关：结算按钮 → 第二关游玩，星数与用时清零', () 
   assert.strictEqual(game.runTime, 0);
   assert.ok(hidden('clear-screen'));
   assert.strictEqual(text('clear-text'), '', '结算文案清空');
+  game.destroy();
+});
+
+/* ─────────────────── 6.5 收集与解谜机制（Issue #9） ─────────────────── */
+
+/** 临时替换 MIXX.audio.play 记录音效名，结束后恢复 */
+function withSfx(fn) {
+  assert.ok(audio && typeof audio.play === 'function', 'audio.js 已加载');
+  const calls = [];
+  const origin = audio.play;
+  audio.play = (name) => { calls.push(name); return true; };
+  try {
+    fn(calls);
+  } finally {
+    audio.play = origin;
+  }
+}
+
+test('#9 门与压力开关：关门阻挡，踩上开门，离开关门', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  const gate = game.level.entities.find((e) => e.type === 'gate');
+  const sw = game.level.entities.find((e) => e.type === 'switch');
+  assert.ok(gate && sw, '占位关 1 带门与开关');
+  assert.strictEqual(gate.open, false);
+
+  // 关门时朝门里走：y 不变
+  teleport(game, 33, 11);
+  tick(game);
+  const y0 = game.player.y;
+  key('keydown', 'w');
+  tick(game, 100);
+  key('keyup', 'w');
+  tick(game);
+  assert.strictEqual(game.player.y, y0, '关门阻挡玩家');
+
+  // 玩家踩上开关：门开；离开：门关
+  teleport(game, 33, 12);
+  tick(game);
+  assert.strictEqual(sw.pressed, true);
+  assert.strictEqual(gate.open, true);
+  teleport(game, 30, 12);
+  tick(game);
+  assert.strictEqual(sw.pressed, false);
+  assert.strictEqual(gate.open, false);
+  game.destroy();
+});
+
+test('#9 推箱压开关：礼物盒滑一格保持开门，可穿门取星', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  const box = game.level.entities.find((e) => e.type === 'box');
+  const gate = game.level.entities.find((e) => e.type === 'gate');
+
+  teleport(game, 31, 12); // 站在礼物盒左侧
+  tick(game);
+  key('keydown', 'd');
+  tick(game);
+  key('keyup', 'd');
+  tick(game);
+  assert.deepStrictEqual([box.x, box.y], [33, 12], '箱子向右推动一格压上开关');
+  assert.strictEqual(gate.open, true, '箱子压住开关时门开');
+
+  teleport(game, 30, 12); // 玩家离开开关，箱子继续压着
+  tick(game);
+  assert.strictEqual(gate.open, true, '箱子压住时门保持打开');
+
+  teleport(game, 33, 11);
+  tick(game);
+  const y0 = game.player.y;
+  key('keydown', 'w');
+  tick(game, 100);
+  key('keyup', 'w');
+  tick(game);
+  assert.ok(game.player.y < y0, '门开后可以走进门格');
+  game.destroy();
+});
+
+test('#9 机制事件：推箱 / 开关 / 门按序上报 onEvent', () => {
+  const events = [];
+  const game = makeGame({ onEvent: (name, data) => events.push([name, data]) });
+  elt('btn-start').click();
+  teleport(game, 31, 12);
+  tick(game);
+  key('keydown', 'd');
+  tick(game);
+  key('keyup', 'd');
+  tick(game);
+
+  const names = events.map((e) => e[0]);
+  assert.ok(names.indexOf('push') >= 0, 'push 事件');
+  assert.ok(names.indexOf('switch') >= 0, 'switch 事件');
+  assert.ok(names.indexOf('gate') >= 0, 'gate 事件');
+  const gateEvent = events.filter((e) => e[0] === 'gate').pop();
+  assert.strictEqual(gateEvent[1].open, true);
+  game.destroy();
+});
+
+test('#9 星星拾取：粒子 + 音效；集齐三星传送门激活并踩入结算', () => {
+  withSfx((calls) => {
+    const game = makeGame();
+    elt('btn-start').click();
+    teleport(game, 8, 20);
+    tick(game);
+    assert.strictEqual(game.stars, 1);
+    assert.ok(game.particles.count > 0, '拾取星星产生粒子');
+    assert.ok(calls.indexOf('star') >= 0, '拾取星星播放音效');
+    assert.strictEqual(game._portalActive(), false, '未集齐时传送门未激活');
+
+    teleport(game, 25, 14);
+    tick(game);
+    teleport(game, 33, 7);
+    tick(game);
+    assert.strictEqual(game.stars, 3);
+    assert.strictEqual(game._portalActive(), true, '集齐后传送门激活');
+    assert.ok(calls.indexOf('portal') >= 0, '激活传送门播放音效');
+    assert.strictEqual(game.state, STATE.PLAYING, '激活本身不切状态');
+
+    teleport(game, 38, 10);
+    tick(game);
+    assert.strictEqual(game.state, STATE.CLEAR, '踩上传送门进入结算');
+    assert.ok(calls.indexOf('portal-enter') >= 0, '进入传送门播放音效');
+    game.destroy();
+  });
+});
+
+test('#9 声音关闭：机制音效不播放（粒子照常）', () => {
+  withSfx((calls) => {
+    const game = makeGame();
+    elt('btn-start').click();
+    game.soundOn = false;
+    teleport(game, 8, 20);
+    tick(game);
+    assert.strictEqual(game.stars, 1);
+    assert.ok(game.particles.count > 0, '粒子不受声音开关影响');
+    assert.deepStrictEqual(calls, [], '关闭声音后不调用 play');
+    game.destroy();
+  });
+});
+
+test('#9 单关完整闭环：推箱开门 → 三星 → 传送门 → 下一关', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 8, 20); // ★1
+  tick(game);
+  teleport(game, 31, 12);
+  tick(game);
+  key('keydown', 'd');
+  tick(game);
+  key('keyup', 'd');
+  tick(game);
+  const gate = game.level.entities.find((e) => e.type === 'gate');
+  assert.strictEqual(gate.open, true, '礼物盒压开关开门');
+  teleport(game, 25, 14); // ★2（岛内）
+  tick(game);
+  teleport(game, 33, 7); // ★3（门后小屋）
+  tick(game);
+  assert.strictEqual(game._portalActive(), true);
+  teleport(game, 38, 10);
+  tick(game);
+  assert.strictEqual(game.state, STATE.CLEAR);
+  assert.strictEqual(game.level.id, 1);
+  elt('btn-next').click();
+  assert.strictEqual(game.state, STATE.PLAYING);
+  assert.strictEqual(game.level.id, 2);
+  assert.strictEqual(game.stars, 0);
   game.destroy();
 });
 
