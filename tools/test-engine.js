@@ -659,6 +659,38 @@ test('触屏虚拟按键：十字键移动 + A 键确认，与键盘等价，多
   document.querySelectorAll = savedQSA;
 });
 
+test('触屏：多指同键保持 pressed，最后一指释放才产生松开边沿', () => {
+  const savedQSA = document.querySelectorAll;
+  const up = fakeButton('up');
+  document.querySelectorAll = () => [up];
+  const input = engine.createInput();
+  const released = [];
+  input.on('release', (a) => released.push(a));
+  try {
+    up._fire('pointerdown', { pointerId: 1 });
+    up._fire('pointerdown', { pointerId: 2 });
+    input.endFrame();
+    up._fire('pointerup', { pointerId: 1 });
+    up._fire('lostpointercapture', { pointerId: 1 });
+    assert.strictEqual(up.classList.contains('pressed'), true, '仍有指针按住时保留样式');
+    assert.strictEqual(input.isDown('up'), true);
+    assert.strictEqual(input.wasReleased('up'), false);
+    assert.deepStrictEqual(released, []);
+    up._fire('pointercancel', { pointerId: 2 });
+    assert.strictEqual(up.classList.contains('pressed'), false);
+    assert.strictEqual(input.isDown('up'), false);
+    assert.strictEqual(input.wasReleased('up'), true);
+    assert.deepStrictEqual(released, ['up']);
+    input.endFrame();
+    up._fire('lostpointercapture', { pointerId: 2 });
+    assert.strictEqual(input.wasReleased('up'), false, '重复释放不产生新边沿');
+    assert.deepStrictEqual(released, ['up']);
+  } finally {
+    input.destroy();
+    document.querySelectorAll = savedQSA;
+  }
+});
+
 test('触屏：pointercancel 与 lostpointercapture 等效松开；未知 data-key 忽略', () => {
   const savedQSA = document.querySelectorAll;
   const right = fakeButton('right');
