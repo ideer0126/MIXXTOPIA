@@ -595,8 +595,20 @@ function rule7(game, R) {
       R.err('规则 7', '节点 "' + nodeId + '" 类型 ' + node.type + ' 与 trigger "'
         + node.trigger + '" 矛盾（§7 取值约定）');
     }
+    const expectedOnce = {
+      intro: true,
+      hint: false,
+      npc: true,
+      check: false,
+      star: true,
+      clear: true,
+      sheep: true,
+      cutscene: true,
+    };
     if (typeof node.once !== 'boolean') {
       R.err('规则 7', '节点 "' + nodeId + '" 的 once 必填且须为布尔值（§7 字段约束）');
+    } else if (node.once !== expectedOnce[node.type]) {
+      R.err('规则 7', '节点 "' + nodeId + '" 的 once 不符合类型 ' + node.type + ' 的要求');
     }
     /* lines / speaker */
     if (!Array.isArray(node.lines) || node.lines.length === 0) {
