@@ -16,7 +16,8 @@
  *
  * 规则 9 说明：§11 标注的「预留自动校验」已落地为完整状态图搜索——
  * 状态含玩家/箱子位置、门（压力/灯柱派生）、灯柱、灯油携带、水位、风向偏移、
- * 已收集星集合；动作含移动、推箱、携油点灯、月相/风车开关、落点拾取。
+ * 已收集星集合；动作含移动、推箱（落点不含门格，与 engine 口径一致）、携油点灯、
+ * 月相/风车开关、落点拾取。
  * BFS 穷举后仍无法「集齐本关全部星星并到达已激活传送门/蛋糕」→ 报错。
  * 对话条件星、清凉条计时、落水复位按宽松假设处理（只可能漏报、不会误报）；
  * 状态数达到 STATE_CAP 上限时报告无法证明同一次游玩可集齐星星并到达终点；
@@ -1110,6 +1111,7 @@ function stateSearch(lv) {
       const bk = bx + ',' + by;
       if (!standable(bx, by, st)) continue;
       if (st.boxesSet.has(bk)) continue;
+      if (gatesAt.has(bk)) continue; // 门格一律不接受箱子（与 js/engine.js _canPlaceBox 口径一致）
       if (onewayAt.get(st.pos) && onewayAt.get(st.pos) !== dirName) continue;
       if (onewayAt.get(nk) && onewayAt.get(nk) !== dirName) continue;
       const boxes = st.boxes.filter(b => b !== nk).concat(bk).sort();
@@ -1654,6 +1656,43 @@ function selfTest() {
     portal.x = 30;
     portal.y = 14;
     assert.ok(hasErr(runRules(g), '规则 9', /s1_4/));
+  });
+
+  /** 微型推箱关卡（12×8）：箱子必须穿过常开门格才能到开关位，用于验证门格拒箱 */
+  const buildMiniGateBoxLevel = () => ({
+    map: {
+      w: 12, h: 8,
+      rows: [
+        '############',
+        '############',
+        '#####··#####',
+        '#\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7#',
+        '######\u00b7#####',
+        '############',
+        '############',
+        '############',
+      ],
+      legend: { '#': 'wall', '\u00b7': 'floor' },
+    },
+    entities: [
+      { type: 'spawn', x: 1, y: 3 },
+      { type: 'box', x: 3, y: 3 },
+      { type: 'gate', id: 'g1', x: 4, y: 3, open: true },
+      { type: 'switch', x: 6, y: 4, target: 'g2' },
+      { type: 'gate', id: 'g2', x: 8, y: 3, open: false },
+      { type: 'star', id: 's1', x: 9, y: 3 },
+      { type: 'portal', x: 10, y: 3, to: 2 },
+    ],
+  });
+  t('规则 9：门格不接受箱子（门开时也推不进，微型关卡，结论性）', () => {
+    const res = stateSearch(buildMiniGateBoxLevel());
+    assert.strictEqual(res.status, 'fail', JSON.stringify(res));
+    assert.ok(/s1/.test(res.msg), res.msg);
+    // 对照：同一布局去掉门格后箱子可直达开关位 → 有解（证明失败来自门格规则）
+    const ctl = buildMiniGateBoxLevel();
+    ctl.entities = ctl.entities.filter(e => e.id !== 'g1');
+    const ok = stateSearch(ctl);
+    assert.strictEqual(ok.status, 'ok', JSON.stringify(ok));
   });
 
   /** 关 2 口袋布局：星 s2_4 关在 (12,16)，唯一入口 gate1 (12,15)，灯柱/灯油移置门外 */
