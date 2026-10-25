@@ -50,7 +50,7 @@ const UI_IDS = [
   'pause-screen', 'btn-resume', 'btn-restart', 'btn-quit', 'btn-save-quit', 'pause-note',
   'clear-screen', 'clear-text', 'btn-next',
   'ending-screen', 'ending-body', 'btn-ending',
-  'btn-account', 'account-note',
+  'btn-account', 'btn-title-settings', 'account-note',
   'login-screen', 'login-title', 'login-form', 'login-email', 'login-password',
   'login-msg', 'login-account', 'login-email-label', 'login-nickname-label', 'login-account-note',
   'btn-login', 'btn-register', 'btn-logout', 'btn-login-back', 'btn-settings',
@@ -2238,19 +2238,40 @@ test('#44 损坏设置容错：JSON 非法按默认值，且不阻塞游戏', ()
   game.destroy();
 });
 
-testAsync('#44 游客：账户设置入口隐藏，直接打开会提示先登录且零网络', async () => {
-  localStorageStub.clear();
-  const fetchStub = authFetch(() => { throw new Error('游客态不应发请求'); });
-  const game = makeAccountGame(fetchStub);
-  await game._authReady;
-  await settle(game);
-  assert.ok(hidden('btn-settings'), '未登录时设置入口隐藏');
-  assert.strictEqual(game._openSettingsScreen(), false);
-  assert.ok(shown('login-screen') && hidden('settings-screen'));
-  assert.match(text('login-msg'), /请先登录/);
-  assert.strictEqual(fetchStub.calls.length, 0, '游客态零上传');
-  game.destroy();
-  assert.ok(hidden('settings-screen'), '销毁时设置界面不残留');
+testAsync('#44 游客：标题设置可调整并持久化本机偏好，账户资料禁用且零网络', async () => {
+  for (const opts of [{}, { profile: null }]) {
+    localStorageStub.clear();
+    const fetchStub = authFetch(() => { throw new Error('游客态不应发请求'); });
+    const game = makeAccountGame(fetchStub, opts);
+    await game._authReady;
+    await settle(game);
+    assert.ok(shown('btn-title-settings'), '游客可见标题设置入口');
+    elt('btn-title-settings').click();
+    assert.ok(shown('settings-screen') && hidden('title-screen') && hidden('login-screen'));
+    assert.match(text('settings-account'), /未登录：仅可调整本机偏好/);
+    assert.strictEqual(elt('settings-nickname').disabled, true);
+    for (const btn of Object.values(game._ui.avatarBtns)) assert.strictEqual(btn.disabled, true);
+    assert.strictEqual(elt('btn-settings-save').disabled, true);
+    const nextTouch = { auto: 'on', on: 'off', off: 'auto' };
+    for (let i = 0; i < 3; i++) {
+      const expected = nextTouch[game._settings.touch];
+      elt('btn-pref-touch').click();
+      assert.strictEqual(game.input.touchMode, expected);
+      assert.strictEqual(JSON.parse(localStorageStub.getItem(main.SETTINGS_KEY)).touch, expected);
+    }
+    const soundBefore = game.soundOn;
+    elt('btn-pref-sound').click();
+    assert.strictEqual(game.soundOn, !soundBefore);
+    assert.strictEqual(JSON.parse(localStorageStub.getItem(main.SETTINGS_KEY)).sound, !soundBefore);
+    await settle(game);
+    assert.strictEqual(game.profileError, null, '游客不尝试读取云端资料');
+    assert.strictEqual(fetchStub.calls.length, 0, '游客态零上传');
+    elt('btn-settings-back').click();
+    assert.ok(shown('title-screen') && hidden('settings-screen'));
+    assert.strictEqual(game._openSettingsScreen(), true);
+    game.destroy();
+    assert.ok(hidden('settings-screen'), '销毁时设置界面不残留');
+  }
 });
 
 testAsync('#44 设置界面：昵称/头像/云端偏好回填，六个固定头像可选', async () => {
@@ -2851,6 +2872,10 @@ testAsync('#44 资料模块缺失：显示「资料功能未启用」，设置�
   assert.strictEqual(text('login-nickname-label'), '资料功能未启用');
   assert.match(text('login-account-note'), /资料功能未启用/);
   assert.ok(hidden('btn-settings'), '资料模块缺失时隐藏设置入口');
+  assert.ok(hidden('btn-title-settings'));
+  assert.strictEqual(game._openSettingsScreen(), false);
+  assert.ok(hidden('settings-screen'));
+  assert.match(text('login-msg'), /账户设置功能未就绪/);
   game.destroy();
 });
 

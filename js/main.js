@@ -60,7 +60,7 @@
  * 账户设置（Issue #44，规范见 docs/ACCOUNT_SYSTEM.md §8/§11）：
  *   - `js/account.js` 负责 profiles 表读写与校验（昵称 1–16 字、固定头像白名单、
  *     音效/操作偏好）；本文件负责「账户设置」screen 的 UI 接线（仍不新增游戏状态）；
- *   - 未登录时入口隐藏在登录面板内（`#btn-settings`），直接调用会提示先登录；
+ *   - 标题设置入口对游客可见；游客仅可调整本机偏好，昵称与头像不可编辑；
  *   - 登录/恢复会话后自动拉取 profile：标题按钮优先显示昵称，失败不阻塞游玩；
  *   - 昵称/头像保存到云端（PATCH profiles，失败提示中文且本机设置不丢）；
  *   - 音效/触屏按键偏好立即生效并写 `mixxtopia.settings.v1`（本地是唯一运行时来源）；
@@ -1298,6 +1298,7 @@
       this._toggleHidden(this._ui.loginForm, signedIn);
       this._toggleHidden(this._ui.loginAccount, !signedIn);
       this._toggleHidden(this._ui.btnSettings, !signedIn || !this.account);
+      this._toggleHidden(this._ui.btnTitleSettings, signedIn && !this.account);
       this._text(this._ui.loginTitle, signedIn ? '账户' : '登录 / 注册');
       this._text(this._ui.loginEmailLabel, signedIn ? (session.user.email || '') : '');
       let nickname = '';
@@ -1670,15 +1671,11 @@
       return !!(el && el.classList && !el.classList.contains('hidden'));
     }
 
-    /** 从登录面板打开账户设置（仅标题态；未登录提示先登录） */
+    /** 从标题或登录面板打开设置（游客仅可调整本机偏好） */
     _openSettingsScreen() {
       if (this.state !== STATE.TITLE) return false;
-      if (!this._currentSession()) {
-        this._openLoginScreen();
-        this._setLoginMessage('请先登录后再修改账户设置。', 'error');
-        return false;
-      }
-      if (!this.account) {
+      const signedIn = !!this._currentSession();
+      if (signedIn && !this.account) {
         this._setLoginMessage('云端暂不可用：账户设置功能未就绪；仍可继续本地游玩。', 'error');
         return false;
       }
@@ -1693,7 +1690,7 @@
       this._setSettingsMessage('', '');
       // 只有「还没拿到过资料」才自动重试；保存失败时资料本身有效，不重新拉取，
       // 避免后台 GET 迟到后覆盖玩家正在编辑的内容。
-      if (!this.profile) this._loadProfile();
+      if (signedIn && !this.profile) this._loadProfile();
       return true;
     }
 
@@ -3022,6 +3019,7 @@
         'btn-login-back': 'btnLoginBack',
         // #44 账户设置
         'btn-settings': 'btnSettings',
+        'btn-title-settings': 'btnTitleSettings',
         'login-nickname-label': 'loginNicknameLabel',
         'login-account-note': 'loginAccountNote',
         'settings-screen': 'settingsScreen',
@@ -3079,6 +3077,7 @@
       this._on(ui.loginPassword, 'keydown', (ev) => this._onLoginKeydown(ev));
       // #44 账户设置
       this._on(ui.btnSettings, 'click', () => { this._openSettingsScreen(); });
+      this._on(ui.btnTitleSettings, 'click', () => { this._openSettingsScreen(); });
       this._on(ui.btnSettingsBack, 'click', () => { this._closeSettingsScreen(); });
       this._on(ui.btnSettingsSave, 'click', () => { this._onSettingsSave(); });
       this._on(ui.btnSettingsRetry, 'click', () => {

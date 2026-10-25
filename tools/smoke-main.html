@@ -35,6 +35,7 @@
     <button id="btn-saves" class="menu-btn">▤ 选择存档</button>
     <button id="btn-help" class="menu-btn">? 操作说明</button>
     <button id="btn-sound" class="menu-btn">♪ 声音：开</button>
+    <button type="button" id="btn-title-settings" class="menu-btn">⚙ 设置</button>
     <button id="btn-account" class="menu-btn account-btn">☁ 登录 / 注册</button>
   </div>
   <p id="account-note" class="account-note hidden"></p>
@@ -422,7 +423,14 @@
       ok('对话框清空', text('dialog-text') === '' && text('dialog-name') === '');
 
       // 9) 账户资料 / 设置（Issue #44）：真实 DOM + fetch 桩切到「在线」
-      ok('游客态设置入口隐藏', !shown('btn-settings'));
+      ok('游客态标题设置入口可见', shown('btn-title-settings'));
+      document.getElementById('btn-title-settings').click();
+      ok('游客打开设置', shown('settings-screen') && !shown('title-screen') && !shown('login-screen'));
+      ok('游客昵称与头像禁用', document.getElementById('settings-nickname').disabled
+        && Array.from(document.querySelectorAll('#avatar-options button')).every(btn => btn.disabled));
+      ok('游客触屏偏好可用', !document.getElementById('btn-pref-touch').disabled);
+      document.getElementById('btn-settings-back').click();
+      ok('游客设置返回标题', shown('title-screen') && !shown('settings-screen'));
       window.__smokeOnline = true;
       document.getElementById('btn-account').click();
       document.getElementById('login-email').value = 'smoke@example.com';
