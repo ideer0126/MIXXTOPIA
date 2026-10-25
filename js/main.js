@@ -31,12 +31,13 @@
  *   - once 标记（this._playedNodes）随存档持久化（slot.played），重进不再重播。
  *
  * 存档系统（Issue #8，规范见 GAME_DESIGN.md §10）：
- *   - 3 个存档位（localStorage `mixxtopia.save.v1`，`{ v, slots[3] }`）；
+ *   - 3 个存档位（localStorage `mixxtopia.save.v1`；beta/preview 通道追加 `.<channel>`）；
  *     标题「继续冒险」= updatedAt 最新的存档位，「选择存档」列出 3 档，不做选关；
  *   - 手动存档制：仅「ESC → 保存并退出」与通关结算自动存档会写盘；
  *     「回到标题（不保存）」/刷新页面丢弃上次存档之后的进度；
  *   - 存档内容：当前关、每关已收集星 id、cleared/unlocked、黑羊计数、once 已播节点；
- *   - 声音设置独立存 `mixxtopia.settings.v1`，开关立即生效。
+ *   - 声音设置独立存 `mixxtopia.settings.v1`（同样按通道加后缀），开关立即生效。
+ *   - 发布通道（#17）：stable 保持历史键；beta/preview 使用独立键，避免同源覆盖正式存档。
  *
  * 状态机约定（「无状态泄漏」的实现要点，测试 tools/test-main.js 逐项验收）：
  *   - 每次切换必经 _setState → _leaveState(旧态清理) → _enterState(新态初始化)，
@@ -204,8 +205,44 @@
 
   /* ════════════════════════ 存档（Issue #8，规范 GAME_DESIGN.md §10） ════════════════════════ */
 
-  const SAVE_KEY = 'mixxtopia.save.v1';        // { v, slots: [slot|null ×3] }
-  const SETTINGS_KEY = 'mixxtopia.settings.v1'; // { v, sound } 独立于存档位
+  // 发布通道（#17）：构建时由 js/channel.js 注入 MIXXTOPIA_CHANNEL，
+  // 并在 index.html 写 meta 兜底（脚本加载失败也能识别通道）。
+  // stable / beta / preview 同源（同一个 Pages 域名），localStorage 共享；
+  // beta/preview 必须用独立键，避免测试存档覆盖正式存档。stable 保持历史键不变。
+  const CHANNELS = ['stable', 'beta', 'preview'];
+
+  /** 解析构建注入的发布通道；缺失或未知值一律回退 stable。 */
+  function resolveChannel(host) {
+    try {
+      const name = host && host.MIXXTOPIA_CHANNEL;
+      if (CHANNELS.indexOf(name) >= 0) return name;
+      // 兜底：构建时写入的 meta 标签，channel.js 加载失败也能识别通道。
+      const doc = host && host.document;
+      if (doc && typeof doc.querySelector === 'function') {
+        const meta = doc.querySelector('meta[name="mixxtopia-channel"]');
+        const content = meta && typeof meta.getAttribute === 'function'
+          ? meta.getAttribute('content')
+          : '';
+        if (CHANNELS.indexOf(content) >= 0) return content;
+      }
+    } catch (e) { /* 回退 stable */ }
+    return 'stable';
+  }
+
+  /** 通道存储键：stable 使用原键，beta/preview 追加 .<channel>。 */
+  function channelKeys(channel) {
+    const name = CHANNELS.indexOf(channel) >= 0 ? channel : 'stable';
+    const suffix = name === 'stable' ? '' : '.' + name;
+    return {
+      saveKey: 'mixxtopia.save' + suffix + '.v1',
+      settingsKey: 'mixxtopia.settings' + suffix + '.v1',
+    };
+  }
+
+  const CHANNEL = resolveChannel(root);
+  const CHANNEL_KEYS = channelKeys(CHANNEL);
+  const SAVE_KEY = CHANNEL_KEYS.saveKey;        // { v, slots: [slot|null ×3] }
+  const SETTINGS_KEY = CHANNEL_KEYS.settingsKey; // { v, sound } 独立于存档位
   const SAVE_VERSION = 1;
   const SLOT_COUNT = 3;
 
@@ -1889,6 +1926,10 @@
     buildBootLevels: buildBootLevels,
     formatTime: formatTime,
     SaveStore: SaveStore,
+    CHANNEL: CHANNEL,
+    CHANNELS: CHANNELS,
+    channelKeys: channelKeys,
+    resolveChannel: resolveChannel,
     SAVE_KEY: SAVE_KEY,
     SETTINGS_KEY: SETTINGS_KEY,
     SAVE_VERSION: SAVE_VERSION,

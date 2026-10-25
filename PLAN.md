@@ -80,9 +80,11 @@ MIXXTOPIA/
 │   ├── engine.js         # 引擎：渲染、输入、碰撞、摄像机、粒子
 │   └── main.js           # 状态机：标题/游玩/对话/暂停/结算/结局 + 存档
 ├── tools/validate.js     # 地图/数据校验脚本（node 运行）
+├── tools/build-channels.js  # 三通道站点组装（stable/beta/preview）
+├── tools/test-channels.js   # 三通道构建测试
 ├── docs/
 │   └── GAME_DESIGN.md    # 详细设计：剧情文案、谜题表、对话稿（M1 前补）
-├── .github/workflows/pages.yml  # GitHub Pages 自动部署
+├── .github/workflows/pages.yml  # GitHub Pages 三通道自动部署
 ├── README.md / LICENSE / .gitignore
 ```
 
@@ -101,9 +103,10 @@ MIXXTOPIA/
   3. 本地静态服务器冒烟测试（页面可加载、无控制台报错）。
 - **已知红门禁（2026-10-24）**：`js/data.js` 的 `levels` 仍为空（#11 未开始），
   `node tools/validate.js` 必然报错（91 项，全部由空关卡/对话引用触发），**不视为回归**；
-  期间以 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` + 浏览器冒烟为准，
+  期间以 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` + `node tools/test-channels.js` + 浏览器冒烟为准，
   #11 落地后恢复 validate 门禁。
-- **发布**：push 到 `main` 自动触发 Pages 部署，线上 URL 即验收环境。
+- **发布**：push `main` 更新 `/preview/`；`vX.Y.Z` tag 更新 `/`（stable）；
+  `vX.Y.Z-beta.N` / `-rc.N` tag 更新 `/beta/`。三份产物一次构建、一次 Pages 部署。
 
 ---
 
@@ -211,9 +214,18 @@ MIXXTOPIA/
 
 ```
 玩家 ──→ GitHub Pages（https://ideer0126.github.io/MIXXTOPIA/）
-             │  全球 CDN + 免费 HTTPS + 自动部署（push main 触发）
+             ├── /           稳定版：最新 vX.Y.Z tag（无 tag 时回退 main）
+             ├── /beta/      测试版：最新 vX.Y.Z-beta.N / -rc.N tag
+             └── /preview/   预览版：main 最新提交
+             │  三份产物一次构建、一次原子部署；beta 无 tag 或落后于 stable 时显示占位页
              └── 可选：自定义域名 / Cloudflare 镜像（大陆加速）
 ```
+
+- **通道来源**：tag 驱动，不新增长期分支；`main` 始终是开发主线，稳定入口只在打正式 tag 时更新。
+- **一次部署**：`pages.yml` 同时构建三份产物，避免三个 workflow 各自部署同一 Pages 站点互相覆盖。
+- **存档隔离**：三个通道同源，`localStorage` 共享；`js/main.js` 按构建注入的通道名派生
+  `mixxtopia.save.<channel>.v1` / `mixxtopia.settings.<channel>.v1`，stable 保持旧键不变。
+- **索引**：beta/preview 带 `noindex`；稳定版页面不放入口，测试链接直接发给测试者。
 
 ### 10.3 自定义域名（可选，约 ¥50–80/年）
 
@@ -238,13 +250,15 @@ MIXXTOPIA/
 ### 10.5 数据与统计（可选）
 
 - 访问统计：Cloudflare Web Analytics（免费、无 Cookie）。
-- 存档在玩家浏览器 localStorage，无服务器数据；未来若做排行榜：Supabase/Firebase 免费额度起步。
+- 存档在玩家浏览器 localStorage，无服务器数据；stable 用原键，beta/preview 用独立通道键；
+  未来若做排行榜：Supabase/Firebase 免费额度起步。
 
 ### 10.6 发布检查清单（M5 执行，对应 Issue #17）
 
 - [ ] README 免责声明与玩法截图齐备
 - [ ] 游戏内 footer 非官方声明（index.html 已具备）
 - [ ] 桌面 + 移动端冒烟测试通过
+- [ ] 三通道 URL 与存档隔离验证（stable / beta / preview）
 - [ ] 大陆可达性抽测，决定是否加镜像
 - [ ] 决定是否购买/绑定自定义域名
 - [ ] 打 GitHub Release tag，随链接一起分享

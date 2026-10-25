@@ -1,8 +1,14 @@
 name: Deploy to GitHub Pages
 
+# 三通道部署（#17）：一次构建 stable / beta / preview，单次原子发布。
+# - push main       → preview 更新；stable/beta 取各自最新 tag
+# - push v* tag     → 正式 tag 更新 stable；-beta/-rc tag 更新 beta
+# - beta 无 tag 或已不高于 stable 时，/beta/ 显示占位页
+# 产物由 tools/build-channels.js 组装；存档键按通道隔离，见 js/main.js。
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -20,31 +26,139 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
-      - name: Prepare site artifact
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Quality gates
         run: |
-          mkdir -p _site
-          rsync -a \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.ds' \
-            --exclude='.vscode' \
-            --exclude='.idea' \
-            --exclude='.coderabbit.yaml' \
-            --exclude='.gitkeep' \
-            --exclude='dist' \
-            --exclude='_site' \
-            --exclude='docs' \
-            --exclude='tools' \
-            --exclude='supabase' \
-            --exclude='*.md' \
-            --exclude='LICENSE' \
-            --exclude='.gitignore' \
-            --exclude='.DS_Store' \
-            ./ _site/
+          set -euo pipefail
+          for file in js/*.js tools/*.js; do
+            node --check "$file"
+          done
+          node tools/test-engine.js
+          node tools/test-main.js
+          node tools/test-channels.js
+
+      - name: Resolve channel refs
+        id: channels
+        run: |
+          set -euo pipefail
+          git fetch --prune --tags --force origin '+refs/heads/*:refs/remotes/origin/*'
+
+          TAGS_FILE="$(mktemp)"
+          BETA_MAIN="${TAGS_FILE}.main.js"
+          trap 'rm -f "$TAGS_FILE" "$BETA_MAIN"' EXIT
+          git tag --merged origin/main --list 'v*' --sort=-v:refname > "$TAGS_FILE"
+
+          STABLE_TAG="$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9A-Za-z.-]+)?$' "$TAGS_FILE" | head -n1 || true)"
+          BETA_TAG="$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-(beta|rc)(\.[0-9]+)?$' "$TAGS_FILE" | head -n1 || true)"
+
+          # 旧 beta tag 可能早于通道存档隔离；跳过而不是让 beta 写 stable 键。
+          if [[ -n "$BETA_TAG" ]]; then
+            if git show "${BETA_TAG}:js/main.js" > "$BETA_MAIN" 2>/dev/null; then
+              if ! grep -q 'channelKeys' "$BETA_MAIN" || ! grep -q 'MIXXTOPIA_CHANNEL' "$BETA_MAIN"; then
+                echo "beta $BETA_TAG 早于通道存档隔离，跳过 beta 通道"
+                BETA_TAG=""
+              fi
+            else
+              echo "beta $BETA_TAG 缺少 js/main.js，跳过 beta 通道"
+              BETA_TAG=""
+            fi
+          fi
+
+          if [[ -n "$STABLE_TAG" && -n "$BETA_TAG" ]]; then
+            STABLE_BASE="${STABLE_TAG%%+*}"
+            BETA_BASE="${BETA_TAG%%-*}"
+            NEWER="$(printf '%s\n%s\n' "$STABLE_BASE" "$BETA_BASE" | sort -V | tail -n1)"
+            if [[ "$NEWER" == "$STABLE_BASE" ]]; then
+              echo "beta $BETA_TAG 不高于 stable $STABLE_TAG，beta 通道显示占位页"
+              BETA_TAG=""
+            fi
+          fi
+
+          if [[ -n "$STABLE_TAG" ]]; then
+            STABLE_REF="$STABLE_TAG"
+            STABLE_LABEL="$STABLE_TAG"
+          else
+            STABLE_REF="origin/main"
+            STABLE_LABEL="main@$(git rev-parse --short origin/main)"
+          fi
+          PREVIEW_REF="origin/main"
+          PREVIEW_LABEL="main@$(git rev-parse --short origin/main)"
+
+          {
+            echo "stable_ref=$STABLE_REF"
+            echo "stable_label=$STABLE_LABEL"
+            echo "beta_ref=$BETA_TAG"
+            echo "beta_label=$BETA_TAG"
+            echo "preview_ref=$PREVIEW_REF"
+            echo "preview_label=$PREVIEW_LABEL"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "stable : $STABLE_REF ($STABLE_LABEL)"
+          echo "beta   : ${BETA_TAG:-<placeholder>}"
+          echo "preview: $PREVIEW_REF ($PREVIEW_LABEL)"
+
+      - name: Build channels
+        env:
+          STABLE_REF: ${{ steps.channels.outputs.stable_ref }}
+          STABLE_LABEL: ${{ steps.channels.outputs.stable_label }}
+          BETA_REF: ${{ steps.channels.outputs.beta_ref }}
+          BETA_LABEL: ${{ steps.channels.outputs.beta_label }}
+          PREVIEW_REF: ${{ steps.channels.outputs.preview_ref }}
+          PREVIEW_LABEL: ${{ steps.channels.outputs.preview_label }}
+        run: |
+          set -euo pipefail
+          ARGS=(
+            --out _site
+            --stable-ref "$STABLE_REF"
+            --stable-label "$STABLE_LABEL"
+            --preview-ref "$PREVIEW_REF"
+            --preview-label "$PREVIEW_LABEL"
+          )
+          if [[ -n "$BETA_REF" ]]; then
+            ARGS+=(--beta-ref "$BETA_REF" --beta-label "$BETA_LABEL")
+          fi
+          node tools/build-channels.js "${ARGS[@]}"
+
+      - name: Verify site
+        run: |
+          set -euo pipefail
+          test -f _site/index.html
+          test -f _site/beta/index.html
+          test -f _site/preview/index.html
+          test -f _site/channel.json
+          test -f _site/beta/channel.json
+          test -f _site/preview/channel.json
+
+          grep -q 'js/channel.js' _site/index.html
+          grep -q 'js/channel.js' _site/preview/index.html
+          ! grep -q 'name="robots"' _site/index.html
+          grep -q 'name="robots"' _site/preview/index.html
+          grep -q 'name="robots"' _site/beta/index.html
+
+          for name in docs tools supabase .github .coderabbit.yaml; do
+            if [[ -e "_site/$name" ]]; then
+              echo "::error::站点产物混入 $name"
+              exit 1
+            fi
+          done
+          JUNK="$(find _site \( -name '.gitkeep' -o -name '.coderabbit.yaml' \) -print -quit)"
+          if [[ -n "$JUNK" ]]; then
+            echo "::error::站点产物混入占位文件：$JUNK"
+            exit 1
+          fi
+          du -sh _site
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
