@@ -4,17 +4,21 @@
  *
  * 用法：
  *   node tools/build-channels.js --out _site \
- *     --stable-ref v1.2.0 --stable-label v1.2.0 \
- *     [--beta-ref v1.3.0-beta.1 --beta-label v1.3.0-beta.1] \
- *     --preview-ref origin/main --preview-label main@abc1234
+ *     [--stable-ref v1.0.0] [--stable-label v1.0.0] \
+ *     [--beta-ref v1.1.0-beta.1] [--beta-label v1.1.0-beta.1] \
+ *     [--preview-ref origin/main] [--preview-label main@abc1234]
+ *
+ *   省略某个 --*-ref 时生成对应占位页：
+ *   - stable 缺省：稳定版尚未发布（测试期）
+ *   - preview 缺省：预览版将在首个稳定版发布后开放
+ *   - beta 缺省：测试期为「测试版暂未开放」；首个稳定版后为「测试版已停用」
  *
  *   --worktree  从当前工作区复制（本地预览/测试），否则用 git archive <ref>
- *   --beta-ref  缺省时生成「测试版暂未开放」占位页，不拿 stable 冒充 beta
  *
  * 产物：
- *   _site/           stable
+ *   _site/           stable（或占位页）
  *   _site/beta/      beta（或占位页）
- *   _site/preview/   preview
+ *   _site/preview/   preview（或占位页）
  *
  * 每个通道根目录带 channel.json；js/channel.js 注入 window.MIXXTOPIA_CHANNEL，
  * main.js 据此派生存档/设置键，避免同一 Pages 域名下三个通道互相覆盖存档。
@@ -44,17 +48,22 @@ function fail(message) {
 function usage() {
   console.log(`用法：
   node tools/build-channels.js --out _site \\
-    --stable-ref <ref> [--stable-label <label>] \\
-    [--beta-ref <ref> [--beta-label <label>]] \\
-    --preview-ref <ref> [--preview-label <label>] [--worktree]
+    [--stable-ref <ref>] [--stable-label <label>] \\
+    [--beta-ref <ref>] [--beta-label <label>] \\
+    [--preview-ref <ref>] [--preview-label <label>] [--worktree]
 
   --worktree  从当前工作区复制（本地预览/测试），否则用 git archive <ref>
-  --beta-ref  缺省时生成 beta 占位页
+  省略某个 --*-ref 时，该通道生成占位页：stable/preview 在首个稳定版前后有不同文案；
+  beta 在首个稳定版后停用，且不能再与 --stable-ref 同时提供。
 
 示例：
+  # 测试期：只有 beta 游戏
   node tools/build-channels.js --worktree --out _site \\
-    --stable-ref worktree --stable-label v0.1.0-test \\
-    --beta-ref worktree --beta-label v0.1.1-beta.1 \\
+    --beta-ref worktree --beta-label main
+
+  # 首个稳定版之后：stable + preview，beta 停用
+  node tools/build-channels.js --worktree --out _site \\
+    --stable-ref v1.0.0 --stable-label v1.0.0 \\
     --preview-ref worktree --preview-label main`);
 }
 
@@ -126,7 +135,10 @@ function copyRuntimeFromWorktree(dest, paths) {
 
 function pathExistsInRef(ref, rel) {
   try {
-    git(['cat-file', '-e', ref + ':' + rel]);
+    execFileSync('git', ['cat-file', '-e', ref + ':' + rel], {
+      cwd: REPO_ROOT,
+      stdio: 'ignore',
+    });
     return true;
   } catch (e) {
     return false;
@@ -287,19 +299,31 @@ function buildGame(dest, ref, label, channel, worktree) {
   console.log('[channels] ' + channel.padEnd(7) + ' ' + info.label + ' -> ' + rel + ' (' + commit + ')');
 }
 
-function writeBetaPlaceholder(dest) {
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
+}
+
+function writePlaceholder(dest, opts) {
+  if (!CHANNELS.includes(opts.channel)) fail('未知发布通道：' + opts.channel);
   fs.rmSync(dest, { recursive: true, force: true });
   fs.mkdirSync(dest, { recursive: true });
-  writeChannelJson(dest, { channel: 'beta', label: null, ref: null, commit: null });
+  writeChannelJson(dest, { channel: opts.channel, label: null, ref: null, commit: null });
 
+  const title = escapeHtml(opts.title);
+  const message = escapeHtml(opts.message);
+  const note = opts.note
+    ? '    <p class="note">' + escapeHtml(opts.note) + '</p>\n'
+    : '';
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="mixxtopia-channel" content="beta" />
+  <meta name="mixxtopia-channel" content="${opts.channel}" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>MIXXTOPIA · 测试版暂未开放</title>
+  <title>MIXXTOPIA · ${title}</title>
   <style>
     :root { color-scheme: dark; }
     body {
@@ -311,6 +335,7 @@ function writeBetaPlaceholder(dest) {
     .tag { margin: 0 0 12px; color: #ffd166; letter-spacing: .2em; font-size: 12px; }
     h1 { margin: 0 0 16px; font-size: 24px; line-height: 1.4; }
     p { color: #bdb6d8; line-height: 1.8; font-size: 14px; }
+    .note { color: #8b84a8; font-size: 13px; }
     code { color: #8ef0ff; }
     a { display: inline-block; margin-top: 20px; color: #8ef0ff; text-decoration: none; }
     a:hover { text-decoration: underline; }
@@ -318,16 +343,16 @@ function writeBetaPlaceholder(dest) {
 </head>
 <body>
   <main>
-    <p class="tag">BETA</p>
-    <h1>测试版暂未开放</h1>
-    <p>等待第一个 <code>vX.Y.Z-beta.N</code> / <code>-rc.N</code> tag。</p>
-    <a href="../">← 返回稳定版</a>
+    <p class="tag">${opts.channel.toUpperCase()}</p>
+    <h1>${title}</h1>
+    <p>${message}</p>
+${note}    <a href="${escapeHtml(opts.href)}">${escapeHtml(opts.link)}</a>
   </main>
 </body>
 </html>
 `;
   fs.writeFileSync(path.join(dest, 'index.html'), html);
-  console.log('[channels] beta    占位页 -> ' + (path.relative(REPO_ROOT, dest) || '.'));
+  console.log('[channels] ' + opts.channel.padEnd(7) + ' 占位页 -> ' + (path.relative(REPO_ROOT, dest) || '.'));
 }
 
 function readChannelInfo(file) {
@@ -339,48 +364,62 @@ function readChannelInfo(file) {
   }
 }
 
-function verifySite(outDir) {
-  const stableInfo = readChannelInfo(path.join(outDir, 'channel.json'));
-  const betaInfo = readChannelInfo(path.join(outDir, 'beta', 'channel.json'));
-  const previewInfo = readChannelInfo(path.join(outDir, 'preview', 'channel.json'));
-  for (const [expected, actual] of [
-    ['stable', stableInfo.channel],
-    ['beta', betaInfo.channel],
-    ['preview', previewInfo.channel],
-  ]) {
-    if (actual !== expected) fail('channel.json 标识不符：期望 ' + expected + '，实际 ' + actual);
-  }
+function verifySite(outDir, expected) {
+  const infos = {
+    stable: readChannelInfo(path.join(outDir, 'channel.json')),
+    beta: readChannelInfo(path.join(outDir, 'beta', 'channel.json')),
+    preview: readChannelInfo(path.join(outDir, 'preview', 'channel.json')),
+  };
+  const pages = {
+    stable: {
+      html: fs.readFileSync(path.join(outDir, 'index.html'), 'utf8'),
+      placeholder: '稳定版尚未发布',
+    },
+    beta: {
+      html: fs.readFileSync(path.join(outDir, 'beta', 'index.html'), 'utf8'),
+      placeholder: expected.stable ? '测试版已停用' : '测试版暂未开放',
+    },
+    preview: {
+      html: fs.readFileSync(path.join(outDir, 'preview', 'index.html'), 'utf8'),
+      placeholder: '预览版尚未开放',
+    },
+  };
 
-  const stableHtml = fs.readFileSync(path.join(outDir, 'index.html'), 'utf8');
-  const betaHtml = fs.readFileSync(path.join(outDir, 'beta', 'index.html'), 'utf8');
-  const previewHtml = fs.readFileSync(path.join(outDir, 'preview', 'index.html'), 'utf8');
-  if (/name="robots"/.test(stableHtml)) fail('stable 不应带 noindex');
-  if (!/name="robots"/.test(previewHtml)) fail('preview 缺少 noindex');
-  if (!/name="robots"/.test(betaHtml)) fail('beta 缺少 noindex');
-  for (const [name, html, channel] of [
-    ['stable', stableHtml, 'stable'],
-    ['beta', betaHtml, 'beta'],
-    ['preview', previewHtml, 'preview'],
-  ]) {
-    if (html.indexOf('name="mixxtopia-channel" content="' + channel + '"') < 0) {
-      fail(name + ' 缺少通道 meta 标签');
+  for (const channel of CHANNELS) {
+    const info = infos[channel];
+    const page = pages[channel];
+    if (info.channel !== channel) {
+      fail('channel.json 标识不符：期望 ' + channel + '，实际 ' + info.channel);
     }
-  }
+    if (page.html.indexOf('name="mixxtopia-channel" content="' + channel + '"') < 0) {
+      fail(channel + ' 缺少通道 meta 标签');
+    }
 
-  const betaIsGame = betaHtml.indexOf('js/main.js') >= 0;
-  for (const [name, html] of [['stable', stableHtml], ['preview', previewHtml]]) {
-    const channelAt = html.indexOf('js/channel.js');
-    const mainAt = html.indexOf('js/main.js');
-    if (channelAt < 0 || mainAt < 0 || channelAt > mainAt) {
-      fail(name + ' 的 channel.js/main.js 注入顺序错误');
+    const isGame = page.html.indexOf('js/main.js') >= 0;
+    if (isGame !== !!expected[channel]) {
+      fail(channel + ' 产物类型不符：期望 ' + (expected[channel] ? '游戏' : '占位页'));
     }
-  }
-  if (betaIsGame) {
-    const channelAt = betaHtml.indexOf('js/channel.js');
-    const mainAt = betaHtml.indexOf('js/main.js');
-    if (channelAt < 0 || channelAt > mainAt) fail('beta 的 channel.js/main.js 注入顺序错误');
-  } else if (!/测试版暂未开放/.test(betaHtml)) {
-    fail('beta 既不是游戏构建，也不是占位页');
+
+    if (!isGame) {
+      if (info.label !== null || info.ref !== null) fail(channel + ' 占位页不应带 label/ref');
+      if (!/name="robots"/.test(page.html)) fail(channel + ' 占位页缺少 noindex');
+      if (page.html.indexOf(page.placeholder) < 0) {
+        fail(channel + ' 占位页缺少文案：' + page.placeholder);
+      }
+      continue;
+    }
+
+    if (info.label === null || info.ref === null) fail(channel + ' 游戏构建 channel.json 缺少 label/ref');
+    const channelAt = page.html.indexOf('js/channel.js');
+    const mainAt = page.html.indexOf('js/main.js');
+    if (channelAt < 0 || channelAt > mainAt) {
+      fail(channel + ' 的 channel.js/main.js 注入顺序错误');
+    }
+    if (channel === 'stable') {
+      if (/name="robots"/.test(page.html)) fail('stable 游戏不应带 noindex');
+    } else if (!/name="robots"/.test(page.html)) {
+      fail(channel + ' 游戏缺少 noindex');
+    }
   }
 
   for (const name of ['docs', 'tools', 'supabase', '.github', '.git', '.coderabbit.yaml']) {
@@ -392,12 +431,14 @@ function verifySite(outDir) {
     }
   });
 
-  console.log('[channels] verify OK（beta: ' + (betaIsGame ? 'game' : 'placeholder') + '）');
+  const summary = CHANNELS.map((channel) => (
+    channel + ': ' + (expected[channel] ? 'game' : 'placeholder')
+  )).join('，');
+  console.log('[channels] verify OK（' + summary + '）');
 }
 
 function main() {
   const opts = parseArgs(process.argv.slice(2));
-  if (!opts['stable-ref']) fail('缺少 --stable-ref');
   const outDir = path.resolve(REPO_ROOT, opts.out);
   if (outDir === path.parse(outDir).root || outDir === REPO_ROOT) {
     fail('--out 不能是仓库根或文件系统根');
@@ -409,25 +450,74 @@ function main() {
   if (opts.worktree) resolveCommit('HEAD');
 
   const stableRef = opts['stable-ref'];
-  const previewRef = opts['preview-ref'] || 'HEAD';
+  const previewRef = opts['preview-ref'];
   const betaRef = opts['beta-ref'];
+  if (stableRef && betaRef) {
+    fail('第一个稳定版发布后 beta 通道已停用，不能再同时提供 --beta-ref');
+  }
+  if (previewRef && !stableRef) fail('--preview-ref 需要同时提供 --stable-ref');
+
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
 
-  buildGame(outDir, stableRef, opts['stable-label'] || stableRef, 'stable', opts.worktree);
-  buildGame(
-    path.join(outDir, 'preview'),
-    previewRef,
-    opts['preview-label'] || previewRef,
-    'preview',
-    opts.worktree
-  );
+  if (stableRef) {
+    buildGame(outDir, stableRef, opts['stable-label'] || stableRef, 'stable', opts.worktree);
+  } else {
+    writePlaceholder(outDir, {
+      channel: 'stable',
+      title: '稳定版尚未发布',
+      message: 'MIXXTOPIA 目前处于测试阶段。',
+      note: '预览版将在首个稳定版发布后开放。',
+      href: 'beta/',
+      link: '进入测试版 →',
+    });
+  }
+
+  if (previewRef) {
+    buildGame(
+      path.join(outDir, 'preview'),
+      previewRef,
+      opts['preview-label'] || previewRef,
+      'preview',
+      opts.worktree
+    );
+  } else {
+    writePlaceholder(path.join(outDir, 'preview'), {
+      channel: 'preview',
+      title: '预览版尚未开放',
+      message: stableRef ? '预览版暂未开放。' : '预览版将在首个稳定版发布后开放。',
+      note: stableRef ? '' : '当前测试请使用测试版。',
+      href: '../beta/',
+      link: '进入测试版 →',
+    });
+  }
+
   if (betaRef) {
     buildGame(path.join(outDir, 'beta'), betaRef, opts['beta-label'] || betaRef, 'beta', opts.worktree);
+  } else if (stableRef) {
+    writePlaceholder(path.join(outDir, 'beta'), {
+      channel: 'beta',
+      title: '测试版已停用',
+      message: '首个稳定版发布后，测试版通道已停用。',
+      note: '后续测试请使用预览版。',
+      href: '../preview/',
+      link: '前往预览版 →',
+    });
   } else {
-    writeBetaPlaceholder(path.join(outDir, 'beta'));
+    writePlaceholder(path.join(outDir, 'beta'), {
+      channel: 'beta',
+      title: '测试版暂未开放',
+      message: '等待测试版构建。',
+      href: '../',
+      link: '← 返回首页',
+    });
   }
-  verifySite(outDir);
+
+  verifySite(outDir, {
+    stable: !!stableRef,
+    beta: !!betaRef,
+    preview: !!previewRef,
+  });
 }
 
 main();

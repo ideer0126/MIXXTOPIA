@@ -6,12 +6,13 @@
  * 运行：node tools/test-channels.js
  *
  * 覆盖：
- *   1. 一次构建产出 stable / beta / preview 三份可玩站点
- *   2. stable 不带 noindex，beta/preview 带 noindex
- *   3. channel.js 注入顺序、channel.json 标识与通道名
- *   4. beta 无 tag 时生成占位页，不拿 stable 冒充
- *   5. 产物不含 docs/tools/supabase/.github/.coderabbit.yaml/.gitkeep
- *   6. 新增的 js/cloud-config.js 会进入每个游戏构建
+ *   1. 测试期：stable/preview 占位，beta 用 main 可玩
+ *   2. 首个稳定版后：stable/preview 游戏，beta 显示“已停用”
+ *   3. stable 游戏可索引；beta/preview/占位页带 noindex
+ *   4. channel.js 注入顺序、channel.json 标识与通道名
+ *   5. 稳定版后禁止同时构建 beta
+ *   6. 产物不含 docs/tools/supabase/.github/.coderabbit.yaml/.gitkeep
+ *   7. 新增的 js/cloud-config.js 会进入每个游戏构建
  */
 'use strict';
 
@@ -22,7 +23,6 @@ const path = require('path');
 const vm = require('vm');
 const { execFileSync } = require('child_process');
 
-const REPO_ROOT = path.join(__dirname, '..');
 const BUILD = path.join(__dirname, 'build-channels.js');
 let passed = 0;
 
@@ -32,13 +32,21 @@ function test(name, fn) {
   console.log('  ✓ ' + name);
 }
 
-function runBuild(out, extra = []) {
+function runRaw(out, args = []) {
   return execFileSync(process.execPath, [
-    BUILD, '--worktree', '--out', out,
-    '--stable-ref', 'worktree', '--stable-label', 'v0.1.0-test',
-    '--preview-ref', 'worktree', '--preview-label', 'main',
-    ...extra,
-  ], { encoding: 'utf8' });
+    BUILD, '--worktree', '--out', out, ...args,
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+function runTesting(out) {
+  return runRaw(out, ['--beta-ref', 'worktree', '--beta-label', 'main@test']);
+}
+
+function runStable(out) {
+  return runRaw(out, [
+    '--stable-ref', 'worktree', '--stable-label', 'v1.0.0-test',
+    '--preview-ref', 'worktree', '--preview-label', 'main@test',
+  ]);
 }
 
 function read(file) {
@@ -66,110 +74,157 @@ function assertGameIndex(html, label) {
   assert.ok(channelAt < mainAt, label + ' 必须先加载 channel.js 再加载 main.js');
 }
 
+function assertMeta(html, channel) {
+  assert.ok(
+    html.indexOf('name="mixxtopia-channel" content="' + channel + '"') >= 0,
+    channel + ' 缺少通道 meta'
+  );
+}
+
+function assertNoJunk(site) {
+  for (const name of ['docs', 'tools', 'supabase', '.github', '.coderabbit.yaml']) {
+    assert.ok(!fs.existsSync(path.join(site, name)), site + ' 混入 ' + name);
+  }
+  const junk = walk(site).filter((file) => (
+    /(?:^|[\\/])\.gitkeep$/.test(file) || /(?:^|[\\/])\.coderabbit\.yaml$/.test(file)
+  ));
+  assert.deepStrictEqual(junk, []);
+}
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mixxtopia-channels-'));
 try {
-  /* ─────────────── 完整三通道 ─────────────── */
-  const withBeta = path.join(tmp, 'with-beta');
-  const log = runBuild(withBeta, [
-    '--beta-ref', 'worktree', '--beta-label', 'v0.1.1-beta.1',
-  ]);
+  /* ─────────────── 测试期 ─────────────── */
+  const testing = path.join(tmp, 'testing');
+  const testingLog = runTesting(testing);
 
-  test('三通道构建成功并输出日志', () => {
-    assert.ok(/\[channels\] stable/.test(log));
-    assert.ok(/\[channels\] beta/.test(log));
-    assert.ok(/\[channels\] preview/.test(log));
-    assert.ok(/verify OK/.test(log));
+  test('测试期：stable/preview 占位，beta 可玩', () => {
+    const stable = read(path.join(testing, 'index.html'));
+    const preview = read(path.join(testing, 'preview/index.html'));
+    const beta = read(path.join(testing, 'beta/index.html'));
+
+    assert.ok(/稳定版尚未发布/.test(stable));
+    assert.ok(stable.indexOf('js/main.js') < 0, '测试期 stable 不应加载游戏');
+    assert.ok(/name="robots"/.test(stable));
+
+    assert.ok(/预览版尚未开放/.test(preview));
+    assert.ok(preview.indexOf('js/main.js') < 0, '首个稳定版前 preview 不应加载游戏');
+    assert.ok(/name="robots"/.test(preview));
+
+    assertGameIndex(beta, 'beta');
+    assert.ok(/name="robots"/.test(beta));
+    assertMeta(stable, 'stable');
+    assertMeta(beta, 'beta');
+    assertMeta(preview, 'preview');
+
+    assert.ok(/stable: placeholder/.test(testingLog));
+    assert.ok(/beta: game/.test(testingLog));
+    assert.ok(/preview: placeholder/.test(testingLog));
   });
 
-  test('三个通道都有可玩入口', () => {
-    for (const rel of ['index.html', 'beta/index.html', 'preview/index.html']) {
-      assert.ok(fs.existsSync(path.join(withBeta, rel)), rel + ' 缺失');
+  test('测试期 channel.json：stable/preview 无标签，beta 指向 main', () => {
+    assert.strictEqual(readJson(path.join(testing, 'channel.json')).channel, 'stable');
+    assert.strictEqual(readJson(path.join(testing, 'channel.json')).label, null);
+    assert.strictEqual(readJson(path.join(testing, 'preview/channel.json')).channel, 'preview');
+    assert.strictEqual(readJson(path.join(testing, 'preview/channel.json')).label, null);
+    assert.strictEqual(readJson(path.join(testing, 'beta/channel.json')).channel, 'beta');
+    assert.strictEqual(readJson(path.join(testing, 'beta/channel.json')).label, 'main@test');
+  });
+
+  /* ─────────────── 首个稳定版之后 ─────────────── */
+  const stable = path.join(tmp, 'stable');
+  const stableLog = runStable(stable);
+
+  test('稳定后：stable/preview 游戏，beta 已停用', () => {
+    const stableHtml = read(path.join(stable, 'index.html'));
+    const previewHtml = read(path.join(stable, 'preview/index.html'));
+    const betaHtml = read(path.join(stable, 'beta/index.html'));
+
+    assertGameIndex(stableHtml, 'stable');
+    assert.ok(!/name="robots"/.test(stableHtml), 'stable 游戏应可索引');
+    assertGameIndex(previewHtml, 'preview');
+    assert.ok(/name="robots"/.test(previewHtml), 'preview 应带 noindex');
+
+    assert.ok(/测试版已停用/.test(betaHtml));
+    assert.ok(betaHtml.indexOf('js/main.js') < 0, 'beta 停用后不应加载游戏');
+    assert.ok(/name="robots"/.test(betaHtml));
+    assert.ok(betaHtml.indexOf('../preview/') >= 0, 'beta 停用页应指向 preview');
+
+    assertMeta(stableHtml, 'stable');
+    assertMeta(betaHtml, 'beta');
+    assertMeta(previewHtml, 'preview');
+
+    assert.ok(/stable: game/.test(stableLog));
+    assert.ok(/beta: placeholder/.test(stableLog));
+    assert.ok(/preview: game/.test(stableLog));
+  });
+
+  test('稳定后 channel.json：stable/preview 有标签，beta 为空', () => {
+    assert.strictEqual(readJson(path.join(stable, 'channel.json')).channel, 'stable');
+    assert.strictEqual(readJson(path.join(stable, 'channel.json')).label, 'v1.0.0-test');
+    assert.strictEqual(readJson(path.join(stable, 'preview/channel.json')).channel, 'preview');
+    assert.strictEqual(readJson(path.join(stable, 'preview/channel.json')).label, 'main@test');
+    assert.strictEqual(readJson(path.join(stable, 'beta/channel.json')).channel, 'beta');
+    assert.strictEqual(readJson(path.join(stable, 'beta/channel.json')).label, null);
+  });
+
+  /* ─────────────── 共用产物检查 ─────────────── */
+  test('channel.js 内容正确且可解析', () => {
+    const sources = [
+      ['beta', read(path.join(testing, 'beta/js/channel.js'))],
+      ['stable', read(path.join(stable, 'js/channel.js'))],
+      ['preview', read(path.join(stable, 'preview/js/channel.js'))],
+    ];
+    for (const [channel, source] of sources) {
+      assert.ok(source.indexOf('"channel":"' + channel + '"') >= 0);
+      new vm.Script(source, { filename: channel + '/js/channel.js' });
     }
-    for (const rel of ['js/main.js', 'js/channel.js', 'channel.json']) {
-      assert.ok(fs.existsSync(path.join(withBeta, rel)), 'stable 缺少 ' + rel);
-      assert.ok(fs.existsSync(path.join(withBeta, 'beta', rel)), 'beta 缺少 ' + rel);
-      assert.ok(fs.existsSync(path.join(withBeta, 'preview', rel)), 'preview 缺少 ' + rel);
-    }
-  });
-
-  test('stable 不带 noindex，beta/preview 带 noindex', () => {
-    assert.ok(!/name="robots"/.test(read(path.join(withBeta, 'index.html'))));
-    assert.ok(/name="robots" content="noindex, nofollow"/.test(read(path.join(withBeta, 'beta/index.html'))));
-    assert.ok(/name="robots" content="noindex, nofollow"/.test(read(path.join(withBeta, 'preview/index.html'))));
-  });
-
-  test('每个游戏页面写入通道 meta 兜底', () => {
-    assert.ok(read(path.join(withBeta, 'index.html')).indexOf('name="mixxtopia-channel" content="stable"') >= 0);
-    assert.ok(read(path.join(withBeta, 'beta/index.html')).indexOf('name="mixxtopia-channel" content="beta"') >= 0);
-    assert.ok(read(path.join(withBeta, 'preview/index.html')).indexOf('name="mixxtopia-channel" content="preview"') >= 0);
-  });
-
-  test('channel.js 均先于 main.js 加载', () => {
-    assertGameIndex(read(path.join(withBeta, 'index.html')), 'stable');
-    assertGameIndex(read(path.join(withBeta, 'beta/index.html')), 'beta');
-    assertGameIndex(read(path.join(withBeta, 'preview/index.html')), 'preview');
-  });
-
-  test('channel.json 标识与标签正确', () => {
-    assert.strictEqual(readJson(path.join(withBeta, 'channel.json')).channel, 'stable');
-    assert.strictEqual(readJson(path.join(withBeta, 'channel.json')).label, 'v0.1.0-test');
-    assert.strictEqual(readJson(path.join(withBeta, 'beta/channel.json')).channel, 'beta');
-    assert.strictEqual(readJson(path.join(withBeta, 'beta/channel.json')).label, 'v0.1.1-beta.1');
-    assert.strictEqual(readJson(path.join(withBeta, 'preview/channel.json')).channel, 'preview');
-    assert.strictEqual(readJson(path.join(withBeta, 'preview/channel.json')).label, 'main');
-    assert.ok(/^[0-9a-f]{7,}$/i.test(readJson(path.join(withBeta, 'channel.json')).commit));
-  });
-
-  test('channel.js 写入对应通道名', () => {
-    const stableJs = read(path.join(withBeta, 'js/channel.js'));
-    const betaJs = read(path.join(withBeta, 'beta/js/channel.js'));
-    const previewJs = read(path.join(withBeta, 'preview/js/channel.js'));
-    assert.ok(stableJs.indexOf('"channel":"stable"') >= 0);
-    assert.ok(betaJs.indexOf('"channel":"beta"') >= 0);
-    assert.ok(previewJs.indexOf('"channel":"preview"') >= 0);
-    assert.ok(betaJs.indexOf('channel-badge') >= 0);
-    assert.ok(previewJs.indexOf('channel-badge') >= 0);
-    for (const [label, source] of [['stable', stableJs], ['beta', betaJs], ['preview', previewJs]]) {
-      new vm.Script(source, { filename: label + '/js/channel.js' });
-    }
+    assert.ok(sources[0][1].indexOf('channel-badge') >= 0);
+    assert.ok(sources[2][1].indexOf('channel-badge') >= 0);
   });
 
   test('产物不含开发文件或 .gitkeep', () => {
-    for (const name of ['docs', 'tools', 'supabase', '.github', '.coderabbit.yaml']) {
-      assert.ok(!fs.existsSync(path.join(withBeta, name)), '混入 ' + name);
-    }
-    const junk = walk(withBeta).filter((file) => (
-      /(?:^|[\\/])\.gitkeep$/.test(file) || /(?:^|[\\/])\.coderabbit\.yaml$/.test(file)
-    ));
-    assert.deepStrictEqual(junk, []);
+    assertNoJunk(testing);
+    assertNoJunk(stable);
   });
 
   test('每个游戏构建都包含 cloud-config.js', () => {
-    for (const rel of ['js/cloud-config.js', 'beta/js/cloud-config.js', 'preview/js/cloud-config.js']) {
-      assert.ok(fs.existsSync(path.join(withBeta, rel)), '缺少 ' + rel);
+    for (const rel of [
+      'beta/js/cloud-config.js',
+      'js/cloud-config.js',
+      'preview/js/cloud-config.js',
+    ]) {
+      const site = rel.startsWith('beta/') ? testing : stable;
+      assert.ok(fs.existsSync(path.join(site, rel)), '缺少 ' + rel);
     }
   });
 
-  /* ─────────────── 无 beta tag ─────────────── */
-  const noBeta = path.join(tmp, 'no-beta');
-  runBuild(noBeta);
-
-  test('无 beta tag 时生成占位页', () => {
-    const html = read(path.join(noBeta, 'beta/index.html'));
-    assert.ok(/测试版暂未开放/.test(html));
-    assert.ok(/name="robots" content="noindex, nofollow"/.test(html));
-    assert.ok(html.indexOf('js/main.js') < 0, '占位页不应加载游戏');
+  test('稳定版后禁止同时构建 beta', () => {
+    let error = null;
+    const forbidden = path.join(tmp, 'forbidden');
+    try {
+      runRaw(forbidden, [
+        '--stable-ref', 'worktree', '--stable-label', 'v1.0.0-test',
+        '--preview-ref', 'worktree', '--preview-label', 'main@test',
+        '--beta-ref', 'worktree', '--beta-label', 'v1.1.0-beta.1',
+      ]);
+    } catch (e) {
+      error = e;
+    }
+    assert.ok(error, '同时提供 stable 与 beta 应失败');
+    const message = String(error.stderr || '') + String(error.message || '');
+    assert.ok(/beta 通道已停用/.test(message));
+    assert.ok(!fs.existsSync(forbidden), '失败时不应留下产物目录');
   });
 
-  test('占位页仍写 beta channel.json', () => {
-    const info = readJson(path.join(noBeta, 'beta/channel.json'));
-    assert.strictEqual(info.channel, 'beta');
-    assert.strictEqual(info.label, null);
-  });
-
-  test('无 beta tag 不影响 stable/preview', () => {
-    assertGameIndex(read(path.join(noBeta, 'index.html')), 'stable');
-    assertGameIndex(read(path.join(noBeta, 'preview/index.html')), 'preview');
+  test('全占位构建：beta 显示暂未开放', () => {
+    const empty = path.join(tmp, 'empty');
+    const log = runRaw(empty, []);
+    assert.ok(/稳定版尚未发布/.test(read(path.join(empty, 'index.html'))));
+    assert.ok(/预览版尚未开放/.test(read(path.join(empty, 'preview/index.html'))));
+    assert.ok(/测试版暂未开放/.test(read(path.join(empty, 'beta/index.html'))));
+    assert.ok(/stable: placeholder/.test(log));
+    assert.ok(/beta: placeholder/.test(log));
+    assert.ok(/preview: placeholder/.test(log));
   });
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
