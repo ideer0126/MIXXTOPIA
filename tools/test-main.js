@@ -1479,6 +1479,31 @@ test('存档：初始 3 档全空、继续隐藏；选择存档可打开/返回'
   game.destroy();
 });
 
+test('发布通道：stable 保持旧键，beta/preview 独立键（#17）', () => {
+  assert.strictEqual(main.CHANNEL, 'stable');
+  assert.strictEqual(main.SAVE_KEY, 'mixxtopia.save.v1');
+  assert.strictEqual(main.SETTINGS_KEY, 'mixxtopia.settings.v1');
+  assert.strictEqual(main.resolveChannel({ MIXXTOPIA_CHANNEL: 'beta' }), 'beta');
+  assert.strictEqual(main.resolveChannel({ MIXXTOPIA_CHANNEL: 'preview' }), 'preview');
+  assert.strictEqual(main.resolveChannel({ MIXXTOPIA_CHANNEL: 'nope' }), 'stable');
+  assert.strictEqual(main.resolveChannel(null), 'stable');
+  assert.strictEqual(main.resolveChannel({
+    document: { querySelector: () => ({ getAttribute: () => 'preview' }) },
+  }), 'preview');
+  assert.strictEqual(main.resolveChannel({
+    document: { querySelector: () => null },
+  }), 'stable');
+  const beta = main.channelKeys('beta');
+  assert.strictEqual(beta.saveKey, 'mixxtopia.save.beta.v1');
+  assert.strictEqual(beta.settingsKey, 'mixxtopia.settings.beta.v1');
+  const preview = main.channelKeys('preview');
+  assert.strictEqual(preview.saveKey, 'mixxtopia.save.preview.v1');
+  assert.strictEqual(preview.settingsKey, 'mixxtopia.settings.preview.v1');
+  const fallback = main.channelKeys('nope');
+  assert.strictEqual(fallback.saveKey, 'mixxtopia.save.v1');
+  assert.strictEqual(fallback.settingsKey, 'mixxtopia.settings.v1');
+});
+
 test('新游戏：占用第一个空档位但不立即写盘（手动存档制）', () => {
   const game = makeGame();
   elt('btn-start').click();
@@ -1724,6 +1749,19 @@ test('读档恢复 once 已播节点与黑羊计数', () => {
   assert.ok(game._playedNodes.has('l1.intro'));
   assert.strictEqual(game.sheepCount, 2);
   game.destroy();
+});
+
+test('构建注入 beta 时 main 使用 beta 存档键（#17）', () => {
+  const originalMain = sandbox.MIXX.main;
+  sandbox.MIXXTOPIA_CHANNEL = 'beta';
+  vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/main.js'), 'utf8'), sandbox, {
+    filename: 'js/main.js?beta',
+  });
+  assert.strictEqual(sandbox.MIXX.main.CHANNEL, 'beta');
+  assert.strictEqual(sandbox.MIXX.main.SAVE_KEY, 'mixxtopia.save.beta.v1');
+  assert.strictEqual(sandbox.MIXX.main.SETTINGS_KEY, 'mixxtopia.settings.beta.v1');
+  sandbox.MIXX.main = originalMain;
+  delete sandbox.MIXXTOPIA_CHANNEL;
 });
 
 /* ─────────────────── 汇总 ─────────────────── */

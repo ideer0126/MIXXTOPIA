@@ -8,6 +8,18 @@
 - 🧱 **技术**：纯 HTML/CSS/JavaScript（Canvas），零依赖
 - 🚀 **在线试玩**：<https://ideer0126.github.io/MIXXTOPIA/>（开发中）
 
+## 版本通道
+
+| 通道 | 地址 | 来源 |
+|---|---|---|
+| 稳定版 | <https://ideer0126.github.io/MIXXTOPIA/> | 最新 `vX.Y.Z` tag（还没有正式 tag 时回退 `main`） |
+| 测试版 | <https://ideer0126.github.io/MIXXTOPIA/beta/> | 最新 `vX.Y.Z-beta.N` / `-rc.N` tag |
+| 预览版 | <https://ideer0126.github.io/MIXXTOPIA/preview/> | `main` 最新提交 |
+
+> beta / preview 使用独立的 localStorage 键（`.beta` / `.preview`），不会覆盖稳定版存档；两个通道都带 `noindex`，请直接把链接发给测试者，不要放到公开入口。
+>
+> 如果最新 beta tag 的版本不高于当前 stable，`/beta/` 会显示“测试版暂未开放”占位页，避免测试者误以为在测新版本。
+
 ## 开发状态
 
 | 里程碑 | 状态 |

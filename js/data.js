@@ -399,6 +399,7 @@
       },
     },
 
+    // 稳定通道默认键；beta/preview 由 js/main.js 在运行时追加 .beta / .preview
     saveKey: 'mixxtopia.save.v1',
   };
 
