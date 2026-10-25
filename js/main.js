@@ -1172,7 +1172,7 @@
 
     /**
      * 默认资料客户端：js/account.js（复用本文件创建的 auth 客户端）；
-     * opts.profile 显式注入优先，传 null 关闭账户设置功能。
+     * opts.profile 显式注入优先，传 null 关闭云端资料功能（本机偏好仍可调整）。
      */
     _createAccount(opts) {
       if (opts && Object.prototype.hasOwnProperty.call(opts, 'profile')) return opts.profile || null;
@@ -1297,8 +1297,8 @@
       const signedIn = !!(session && session.user);
       this._toggleHidden(this._ui.loginForm, signedIn);
       this._toggleHidden(this._ui.loginAccount, !signedIn);
-      this._toggleHidden(this._ui.btnSettings, !signedIn || !this.account);
-      this._toggleHidden(this._ui.btnTitleSettings, signedIn && !this.account);
+      this._toggleHidden(this._ui.btnSettings, !signedIn);
+      this._show(this._ui.btnTitleSettings);
       this._text(this._ui.loginTitle, signedIn ? '账户' : '登录 / 注册');
       this._text(this._ui.loginEmailLabel, signedIn ? (session.user.email || '') : '');
       let nickname = '';
@@ -1671,14 +1671,10 @@
       return !!(el && el.classList && !el.classList.contains('hidden'));
     }
 
-    /** 从标题或登录面板打开设置（游客仅可调整本机偏好） */
+    /** 从标题或登录面板打开设置（游客或云端资料功能未就绪时仅可调整本机偏好） */
     _openSettingsScreen() {
       if (this.state !== STATE.TITLE) return false;
       const signedIn = !!this._currentSession();
-      if (signedIn && !this.account) {
-        this._setLoginMessage('云端暂不可用：账户设置功能未就绪；仍可继续本地游玩。', 'error');
-        return false;
-      }
       this._hide(this._ui.loginScreen);
       this._hide(this._ui.titleScreen);
       this._show(this._ui.settingsScreen);
@@ -1690,7 +1686,7 @@
       this._setSettingsMessage('', '');
       // 只有「还没拿到过资料」才自动重试；保存失败时资料本身有效，不重新拉取，
       // 避免后台 GET 迟到后覆盖玩家正在编辑的内容。
-      if (signedIn && !this.profile) this._loadProfile();
+      if (signedIn && this.account && !this.profile) this._loadProfile();
       return true;
     }
 
@@ -1774,7 +1770,7 @@
       // 资料未加载成功前禁止保存：否则表单默认值（NSWER / muse-1）会覆盖云端
       // 现有昵称/头像（评审发现的阻塞级数据覆盖问题，Issue #44）。
       const profileReady = !!this.profile;
-      const formDisabled = !signedIn || busy || !profileReady;
+      const formDisabled = !signedIn || !this.account || busy || !profileReady;
       const saveBtn = this._ui.btnSettingsSave;
       if (saveBtn) {
         saveBtn.disabled = formDisabled;
@@ -1791,7 +1787,7 @@
       }
       const retry = this._ui.btnSettingsRetry;
       if (retry) {
-        const showRetry = signedIn && !profileReady && !busy
+        const showRetry = signedIn && !!this.account && !profileReady && !busy
           && !this._profilePromise && !!this.profileError;
         this._toggleHidden(retry, !showRetry);
       }
@@ -1804,6 +1800,10 @@
       if (!el) return;
       if (!this._currentSession()) {
         this._text(el, '未登录：昵称与头像不可用；声音与操作偏好只保存在本机。');
+        return;
+      }
+      if (!this.account) {
+        this._text(el, '云端资料功能未启用：昵称、头像与云端保存不可用；声音与操作偏好只保存在本机并立即生效。');
         return;
       }
       if (this.profileError) {

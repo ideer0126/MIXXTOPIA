@@ -2849,8 +2849,9 @@ testAsync('#44 保存期间冻结声音/触屏偏好按钮', async () => {
   game.destroy();
 });
 
-testAsync('#44 资料模块缺失：显示「资料功能未启用」，设置入口隐藏', async () => {
+testAsync('#44 已登录但资料模块缺失：设置可调整本机偏好，账户资料与云端保存禁用', async () => {
   localStorageStub.clear();
+  const fetchStub = authFetch(() => { throw new Error('资料模块缺失时不应发请求'); });
   const fakeAuth = {
     available: true,
     lastError: null,
@@ -2864,6 +2865,7 @@ testAsync('#44 资料模块缺失：显示「资料功能未启用」，设置�
     storage: localStorageStub,
     auth: fakeAuth,
     profile: null,
+    fetch: fetchStub,
   });
   await game._authReady;
   await flushMicrotasks();
@@ -2871,11 +2873,37 @@ testAsync('#44 资料模块缺失：显示「资料功能未启用」，设置�
   assert.ok(shown('login-account'));
   assert.strictEqual(text('login-nickname-label'), '资料功能未启用');
   assert.match(text('login-account-note'), /资料功能未启用/);
-  assert.ok(hidden('btn-settings'), '资料模块缺失时隐藏设置入口');
-  assert.ok(hidden('btn-title-settings'));
-  assert.strictEqual(game._openSettingsScreen(), false);
-  assert.ok(hidden('settings-screen'));
-  assert.match(text('login-msg'), /账户设置功能未就绪/);
+  assert.ok(shown('btn-settings'), '已登录时仍可从账户面板打开设置');
+  elt('btn-settings').click();
+  assert.ok(shown('settings-screen') && hidden('login-screen') && hidden('title-screen'));
+  assert.strictEqual(elt('settings-nickname').disabled, true);
+  for (const btn of Object.values(game._ui.avatarBtns)) assert.strictEqual(btn.disabled, true);
+  assert.strictEqual(elt('btn-settings-save').disabled, true);
+  assert.ok(hidden('btn-settings-retry'), '无资料客户端时不显示重试');
+  assert.match(text('settings-cloud-note'), /云端资料功能未启用/);
+  assert.match(text('settings-cloud-note'), /只保存在本机并立即生效/);
+  assert.strictEqual(elt('btn-pref-sound').disabled, false);
+  assert.strictEqual(elt('btn-pref-touch').disabled, false);
+  const soundBefore = game.soundOn;
+  elt('btn-pref-sound').click();
+  assert.strictEqual(game.soundOn, !soundBefore);
+  assert.strictEqual(audio.isEnabled(), !soundBefore, '声音偏好立即应用到音频系统');
+  elt('btn-pref-touch').click();
+  assert.strictEqual(game.input.touchMode, 'on', '触屏偏好立即应用到输入系统');
+  assert.deepStrictEqual(JSON.parse(localStorageStub.getItem(main.SETTINGS_KEY)), {
+    v: 1, sound: !soundBefore, touch: 'on',
+  });
+  elt('btn-settings-back').click();
+  assert.ok(shown('login-screen') && hidden('settings-screen'));
+  elt('btn-login-back').click();
+  assert.ok(shown('btn-title-settings'), '已登录但无资料客户端时标题设置入口仍可见');
+  elt('btn-title-settings').click();
+  assert.ok(shown('settings-screen') && hidden('title-screen') && hidden('login-screen'));
+  assert.strictEqual(game.input.touchMode, 'on');
+  assert.strictEqual(game.soundOn, !soundBefore);
+  await flushMicrotasks();
+  assert.strictEqual(game._profilePromise, null, '不尝试加载云端资料');
+  assert.strictEqual(fetchStub.calls.length, 0, '本机偏好更改不发网络请求');
   game.destroy();
 });
 
