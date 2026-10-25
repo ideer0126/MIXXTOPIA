@@ -84,8 +84,18 @@ function assertMeta(html, channel) {
 // 与 build-channels.js 的 verifySite 对齐：noindex 必须校验 content，
 // 只看到 name="robots" 就放行的话，`content="index, follow"` 也能混过去。
 // 注释里的 meta 不算、`data-content` 不算、`not-noindex` 也不算。
+function stripHtmlComments(html) {
+  let prev;
+  let current = html;
+  do {
+    prev = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, '');
+  } while (current !== prev);
+  return current;
+}
+
 function robotsContents(html) {
-  const visible = html.replace(/<!--[\s\S]*?-->/g, '');
+  const visible = stripHtmlComments(html);
   return (visible.match(/<meta\b[^>]*>/gi) || [])
     .filter((tag) => /\sname\s*=\s*["']robots["']/i.test(tag))
     .map((tag) => {
