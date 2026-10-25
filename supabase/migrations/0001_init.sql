@@ -15,6 +15,7 @@
 -- updatedAt 由本表 updated_at 列承担）。上传时不要把 updatedAt 写进 data；
 -- 下载时须先把 updated_at 转成本地毫秒时间戳写入 updatedAt，再调用
 -- SaveStore.writeSlot()——normalizeSlot() 不会从 updated_at 补齐该字段。
+-- 本地存档位不保存 version；逐档同步基线见 mixxtopia.cloud.v1（§9）。
 -- 除时间字段外，双向直传、不做字段映射。
 
 -- 注意：脚本里**不写** begin/commit。
@@ -47,15 +48,19 @@ alter table public.profiles add constraint profiles_avatar_check
 
 -- ---------------------------------------------------------------------------
 -- 2) 云存档：一账号最多 3 档，一档一行；version 做乐观锁
+--    本地存档位不保存 version；逐档同步基线存 mixxtopia.cloud.v1
+--    （version / localUpdatedAt / cloudUpdatedAt，见 ACCOUNT_SYSTEM.md §9）。
 --    写入约定（#45）：
---      insert 首档：POST /rest/v1/saves   { user_id, slot, version: 1, data }
---      覆盖已有档：PATCH /rest/v1/saves?user_id=eq.<uid>&slot=eq.<1-3>&version=eq.<旧值>
+--      insert 首档：POST /rest/v1/saves
 --                  Prefer: return=representation
---                  body { version: 旧值 + 1, data }
---                  （updated_at 由 touch_updated_at() 触发器维护，无需传）
---      调用方必须检查返回数组长度：1 = 更新成功；0 = 版本冲突
---      （HTTP 仍可能是 200）。不能只看 HTTP 成功状态判断同步结果。
---      冲突交由界面让玩家逐档选择（见 ACCOUNT_SYSTEM.md §9）。
+--                  body { user_id, slot, version: 1, data }
+--      覆盖已有档：PATCH /rest/v1/saves?user_id=eq.<uid>&slot=eq.<1-3>&version=eq.<基线 version>
+--                  Prefer: return=representation
+--                  body { version: 期望值 + 1, data }
+--                  （无基线时先 GET 当前 version；updated_at 由触发器维护，无需传）
+--      返回数组长度 1 = 更新成功；0 = 版本冲突（HTTP 仍可能是 200）。
+--      返回行含 version / updated_at，写回 mixxtopia.cloud.v1 的该档基线。
+--      冲突时重新拉取云端元数据，让玩家逐档选择（见 ACCOUNT_SYSTEM.md §9）。
 -- ---------------------------------------------------------------------------
 create table if not exists public.saves (
   user_id    uuid not null references auth.users (id) on delete cascade,

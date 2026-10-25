@@ -26,7 +26,7 @@
 
 - **Supabase**（Postgres + Auth）作为数据处理方，数据库在你创建项目时选择的区域（Singapore 或 Tokyo）；
 - 所有请求走 **HTTPS**；
-- 本地 `localStorage`（`mixxtopia.save.v1`、`mixxtopia.settings.v1`）**只存在你自己设备上**；
+- 本地 `localStorage`（`mixxtopia.save.v1`、`mixxtopia.settings.v1`、`mixxtopia.cloud.v1`）**只存在你自己设备上**；其中 `mixxtopia.cloud.v1` 只保存逐档同步版本与时间戳，不含存档内容；
 - 静态页面由 **GitHub Pages** 托管。
 
 ## 4. 未登录时

@@ -97,7 +97,7 @@
 - `profiles` 由 `handle_new_user()` 触发器在注册时自动建档，客户端**没有 insert 权限**——否则会出现「注册成功但资料写不进去」的隐性失败（0 行受影响，不报错）；
 - 三表全开 RLS，策略只授 `authenticated` 且限定 `auth.uid()` 本人；`anon` 的表权限已 `revoke`，等于 RLS 之外再加一道锁；
 - `updated_at` 由 `touch_updated_at()` 触发器维护，客户端不用传；
-- `saves.version` 乐观锁：`PATCH ...?version=eq.<旧值>` 且 body 带 `version: 旧值 + 1`，请求带 `Prefer: return=representation`；返回数组长度 1 = 成功、0 = 冲突（HTTP 仍可能是 200），不能只看状态码；
+- `saves.version` 乐观锁：`PATCH ...?version=eq.<期望值>` 且 body 带 `version: 期望值 + 1`，请求带 `Prefer: return=representation`；返回数组长度 1 = 成功、0 = 冲突（HTTP 仍可能是 200），不能只看状态码。期望值来自 `mixxtopia.cloud.v1` 的逐档基线（见 §9），本地存档位不保存 `version`；
 - **头像不锁集合**：`profiles.avatar` 只校验格式 `^[a-z0-9][a-z0-9-]{0,31}$`，白名单放前端（`js/data.js` 的 `AVATAR_PRESETS`，见 #44）。否则以后每加一个头像（六位缪斯 × 各关妆造、玩家形象、黑羊彩蛋…）都得写迁移；未知 id 在渲染时回退默认头像。
 
 ### A / A2：Postgres
@@ -150,7 +150,7 @@ revoke all on public.saves    from anon, public;
 revoke all on public.stats    from anon, public;
 ```
 
-存档行 `data` 与本地档同构（去掉 `slot` 与 `updatedAt`）：`updatedAt` 由 `saves.updated_at` 列承担。上传时不要把 `updatedAt` 写进 `data`；下载时必须在调用 `SaveStore.writeSlot()` 前把 `saves.updated_at`（ISO 字符串）转成本地毫秒时间戳写入 `updatedAt`——`normalizeSlot()` 不会从 `updated_at` 补齐该字段，缺失会按 `0` 处理。除时间字段外，双向直传、不做字段映射。
+存档行 `data` 与本地档同构（去掉 `slot` 与 `updatedAt`）：`updatedAt` 由 `saves.updated_at` 列承担。上传时不要把 `updatedAt` 写进 `data`；下载时必须在调用 `SaveStore.writeSlot()` 前把 `saves.updated_at`（ISO 字符串）转成本地毫秒时间戳写入 `updatedAt`——`normalizeSlot()` 不会从 `updated_at` 补齐该字段，缺失会按 `0` 处理。本地存档位没有 `version` 字段；逐档同步基线单独存 `mixxtopia.cloud.v1`（结构见 §9）。除时间字段外，双向直传、不做字段映射。
 
 ### B：Firestore
 
@@ -173,12 +173,15 @@ match /users/{uid} {
 ## 9. 云同步与冲突策略
 
 - **写时机**：沿用 #8 手动存档制——仅「保存并退出」与通关自动存档触发；本地先写，再标 `dirty`，随后尝试云端 upsert。云端失败不阻塞回标题。
-- **版本号**：`version` 单调递增，上传时带 `expectedVersion`；服务端不匹配则返回冲突（Postgres 可用 `update ... where version = $expected` 判断 0 行；调用方 PATCH 时带 `Prefer: return=representation`，返回数组长度 1 = 成功、0 = 冲突，不能只看 HTTP 状态码）。
-- **登录时**：拉云端 3 档的 `{ version, updated_at }` 元数据（把 `updated_at` 转成本地 `updatedAt` 后比较），与本地逐档比较 →
-  - 仅云端有：提示「载入云端存档」
-  - 仅本地有：提示「上传本机进度」
-  - 两边都有且 `version` / `updated_at` 不同：在 #8 的选择存档界面加「☁ 云端较新」标记，做**逐档手动选择**（默认不自动覆盖）
-- **游客 → 账户**：登录成功后弹一次「把本机进度并入账户？」，可选「并入」或「仅保留云端」；选「并入」后，**同档位双方都有进度时不自动取较新**，而是进入 #8 选择存档界面的逐档选择（标注「本机」/「云端」及各自时间），玩家确认后才写入；仅一边有进度的档位可直接并入。
+- **本地同步基线**：逐档记录单独存 `mixxtopia.cloud.v1`，不写进 `mixxtopia.save.v1` 的存档位（`normalizeSlot()` 只保留已知字段，额外字段会被丢弃）。结构为 `{ v: 1, slots: [ { version, localUpdatedAt, cloudUpdatedAt } | null, ... ] }`，索引 0–2 对应 1–3 档；`version` / `cloudUpdatedAt` 取成功同步时云端行的 `version` / `updated_at`（转 ms），`localUpdatedAt` 取当时本地档的 `updatedAt`。只在成功上传 / 下载后更新；本地删档时清空该档；存储缺失、损坏或版本不符时视为「从未同步」，不自动覆盖。基线持久化在 localStorage，刷新 / 重开页面后仍可用，不依赖内存中的 `dirty` 标记。
+- **版本号（仅服务端）**：`version` 只存在于云端，用于上传乐观锁与云端变更检测；本地存档位不保存该字段。PATCH 以基线 `version` 为期望值（无基线时先 GET 当前值），带 `version=eq.<期望值>` 与 `Prefer: return=representation`；返回数组长度 1 = 成功、0 = 冲突，不能只看 HTTP 状态码。冲突后重新拉取云端元数据，让玩家逐档选择；玩家明确选「上传本机」后，用最新云端 `version` 重新 PATCH（云端行不存在则 POST），属于显式覆盖，不自动重试。
+- **登录时**：拉云端 3 档的 `{ version, updated_at }`（转 ms），与基线逐档比较 →
+  - 本机 `updatedAt` ≠ 基线 `localUpdatedAt`：本机改过；云端 `version` / `updated_at` ≠ 基线：云端改过
+  - 两边都未改过：视为已同步，不提示
+  - 仅本机改过：提示「上传本机进度」；仅云端改过：提示「载入云端存档」
+  - 两边都改过，或没有基线且两边都有档：进入 #8 选择存档界面的逐档手动选择（标出本机 / 云端及各自时间，默认不自动覆盖、不以时间戳自动判定胜负）
+  - 仅一边有档：提示载入 / 上传；两边都无档：无操作
+- **游客 → 账户**：登录成功后弹一次「把本机进度并入账户？」，可选「并入」或「仅保留云端」；选「并入」后，**同档位双方都有进度时不自动取较新**，而是进入 #8 选择存档界面的逐档选择（标注「本机」/「云端」及各自时间），玩家确认后才写入；仅一边有进度的档位可直接并入。合并成功的那一档按上传流程写回 `mixxtopia.cloud.v1` 基线。
 - **降级**：离线 / 未登录 / 请求失败 → 一切照本地跑，`dirty` 标记留待下次登录或下次保存重试；界面只在账户区显示「未同步」小字。
 - **不做的**：不做实时多端推送、不做后台轮询、不做自动覆盖式合并（避免吞档）。
 
@@ -197,7 +200,7 @@ match /users/{uid} {
 | #42 | 选型落地与后端初始化 | 建项目、跑迁移、RLS、公开配置注入 | 已建 `js/cloud-config.js`、`supabase/migrations/0001_init.sql`、`docs/PRIVACY.md`；迁移已在项目 `hlnubesywvcxdghfyoux` 执行成功（2026-10-24）；文档已并入 §8/§10 | ✅ 真实项目端到端验证通过：匿名访问 42501、跨用户读写隔离、注册自动建档、非法头像被 CHECK 拒绝、`version` 乐观锁、`updated_at` 触发器、迁移幂等 |
 | #43 | Auth | 注册/登录/登出/会话恢复/游客态、标题入口 | 新增 `js/auth.js`；改 `js/main.js`、`index.html`、`styles.css` | `fetch` 桩单测 + 冒烟：注册→登录→刷新仍登录 |
 | #44 | 账户设置 UI | 昵称、固定头像集（前端白名单）、音效/操作偏好、删除账户申请（提交后人工处理） | 同上 + `js/settings.js` | 保存后重登一致；非法格式被拒；未知 id 回退默认头像；删除申请不直接调 `auth.users` |
-| #45 | 云存档同步 | 上传/下载/冲突三选一/离线降级 | 新增 `js/cloud.js`；改 `js/main.js` 存档段 | 三档同步、冲突不自动覆盖、离线可玩 |
+| #45 | 云存档同步 | 上传/下载/冲突三选一/离线降级、`mixxtopia.cloud.v1` 逐档同步基线 | 新增 `js/cloud.js`；改 `js/main.js` 存档段 | 三档同步、冲突不自动覆盖、离线可玩；刷新后仍能凭基线判断本机/云端是否同版 |
 | #46 | 统计 | 时长、成就、收集率 | 新增 `js/stats.js` | 云端累计与本地一致 |
 | #47 | 上线验证 | #17 扩展：线上注册/登录/同步冒烟 | `tools/smoke-main.html`（人工跑，不改 CI 配置） | 正式域名走通一遍 |
 
