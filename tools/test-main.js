@@ -45,6 +45,10 @@ const UI_IDS = [
   'pause-screen', 'btn-resume', 'btn-restart', 'btn-quit', 'btn-save-quit', 'pause-note',
   'clear-screen', 'clear-text', 'btn-next',
   'ending-screen', 'ending-body', 'btn-ending',
+  'btn-account', 'account-note',
+  'login-screen', 'login-title', 'login-form', 'login-email', 'login-password',
+  'login-msg', 'login-account', 'login-email-label',
+  'btn-login', 'btn-register', 'btn-logout', 'btn-login-back',
   'touch-controls',
 ];
 
@@ -72,6 +76,8 @@ class FakeElement {
     this.dataset = {};
     this.textContent = '';
     this.innerHTML = '';
+    this.value = '';
+    this.disabled = false;
     this.children = [];
     this.attrs = {};
     this._listeners = {};
@@ -109,10 +115,13 @@ for (const id of [
   'help-screen', 'save-screen', 'pause-screen', 'clear-screen', 'ending-screen',
   'dialog', 'dialog-backdrop', 'hud', 'btn-continue',
   'btn-slot-del-1', 'btn-slot-del-2', 'btn-slot-del-3',
+  'login-screen', 'login-account', 'account-note',
 ]) {
   registry.get(id).classList.add('hidden');
 }
 registry.get('btn-sound').textContent = '♪ 声音：开';
+registry.get('btn-account').textContent = '☁ 登录 / 注册';
+registry.get('login-title').textContent = '登录 / 注册';
 registry.get('btn-next').textContent = '▶ 下一关';
 registry.get('dialog-hint').textContent = '▼ E / 空格';
 for (let i = 1; i <= 3; i++) registry.get('slot-meta-' + i).textContent = '空档';
@@ -182,12 +191,15 @@ vm.createContext(sandbox);
 const repoRoot = path.join(__dirname, '..');
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/engine.js'), 'utf8'), sandbox, { filename: 'js/engine.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/audio.js'), 'utf8'), sandbox, { filename: 'js/audio.js' });
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/cloud-config.js'), 'utf8'), sandbox, { filename: 'js/cloud-config.js' });
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/auth.js'), 'utf8'), sandbox, { filename: 'js/auth.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/main.js'), 'utf8'), sandbox, { filename: 'js/main.js' });
 
 const main = sandbox.MIXX.main;
 const STATE = main.STATE;
 const engine = sandbox.MIXX.engine;
 const audio = sandbox.MIXX.audio;
+const authModule = sandbox.MIXX.auth;
 
 /* ─────────────────── 断言工具 ─────────────────── */
 
@@ -202,6 +214,17 @@ function test(name, fn) {
     failures.push({ name, e });
     console.error('  \u2717 ' + name + '\n      ' + e.message);
   }
+}
+
+/** 异步用例：在所有同步用例跑完后按注册顺序逐项 await（账户请求是 Promise） */
+const asyncTests = [];
+function testAsync(name, fn) {
+  asyncTests.push({ name, fn });
+}
+
+/** 清空微任务队列（让注入的 fetch 桩真正被调用一次） */
+function flushMicrotasks() {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 const elt = (id) => registry.get(id);
@@ -228,7 +251,69 @@ function press(k) {
 function makeGame(opts) {
   opts = opts || {};
   if (!opts.keepStorage) localStorageStub.clear();
+  // 既有用例不关心账户：默认关闭，避免异步 restore 干扰共享 DOM；
+  // 账户用例显式传 auth。
+  if (!Object.prototype.hasOwnProperty.call(opts, 'auth')) {
+    opts = Object.assign({}, opts, { auth: null });
+  }
   return new main.Game(registry.get('game'), opts);
+}
+
+/* ── 账户（#43）测试工具 ── */
+
+function authResponse(status, body) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json() { return Promise.resolve(body); },
+  };
+}
+
+/** fetch 桩：记录 URL/init/body；handler 可返回响应或抛错（模拟断网） */
+function authFetch(handler) {
+  const calls = [];
+  function stub(url, init) {
+    let body = null;
+    if (init && typeof init.body === 'string') {
+      try { body = JSON.parse(init.body); } catch (e) { body = init.body; }
+    }
+    const call = { url, init: init || {}, body };
+    calls.push(call);
+    return Promise.resolve().then(() => handler(call));
+  }
+  stub.calls = calls;
+  return stub;
+}
+
+function makeAuth(fetchStub) {
+  if (!authModule || typeof authModule.createClient !== 'function') {
+    throw new Error('MIXX.auth 未加载');
+  }
+  return authModule.createClient({ fetch: fetchStub, storage: localStorageStub });
+}
+
+const ACCOUNT_USER = { id: 'u-test', email: 'nswer@example.com' };
+
+function accountPayload(extra) {
+  return Object.assign({
+    access_token: 'access-1',
+    token_type: 'bearer',
+    expires_in: 3600,
+    refresh_token: 'refresh-1',
+    user: { id: ACCOUNT_USER.id, email: ACCOUNT_USER.email },
+  }, extra || {});
+}
+
+function seedAccount(extra) {
+  const session = Object.assign({
+    v: 1,
+    accessToken: 'stored-access',
+    refreshToken: 'stored-refresh',
+    expiresAt: Date.now() + 60 * 60 * 1000,
+    user: { id: ACCOUNT_USER.id, email: ACCOUNT_USER.email },
+  }, extra || {});
+  localStorageStub.setItem(main.ACCOUNT_KEY, JSON.stringify(session));
+  return session;
 }
 
 /** 驱动一帧（递增时间戳，避免 dt 为 0） */
@@ -1483,6 +1568,7 @@ test('发布通道：stable 保持旧键，beta/preview 独立键（#17）', () 
   assert.strictEqual(main.CHANNEL, 'stable');
   assert.strictEqual(main.SAVE_KEY, 'mixxtopia.save.v1');
   assert.strictEqual(main.SETTINGS_KEY, 'mixxtopia.settings.v1');
+  assert.strictEqual(main.ACCOUNT_KEY, 'mixxtopia.account.v1', 'stable 账户会话键与文档一致');
   assert.strictEqual(main.resolveChannel({ MIXXTOPIA_CHANNEL: 'beta' }), 'beta');
   assert.strictEqual(main.resolveChannel({ MIXXTOPIA_CHANNEL: 'preview' }), 'preview');
   assert.strictEqual(main.resolveChannel({ MIXXTOPIA_CHANNEL: 'nope' }), 'stable');
@@ -1496,12 +1582,15 @@ test('发布通道：stable 保持旧键，beta/preview 独立键（#17）', () 
   const beta = main.channelKeys('beta');
   assert.strictEqual(beta.saveKey, 'mixxtopia.save.beta.v1');
   assert.strictEqual(beta.settingsKey, 'mixxtopia.settings.beta.v1');
+  assert.strictEqual(beta.accountKey, 'mixxtopia.account.beta.v1');
   const preview = main.channelKeys('preview');
   assert.strictEqual(preview.saveKey, 'mixxtopia.save.preview.v1');
   assert.strictEqual(preview.settingsKey, 'mixxtopia.settings.preview.v1');
+  assert.strictEqual(preview.accountKey, 'mixxtopia.account.preview.v1');
   const fallback = main.channelKeys('nope');
   assert.strictEqual(fallback.saveKey, 'mixxtopia.save.v1');
   assert.strictEqual(fallback.settingsKey, 'mixxtopia.settings.v1');
+  assert.strictEqual(fallback.accountKey, 'mixxtopia.account.v1');
 });
 
 test('新游戏：占用第一个空档位但不立即写盘（手动存档制）', () => {
@@ -1760,15 +1849,221 @@ test('构建注入 beta 时 main 使用 beta 存档键（#17）', () => {
   assert.strictEqual(sandbox.MIXX.main.CHANNEL, 'beta');
   assert.strictEqual(sandbox.MIXX.main.SAVE_KEY, 'mixxtopia.save.beta.v1');
   assert.strictEqual(sandbox.MIXX.main.SETTINGS_KEY, 'mixxtopia.settings.beta.v1');
+  assert.strictEqual(sandbox.MIXX.main.ACCOUNT_KEY, 'mixxtopia.account.beta.v1');
   sandbox.MIXX.main = originalMain;
   delete sandbox.MIXXTOPIA_CHANNEL;
 });
 
+/* ─────────────────── 账户 / 登录（Issue #43） ─────────────────── */
+
+test('账户关闭（opts.auth=null）：标题隐藏登录入口', () => {
+  const game = makeGame();
+  assert.ok(hidden('btn-account'), '无 auth 时不显示账户入口');
+  game.destroy();
+});
+
+testAsync('默认账户客户端（#43）：未注入 auth 时使用 js/auth.js 与 ACCOUNT_KEY', async () => {
+  localStorageStub.clear();
+  const game = new main.Game(registry.get('game'), { storage: localStorageStub });
+  assert.ok(game.auth && typeof game.auth.restore === 'function', '应自动创建 auth 客户端');
+  assert.strictEqual(game.auth.key, main.ACCOUNT_KEY);
+  await game._authReady;
+  assert.ok(shown('btn-account'), '默认显示登录入口');
+  assert.strictEqual(text('btn-account'), '☁ 登录 / 注册');
+  game.destroy();
+});
+
+testAsync('账户入口（#43）：游客打开/返回登录界面，零网络请求，销毁不残留', async () => {
+  const fetchStub = authFetch(() => { throw new Error('游客态不应发请求'); });
+  const game = makeGame({ auth: makeAuth(fetchStub) });
+  await game._authReady;
+  assert.strictEqual(text('btn-account'), '☁ 登录 / 注册');
+  assert.ok(!elt('btn-account').classList.contains('signed-in'));
+  elt('btn-account').click();
+  assert.ok(shown('login-screen') && hidden('title-screen'));
+  assert.ok(shown('login-form') && hidden('login-account'));
+  assert.strictEqual(text('login-title'), '登录 / 注册');
+  assert.strictEqual(game.state, STATE.TITLE, '登录复用 screen 显隐，不新增游戏状态');
+  assert.strictEqual(fetchStub.calls.length, 0, '游客态零上传');
+  elt('btn-login-back').click();
+  assert.ok(shown('title-screen') && hidden('login-screen'));
+  elt('btn-account').click();
+  game.destroy();
+  assert.ok(hidden('login-screen'), '销毁时登录界面不残留');
+});
+
+testAsync('登录成功 / 登出（#43）：邮箱显示、切已登录面板、登出回游客且本地存档不变', async () => {
+  localStorageStub.clear();
+  seedSaves([slotData(1, 1, 100), null, null]);
+  const saveBefore = localStorageStub.getItem(main.SAVE_KEY);
+  const fetchStub = authFetch((call) => {
+    if (call.url.indexOf('grant_type=password') >= 0) return authResponse(200, accountPayload());
+    if (call.url.indexOf('/logout') >= 0) return authResponse(204, null);
+    throw new Error('意外请求：' + call.url);
+  });
+  const game = makeGame({ keepStorage: true, auth: makeAuth(fetchStub) });
+  await game._authReady;
+
+  elt('btn-account').click();
+  elt('login-email').value = 'NSWER@example.com';
+  elt('login-password').value = 'secret123';
+  elt('btn-login').click();
+  await game._authPromise;
+
+  assert.strictEqual(fetchStub.calls.length, 1);
+  assert.deepStrictEqual(fetchStub.calls[0].body, { email: ACCOUNT_USER.email, password: 'secret123' });
+  assert.strictEqual(text('btn-account'), '☁ 账户 · ' + ACCOUNT_USER.email);
+  assert.ok(elt('btn-account').classList.contains('signed-in'));
+  assert.ok(shown('login-account') && hidden('login-form'));
+  assert.strictEqual(text('login-email-label'), ACCOUNT_USER.email);
+  assert.strictEqual(elt('login-password').value, '', '登录成功后清空密码');
+  assert.strictEqual(text('login-msg'), '登录成功。');
+  const stored = JSON.parse(localStorageStub.getItem(main.ACCOUNT_KEY));
+  assert.strictEqual(stored.accessToken, 'access-1', '会话写入 mixxtopia.account.v1');
+
+  elt('btn-logout').click();
+  await game._authPromise;
+  assert.strictEqual(localStorageStub.getItem(main.ACCOUNT_KEY), null, '登出清会话');
+  assert.strictEqual(text('btn-account'), '☁ 登录 / 注册');
+  assert.ok(shown('login-form') && hidden('login-account'));
+  assert.match(text('login-msg'), /游客模式/);
+  assert.strictEqual(localStorageStub.getItem(main.SAVE_KEY), saveBefore, '登出不得动本地存档');
+
+  elt('btn-login-back').click();
+  assert.ok(shown('title-screen') && hidden('login-screen'));
+  assert.ok(shown('btn-continue'), '本地存档仍在，继续冒险可见');
+  elt('btn-continue').click();
+  assert.strictEqual(game.state, STATE.PLAYING);
+  game.destroy();
+});
+
+testAsync('注册需邮箱验证（#43）：提示查收邮件，保持游客态', async () => {
+  localStorageStub.clear();
+  const fetchStub = authFetch((call) => {
+    assert.ok(call.url.indexOf('/signup') >= 0, call.url);
+    return authResponse(200, { id: 'u-2', email: 'new@example.com' });
+  });
+  const game = makeGame({ auth: makeAuth(fetchStub) });
+  await game._authReady;
+  elt('btn-account').click();
+  elt('login-email').value = 'new@example.com';
+  elt('login-password').value = 'secret123';
+  elt('btn-register').click();
+  await game._authPromise;
+  assert.match(text('login-msg'), /邮箱完成验证/);
+  assert.ok(shown('login-form') && hidden('login-account'));
+  assert.strictEqual(localStorageStub.getItem(main.ACCOUNT_KEY), null);
+  assert.strictEqual(text('btn-account'), '☁ 登录 / 注册');
+  game.destroy();
+});
+
+testAsync('密码错（#43）：请求期间按钮置灰，错误码映射成中文提示', async () => {
+  localStorageStub.clear();
+  let release = null;
+  const fetchStub = authFetch(() => new Promise((resolve) => { release = resolve; }));
+  const game = makeGame({ auth: makeAuth(fetchStub) });
+  await game._authReady;
+  elt('btn-account').click();
+  elt('login-email').value = ACCOUNT_USER.email;
+  elt('login-password').value = 'wrong-pass';
+  elt('btn-login').click();
+  assert.strictEqual(elt('btn-login').disabled, true, '请求中按钮置灰');
+  assert.match(text('login-msg'), /正在登录/);
+  await flushMicrotasks();
+  assert.strictEqual(typeof release, 'function', 'fetch 桩应已被调用');
+  release(authResponse(400, { code: 400, error: 'invalid_grant', error_description: 'Invalid login credentials' }));
+  await game._authPromise;
+  assert.strictEqual(elt('btn-login').disabled, false);
+  assert.strictEqual(text('login-msg'), '邮箱或密码不正确');
+  assert.ok(elt('login-msg').classList.contains('login-msg-error'));
+  assert.strictEqual(localStorageStub.getItem(main.ACCOUNT_KEY), null);
+  assert.strictEqual(text('btn-account'), '☁ 登录 / 注册');
+  game.destroy();
+});
+
+testAsync('网络失败（#43）：提示「云端暂不可用」，返回标题仍可本地游玩', async () => {
+  localStorageStub.clear();
+  const fetchStub = authFetch(() => { throw new TypeError('离线'); });
+  const game = makeGame({ auth: makeAuth(fetchStub) });
+  await game._authReady;
+  elt('btn-account').click();
+  elt('login-email').value = ACCOUNT_USER.email;
+  elt('login-password').value = 'secret123';
+  elt('btn-login').click();
+  await game._authPromise;
+  assert.match(text('login-msg'), /云端暂不可用/);
+  assert.ok(elt('login-msg').classList.contains('login-msg-error'));
+  assert.ok(shown('account-note'), '标题页保留云端不可用提示');
+  assert.match(text('account-note'), /云端暂不可用/);
+  assert.strictEqual(game.state, STATE.TITLE, '失败不改变游戏状态');
+  elt('btn-login-back').click();
+  assert.ok(shown('title-screen') && shown('account-note'));
+  elt('btn-start').click();
+  assert.strictEqual(game.state, STATE.PLAYING, '网络失败不阻塞本地游玩');
+  game.destroy();
+});
+
+testAsync('会话恢复（#43）：刷新页面后仍是登录态，且不重复请求', async () => {
+  localStorageStub.clear();
+  seedAccount();
+  const fetchStub = authFetch(() => { throw new Error('有效会话不应发请求'); });
+  const game = makeGame({ keepStorage: true, auth: makeAuth(fetchStub) });
+  await game._authReady;
+  assert.strictEqual(text('btn-account'), '☁ 账户 · ' + ACCOUNT_USER.email);
+  assert.ok(elt('btn-account').classList.contains('signed-in'));
+  assert.strictEqual(fetchStub.calls.length, 0);
+  elt('btn-account').click();
+  assert.ok(shown('login-account') && hidden('login-form'));
+  assert.strictEqual(text('login-email-label'), ACCOUNT_USER.email);
+  game.destroy();
+});
+
+testAsync('token 过期（#43）：进入标题自动续期，登录态保持', async () => {
+  localStorageStub.clear();
+  seedAccount({ expiresAt: Date.now() - 1000 });
+  const fetchStub = authFetch((call) => {
+    assert.ok(call.url.indexOf('grant_type=refresh_token') >= 0, call.url);
+    return authResponse(200, {
+      access_token: 'access-2', refresh_token: 'refresh-2', expires_in: 3600,
+    });
+  });
+  const game = makeGame({ keepStorage: true, auth: makeAuth(fetchStub) });
+  await game._authReady;
+  assert.strictEqual(fetchStub.calls.length, 1);
+  assert.strictEqual(text('btn-account'), '☁ 账户 · ' + ACCOUNT_USER.email);
+  const stored = JSON.parse(localStorageStub.getItem(main.ACCOUNT_KEY));
+  assert.strictEqual(stored.accessToken, 'access-2');
+  game.destroy();
+});
+
 /* ─────────────────── 汇总 ─────────────────── */
 
-console.log('');
-if (failures.length) {
-  console.error('失败 ' + failures.length + ' 项 / 共 ' + (passed + failures.length) + ' 项');
-  process.exit(1);
+function report() {
+  console.log('');
+  if (failures.length) {
+    console.error('失败 ' + failures.length + ' 项 / 共 ' + (passed + failures.length) + ' 项');
+    process.exit(1);
+  }
+  console.log('全部通过：' + passed + ' 项');
 }
-console.log('全部通过：' + passed + ' 项');
+
+if (asyncTests.length) {
+  (async function runAsyncTests() {
+    for (const t of asyncTests) {
+      try {
+        await t.fn();
+        passed++;
+        console.log('  \u2713 ' + t.name);
+      } catch (e) {
+        failures.push({ name: t.name, e });
+        console.error('  \u2717 ' + t.name + '\n      ' + (e && e.message));
+      }
+    }
+    report();
+  })().catch((e) => {
+    console.error(e && e.stack ? e.stack : e);
+    process.exit(1);
+  });
+} else {
+  report();
+}

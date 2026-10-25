@@ -29,6 +29,25 @@
     <button id="btn-saves" class="menu-btn">▤ 选择存档</button>
     <button id="btn-help" class="menu-btn">? 操作说明</button>
     <button id="btn-sound" class="menu-btn">♪ 声音：开</button>
+    <button id="btn-account" class="menu-btn account-btn">☁ 登录 / 注册</button>
+  </div>
+  <p id="account-note" class="account-note hidden"></p>
+
+  <!-- 登录 / 账户（Issue #43）：只验证打开/返回与游客态零请求，不连真实后端 -->
+  <div id="login-screen" class="screen hidden">
+    <h2 id="login-title" class="screen-title">登录 / 注册</h2>
+    <div id="login-form" class="login-form">
+      <input id="login-email" type="email" />
+      <input id="login-password" type="password" />
+      <button type="button" id="btn-login" class="menu-btn">▶ 登录</button>
+      <button type="button" id="btn-register" class="menu-btn">✚ 注册</button>
+    </div>
+    <div id="login-account" class="login-account hidden">
+      <p>已登录：<span id="login-email-label"></span></p>
+      <button type="button" id="btn-logout" class="menu-btn small">↩ 登出</button>
+    </div>
+    <p id="login-msg" class="login-msg" role="status"></p>
+    <button type="button" id="btn-login-back" class="menu-btn small">← 返回</button>
   </div>
 
   <div id="save-screen" class="screen hidden">
@@ -93,9 +112,20 @@
 
   <pre id="results"></pre>
 
-  <script>window.MIXX_NO_BOOT = true;</script>
+  <script>
+    window.MIXX_NO_BOOT = true;
+    // 账户冒烟不连真实后端：fetch 只计数，任何意外请求都会令「游客态零上传」失败
+    window.MIXX_CLOUD_CONFIG = { url: 'https://smoke.supabase.co', anonKey: 'sb_publishable_smoke' };
+    window.__authFetchCalls = 0;
+    window.fetch = function () {
+      window.__authFetchCalls++;
+      return Promise.reject(new TypeError('smoke: offline'));
+    };
+  </script>
+  <script src="../js/cloud-config.js"></script>
   <script src="../js/engine.js"></script>
   <script src="../js/audio.js"></script>
+  <script src="../js/auth.js"></script>
   <script src="../js/main.js"></script>
   <script>
     (function () {
@@ -111,6 +141,7 @@
       try {
         localStorage.removeItem('mixxtopia.save.v1');
         localStorage.removeItem('mixxtopia.settings.v1');
+        localStorage.removeItem('mixxtopia.account.v1');
       } catch (e) { /* 存储不可用时仍可验证游戏流程 */ }
 
       var main = window.MIXX.main;
@@ -152,6 +183,16 @@
       // 1) 标题 + 选择存档界面（Issue #8）
       ok('初始 title', game.state === 'title' && shown('title-screen') && !shown('hud'));
       ok('无存档时继续隐藏', !shown('btn-continue') && shown('btn-saves'));
+
+      // 1b) 账户 / 登录入口（Issue #43）：游客打开/返回，零网络请求
+      ok('账户入口游客文案', text('btn-account') === '☁ 登录 / 注册');
+      document.getElementById('btn-account').click();
+      ok('登录界面打开', shown('login-screen') && !shown('title-screen'));
+      ok('登录表单可见', shown('login-form') && !shown('login-account'));
+      document.getElementById('btn-login-back').click();
+      ok('登录界面返回', shown('title-screen') && !shown('login-screen'));
+      ok('游客态零上传', window.__authFetchCalls === 0);
+
       document.getElementById('btn-saves').click();
       ok('选择存档界面', shown('save-screen') && !shown('title-screen'));
       ok('空档文案', text('slot-meta-1') === '空档 · 点击开始新游戏');
