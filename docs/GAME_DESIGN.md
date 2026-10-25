@@ -689,7 +689,7 @@ dialogue: {
 
 ## 10. 存档规范（Issue #8，v1：3 存档位 + 手动存档）
 
-- **键**：`mixxtopia.save.v1`（存档位）、`mixxtopia.settings.v1`（声音设置，独立于存档位）；均为 localStorage。
+- **键**：`mixxtopia.save.v1`（存档位）、`mixxtopia.settings.v1`（声音设置，独立于存档位）、`mixxtopia.cloud.v1`（逐档同步基线，仅登录后使用）；均为 localStorage。
 - **结构**：
 
 ```js
@@ -731,7 +731,14 @@ dialogue: {
 - **损坏数据**：JSON 非法或结构不符时按空档处理，不抛错；选择存档界面提示「存档数据损坏」，下次保存覆盖。
 - **存储不可用**：localStorage 被禁用/写满时「保存并退出」失败，暂停界面提示并停留在暂停态，不丢当前进度；「继续冒险」不显示。
 - **无服务器（现状）**：纯本地；清缓存即重置（选择存档界面与帮助界面注明）。
-- **云存档（预留，#19 立项）**：账户系统（注册/登录、账户设置、云同步、统计）已立项，技术路线 Supabase / Firebase 二选一、**待评审**（立项稿见仓库 `docs/ACCOUNT_SYSTEM.md`）。落地原则：保留本节本地层，新增云端同步层；云端文档沿用存档位结构并增加 `version` / `updatedAt` 字段做冲突检测（以新覆盖或手动选择）；RLS 仅本人可读写，游客数据仍仅存本地。评审通过后再并入本节正式规格。
+- **云存档（Issue #22，#19 立项；2026-10-24 选型已定）**：后端 **Supabase**（Postgres + Auth），前端**手写 `fetch` 封装**直连 GoTrue / PostgREST，**不引 SDK**，保持零依赖与 Pages 静态部署。正式规格：
+  - **保留本地层**：本节 localStorage 存档与云同步互不替代，未登录 / 离线 / 请求失败时一切都按本节本地逻辑跑；
+  - **表结构**：`profiles`（昵称、头像 id〔固定集合、前端白名单、不支持上传〕、偏好）、`saves`（`user_id, slot, version, updated_at, data jsonb`，一账号 3 个存档位、一行一个存档位）、`stats`（时长 / 成就）；`data` 与本节存档位结构同构（去掉 `slot` 与 `updatedAt`）。`updatedAt` 由 `saves.updated_at` 列承担：上传时不写入 `data`；下载时必须在调用 `SaveStore.writeSlot()` 前把 `updated_at`（ISO 字符串）转成本地毫秒时间戳写入 `updatedAt`，因为 `normalizeSlot()` 不会从 `updated_at` 补齐该字段（缺失按 `0` 处理）。本地存档位不增加 `version` 字段；逐档同步基线（云端 `version`、本地与云端时间）单独存 `mixxtopia.cloud.v1`（结构见 `ACCOUNT_SYSTEM.md` §9），`normalizeSlot()` 不需要保留额外字段。除时间字段外双向直传、不做字段映射；
+  - **安全**：三表全开 RLS，策略只授 `authenticated` 且限本人——`profiles` 用 `auth.uid() = id`，`saves` / `stats` 用 `auth.uid() = user_id`；`anon` 无表权限；anon key 公开，安全边界只在 RLS，必测「A 用户 token 读 B 用户存档 → 失败」；
+  - **冲突**：`version` 仅存在于云端（上传乐观锁 + 变更检测），本地不存；登录时用 `mixxtopia.cloud.v1` 的逐档基线判断本机/云端是否改过：只有一边改过则提示对应方向，两边都改过或没有基线则标出本机/云端及各自时间，由玩家逐档手动选择，**默认不自动覆盖、不以时间戳自动判定胜负**；游客登录后提示一次「并入本机进度」，同档冲突同样进入逐档选择；
+  - **降级**：云端不可用时显示「未同步」，不阻塞存档与「保存并退出」；
+  - **不做**：实时多端推送、后台轮询、自动覆盖式合并；
+  - 数据模型 SQL、同步时序与隐私要求见 `docs/ACCOUNT_SYSTEM.md`。
 
 ---
 
