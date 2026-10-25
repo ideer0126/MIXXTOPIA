@@ -57,6 +57,16 @@
  *   - 网络失败提示「云端暂不可用」并留在登录界面，返回标题即可继续本地游玩；
  *   - 启动时恢复会话（过期自动 refresh），标题账户按钮随登录态更新文案。
  *
+ * 账户设置（Issue #44，规范见 docs/ACCOUNT_SYSTEM.md §8/§11）：
+ *   - `js/account.js` 负责 profiles 表读写与校验（昵称 1–16 字、固定头像白名单、
+ *     音效/操作偏好）；本文件负责「账户设置」screen 的 UI 接线（仍不新增游戏状态）；
+ *   - 标题设置入口对游客可见；游客仅可调整本机偏好，昵称与头像不可编辑；
+ *   - 登录/恢复会话后自动拉取 profile：标题按钮优先显示昵称，失败不阻塞游玩；
+ *   - 昵称/头像保存到云端（PATCH profiles，失败提示中文且本机设置不丢）；
+ *   - 音效/触屏按键偏好立即生效并写 `mixxtopia.settings.v1`（本地是唯一运行时来源）；
+ *     换新设备（本机无设置记录）时采用云端偏好；本机已有记录则本地优先，保存时再上传；
+ *   - 删除账户按 docs/PRIVACY.md §5 走 GitHub issue 人工处理，前端不调 auth.users。
+ *
  * 状态机约定（「无状态泄漏」的实现要点，测试 tools/test-main.js 逐项验收）：
  *   - 每次切换必经 _setState → _leaveState(旧态清理) → _enterState(新态初始化)，
  *     每个状态进入/离开时负责自己的 UI 显隐与输入开关，不允许跨状态残留；
@@ -267,10 +277,85 @@
   const CHANNEL = resolveChannel(root);
   const CHANNEL_KEYS = channelKeys(CHANNEL);
   const SAVE_KEY = CHANNEL_KEYS.saveKey;        // { v, slots: [slot|null ×3] }
-  const SETTINGS_KEY = CHANNEL_KEYS.settingsKey; // { v, sound } 独立于存档位
+  const SETTINGS_KEY = CHANNEL_KEYS.settingsKey; // { v, sound, touch } 独立于存档位
   const ACCOUNT_KEY = CHANNEL_KEYS.accountKey;   // #43 会话键（stable 为 mixxtopia.account.v1）
   const SAVE_VERSION = 1;
   const SLOT_COUNT = 3;
+
+  /* ── 账户资料（Issue #44）：js/account.js 未加载时账户设置降级关闭 ── */
+
+  /** js/account.js 暴露的 MIXX.account（测试/构建缺失时为 null，标题/存档不受影响） */
+  function accountModule() {
+    return (root.MIXX && root.MIXX.account) || null;
+  }
+
+  /** 触屏按键显示偏好取值（与 js/account.js 的 TOUCH_VALUES 一致） */
+  function touchModeList() {
+    const mod = accountModule();
+    return mod && Array.isArray(mod.TOUCH_VALUES) ? mod.TOUCH_VALUES : ['auto', 'on', 'off'];
+  }
+
+  /** 归一化触屏按键偏好；非法值按 auto（跟随设备检测） */
+  function normalizeTouchMode(value) {
+    const list = touchModeList();
+    return list.indexOf(value) >= 0 ? value : 'auto';
+  }
+
+  /** 触屏按键偏好中文标签 */
+  function touchModeLabel(mode) {
+    if (mode === 'on') return '常开';
+    if (mode === 'off') return '关闭';
+    return '自动';
+  }
+
+  /** 头像固定选项集（唯一事实源：js/data.js 的 GAME.avatarPresets） */
+  function avatarPresetsFor(host) {
+    const mod = accountModule();
+    if (mod && typeof mod.avatarPresets === 'function') return mod.avatarPresets(host || root);
+    return [{ id: 'muse-1', name: 'Lily', color: '#7FB8E6' }];
+  }
+
+  /** 默认头像 id（js/account.js 的 DEFAULT_AVATAR，与数据库 default 一致） */
+  function defaultAvatarId() {
+    const mod = accountModule();
+    return mod && typeof mod.DEFAULT_AVATAR === 'string' ? mod.DEFAULT_AVATAR : 'muse-1';
+  }
+
+  /** 头像 id 是否在固定白名单中（未加载 account.js 时只认默认头像） */
+  function avatarAllowed(id) {
+    const mod = accountModule();
+    if (mod && typeof mod.isAvatarAllowed === 'function') return mod.isAvatarAllowed(id, root);
+    return id === defaultAvatarId();
+  }
+
+  /** 昵称校验（1–16 字，trim；account.js 未加载时用等价兜底逻辑） */
+  function normalizeNicknameForSave(raw) {
+    const mod = accountModule();
+    if (mod && typeof mod.normalizeNickname === 'function') return mod.normalizeNickname(raw);
+    const value = typeof raw === 'string' ? raw.trim() : '';
+    if (!value) return { ok: false, code: 'empty_nickname', message: '昵称不能为空' };
+    if (Array.from(value).length > 16) {
+      return { ok: false, code: 'long_nickname', message: '昵称最多 16 字' };
+    }
+    return { ok: true, value };
+  }
+
+  /** 偏好归一化（只保留 sound/touch；account.js 未加载时用等价兜底逻辑） */
+  function normalizePrefsForSave(raw) {
+    const mod = accountModule();
+    if (mod && typeof mod.normalizePrefs === 'function') return mod.normalizePrefs(raw);
+    const src = raw && typeof raw === 'object' ? raw : {};
+    return { sound: src.sound !== false, touch: normalizeTouchMode(src.touch) };
+  }
+
+  /** 昵称按 Unicode 码点计字（emoji 算 1 字；account.js 未加载时兜底） */
+  function nicknameCharLength(value) {
+    const mod = accountModule();
+    if (mod && typeof mod.charLength === 'function') return mod.charLength(value);
+    return Array.from(typeof value === 'string' ? value : '').length;
+  }
+
+  const AVATAR_DEFAULT = defaultAvatarId();
 
   /** 取 localStorage；隐私模式/被禁用等访问异常按不可用处理（返回 null） */
   function resolveStorage(host) {
@@ -438,13 +523,15 @@
   class Game {
     /**
      * @param {HTMLCanvasElement} canvas  #game
-     * @param {object} [opts]  { doc, root, onEvent, storage, auth, fetch }
+     * @param {object} [opts]  { doc, root, onEvent, storage, auth, profile, fetch }
      *   onEvent(name, data)：测试/冒烟钩子，'state' | 'collect' | 'clear' | 'restart' | 'save'
      *     | 'push' | 'switch' | 'gate' | 'portal' | 'portal-enter'（#9 机制事件）
+     *     | 'profile'（#44 账户资料 load/save 成功与失败）
      *     | 'attack' | 'enemy-hit' | 'enemy-down' | 'player-hit' | 'player-down' | 'energy-full'（#18 战斗）
      *   storage：可注入的 localStorage 兼容对象（测试用）；传 null 模拟存储不可用
      *   auth：可注入的账户客户端（测试用）；传 null 关闭登录入口
-     *   fetch：传给默认 auth 客户端的 fetch 桩（测试用）
+     *   profile：可注入的 profiles 客户端（测试用）；传 null 关闭账户设置（登录入口仍在）
+     *   fetch：传给默认 auth/account 客户端的 fetch 桩（测试用）
      */
     constructor(canvas, opts) {
       opts = opts || {};
@@ -475,6 +562,8 @@
       this._pendingDelete = -1;    // 待确认删除的档位（二次点击生效）
       this._settings = this._readSettings();
       this.soundOn = this._settings.sound !== false;
+      this._cloudPrefs = null;      // 最近一次从云端拿到的偏好（#44）
+      this._cloudPrefsDiffer = false; // 云端偏好与本机不同（设置页提示「保存后以本机为准」）
 
       // 账户（Issue #43）：默认用 js/auth.js 创建客户端；opts.auth 注入用于测试/冒烟，
       // 显式传 null 表示关闭账户入口（游客态与 #8 完全一致）。
@@ -485,6 +574,20 @@
       this._authUnsubscribe = null;
       this._authOffline = false;  // restore 遇到网络/服务端失败：标题提示「云端暂不可用」
       this._destroyed = false;   // destroy() 后异步 auth 回调不再动 DOM
+
+      // 账户资料 / 设置（Issue #44）：profiles 表读写由 js/account.js 负责；
+      // opts.profile 注入用于测试/冒烟，显式传 null 关闭账户设置（登录/存档不受影响）。
+      this.account = this._createAccount(opts);
+      this.profile = null;          // { nickname, avatar, prefs }（云端资料；游客为 null）
+      this.profileError = null;     // 最近一次资料加载/保存失败（错误对象）
+      this._profileUserId = '';     // profile 对应的 user id；会话切换时重新加载
+      this._profilePromise = null;  // 资料加载 Promise（防重复请求）
+      this._profileUid = '';        // 该 Promise 对应的 user id（切号时旧请求不阻塞新加载）
+      this._profileTask = null;     // 最近一次资料加载 Promise（测试/冒烟等待用，不置空）
+      this._accountPromise = null;  // 设置保存 Promise（防重复提交）
+      this._accountBusy = false;
+      this._selectedAvatar = '';    // 设置界面待保存头像（空 = 跟随 profile / 默认头像）
+      this._avatarTouched = false;  // 玩家是否主动改过头像（决定保存时是否回写 avatar）
 
       // 运行态（可在测试中直接读取）
       this.state = null;
@@ -517,7 +620,9 @@
       this._uiHandlers = [];   // [el, type, fn] 三元组，供 destroy 解绑
 
       this._cacheUI();
+      this._renderAvatarOptions(); // #44：按 GAME.avatarPresets 动态渲染头像按钮
       this._bindUI();
+      this.input.setTouchMode(this._settings.touch); // #44：恢复触屏按键偏好
       this._applySoundState();
       this._setState(STATE.TITLE);
       this._initAuth();
@@ -570,6 +675,7 @@
       this._hide(this._ui.dialogBackdrop);
       this._hide(this._ui.saveScreen); // 销毁时复用的 DOM 不残留选择存档界面
       this._hide(this._ui.loginScreen); // #43：登录界面同样不残留
+      this._hide(this._ui.settingsScreen); // #44：账户设置界面同样不残留
       this._hide(this._ui.accountNote);
       if (typeof this._authUnsubscribe === 'function') {
         try { this._authUnsubscribe(); } catch (e) { /* 忽略取消订阅异常 */ }
@@ -1065,8 +1171,28 @@
     }
 
     /**
+     * 默认资料客户端：js/account.js（复用本文件创建的 auth 客户端）；
+     * opts.profile 显式注入优先，传 null 关闭云端资料功能（本机偏好仍可调整）。
+     */
+    _createAccount(opts) {
+      if (opts && Object.prototype.hasOwnProperty.call(opts, 'profile')) return opts.profile || null;
+      const mod = this.root.MIXX && this.root.MIXX.account;
+      if (!this.auth || !mod || typeof mod.createClient !== 'function') return null;
+      try {
+        return mod.createClient({
+          config: this.root.MIXX && this.root.MIXX.cloudConfig,
+          auth: this.auth,
+          fetch: opts && typeof opts.fetch === 'function' ? opts.fetch : undefined,
+        });
+      } catch (e) {
+        return null; // 资料模块异常不影响登录与本地游玩
+      }
+    }
+
+    /**
      * 启动时恢复会话（异步，不阻塞标题）：token 未过期直接登录态，
      * 过期则 auth.js 自动 refresh；网络失败只提示，游戏照常本地运行。
+     * 会话恢复/登录后自动拉取 profile（#44），标题按钮优先显示昵称。
      */
     _initAuth() {
       const auth = this.auth;
@@ -1077,6 +1203,7 @@
           if (this._destroyed) return;
           this._refreshAccountButton();
           this._refreshAuthUI();
+          this._syncProfile();
         });
       }
       if (typeof auth.restore !== 'function') return;
@@ -1087,6 +1214,7 @@
           if (auth.lastError) this._handleAuthOffline(auth.lastError);
           this._refreshAccountButton();
           this._refreshAuthUI();
+          this._syncProfile();
           return session;
         })
         .catch((err) => {
@@ -1094,6 +1222,7 @@
           this._handleAuthOffline(err);
           this._refreshAccountButton();
           this._refreshAuthUI();
+          this._syncProfile();
           return null;
         });
     }
@@ -1107,7 +1236,10 @@
       return this.auth.session || null;
     }
 
-    /** 标题账户入口：游客「登录 / 注册」，登录后显示邮箱（CSS 省略号截断） */
+    /**
+     * 标题账户入口：游客「登录 / 注册」；登录后优先显示昵称（profile 未就绪时回退邮箱）。
+     * CSS 省略号截断超长昵称/邮箱。
+     */
     _refreshAccountButton() {
       const btn = this._ui.btnAccount;
       if (!btn) return;
@@ -1115,8 +1247,9 @@
       this._show(btn);
       const session = this._currentSession();
       const email = session && session.user && session.user.email ? session.user.email : '';
+      const nickname = this.profile && this.profile.nickname ? this.profile.nickname : '';
       if (email) {
-        this._text(btn, '☁ 账户 · ' + email);
+        this._text(btn, '☁ 账户 · ' + (nickname || email));
         btn.classList.add('signed-in');
         if (this._authOffline) { this._authOffline = false; this._hideAccountNote(); }
       } else {
@@ -1130,8 +1263,10 @@
       if (this.state !== STATE.TITLE) return;
       this._hide(this._ui.titleScreen);
       this._hide(this._ui.helpScreen);
+      this._hide(this._ui.settingsScreen);
       this._show(this._ui.loginScreen);
       this._refreshAuthUI();
+      this._syncProfile(); // 会话已恢复但资料尚未加载时补拉一次
       if (this._authOffline && this.auth && this.auth.lastError) {
         this._setLoginMessage(this.auth.lastError.message || '云端暂不可用', 'error');
       } else if (this.auth && this.auth.available === false) {
@@ -1156,14 +1291,31 @@
       this._refreshTitle();
     }
 
-    /** 按登录态切换「表单 / 已登录面板」 */
+    /** 按登录态切换「表单 / 已登录面板」，并同步昵称与账户设置入口（#44） */
     _refreshAuthUI() {
       const session = this._currentSession();
       const signedIn = !!(session && session.user);
       this._toggleHidden(this._ui.loginForm, signedIn);
       this._toggleHidden(this._ui.loginAccount, !signedIn);
+      this._toggleHidden(this._ui.btnSettings, !signedIn);
+      this._show(this._ui.btnTitleSettings);
       this._text(this._ui.loginTitle, signedIn ? '账户' : '登录 / 注册');
       this._text(this._ui.loginEmailLabel, signedIn ? (session.user.email || '') : '');
+      let nickname = '';
+      let accountNote = '';
+      if (signedIn) {
+        if (!this.account) {
+          nickname = '资料功能未启用';
+          accountNote = '账户资料功能未启用（js/account.js 未加载），登录与本地游玩不受影响。';
+        } else {
+          accountNote = '账户设置可修改昵称、头像与音效/操作偏好；云存档同步见后续版本。';
+          if (this.profile) nickname = this.profile.nickname;
+          else if (this.profileError) nickname = '云端资料暂不可用';
+          else nickname = '加载中…';
+        }
+      }
+      this._text(this._ui.loginNicknameLabel, nickname);
+      this._text(this._ui.loginAccountNote, accountNote);
       this._setLoginBusy(this._authBusy);
     }
 
@@ -1325,6 +1477,559 @@
     /** 登录输入框回车 = 登录（避免在无 form 的桩环境里依赖 submit 事件） */
     _onLoginKeydown(ev) {
       if (ev && ev.key === 'Enter') this._authSubmit('signin');
+    }
+
+    /* ── 账户资料 / 设置（Issue #44） ── */
+
+    /** 当前会话的 user id；游客/异常返回空串 */
+    _currentUserId() {
+      const session = this._currentSession();
+      return session && session.user && typeof session.user.id === 'string' ? session.user.id : '';
+    }
+
+    /**
+     * 会话变化 → 同步资料：登录/恢复后自动拉取 profile；登出/切号清空设置界面状态。
+     * 同一账号的重复事件（refresh）不会重复请求。
+     */
+    _syncProfile() {
+      if (this._destroyed || !this.account) {
+        this.profile = null;
+        this._profileUserId = '';
+        this._refreshAccountButton();
+        this._refreshAuthUI();
+        return;
+      }
+      const userId = this._currentUserId();
+      if (!userId) {
+        const had = !!this.profile || !!this._profileUserId;
+        const wasSettingsOpen = this._settingsVisible();
+        this.profile = null;
+        this.profileError = null;
+        this._profileUserId = '';
+        this._selectedAvatar = '';
+        this._avatarTouched = false;
+        this._cloudPrefs = null;
+        this._cloudPrefsDiffer = false;
+        // 会话失效/登出时若正停在设置页：退回标题，避免残留旧昵称/邮箱与可保存状态
+        if (wasSettingsOpen) this._closeSettingsScreen();
+        if (had || wasSettingsOpen) {
+          this._refreshAuthUI();
+          this._refreshSettingsUI();
+        }
+        return;
+      }
+      const switched = userId !== this._profileUserId;
+      if (switched) {
+        // 切号（含页内直接换会话）：立即清空上一账号资料，避免新资料加载前
+        // 标题/设置页沿用 A 的昵称头像、甚至把 A 的值保存到 B（评审 [重要] 1）。
+        this.profile = null;
+        this.profileError = null;
+        this._selectedAvatar = '';
+        this._avatarTouched = false;
+        this._cloudPrefs = null;
+        this._cloudPrefsDiffer = false;
+        if (this._settingsVisible()) {
+          this._fillSettingsForm(); // 占位 + 禁用（profile 未就绪）
+          this._refreshSettingsUI();
+        }
+        this._refreshAccountButton();
+        this._refreshAuthUI();
+      } else if (this.profile || this._profilePromise) {
+        this._refreshAccountButton();
+        this._refreshAuthUI();
+        return;
+      }
+      this._profileUserId = userId;
+      this._loadProfile();
+    }
+
+    /**
+     * 拉取云端资料：成功后更新昵称 / 云端偏好 / 设置界面；失败只记录 profileError
+     * （登录界面显示「云端资料暂不可用」），不阻塞本地游玩。
+     * 同一时刻只发一个请求。
+     * @returns {Promise<object|null>}
+     */
+    _loadProfile() {
+      const account = this.account;
+      if (!account || this._destroyed) return Promise.resolve(null);
+      const userId = this._profileUserId;
+      // 同一账号的加载去重；切号时旧请求还在途，不能阻塞新账号的资料加载
+      if (this._profilePromise && this._profileUid === userId) return this._profilePromise;
+      this.profileError = null;
+      this._refreshAuthUI();
+      this._refreshSettingsUI();
+      const self = this;
+      const task = Promise.resolve()
+        .then(function () { return account.load(); })
+        .then(function (profile) {
+          if (self._destroyed || self._profileUserId !== userId) return null;
+          self.profile = profile;
+          self.profileError = null;
+          self._selectedAvatar = profile.avatar;
+          self._applyCloudPrefs(profile.prefs);
+          self._refreshAccountButton();
+          self._refreshAuthUI();
+          self._fillSettingsForm();
+          self._emit('profile', { action: 'load', nickname: profile.nickname, avatar: profile.avatar });
+          return profile;
+        })
+        .catch(function (err) {
+          if (self._destroyed || self._profileUserId !== userId) return null;
+          self.profileError = err;
+          self._refreshAuthUI();
+          self._refreshSettingsUI();
+          self._emit('profile', { action: 'load-error', code: err && err.code });
+          return null;
+        })
+        .then(function (result) {
+          if (self._profilePromise === task) {
+            self._profilePromise = null;
+            self._profileUid = '';
+          }
+          if (!self._destroyed) {
+            self._refreshSettingsUI();
+            // 加载期间会话切到了另一个账号：旧结果已丢弃，补拉新账号资料
+            if (!self.profile && self._profileUserId && self._profileUserId !== userId) {
+              self._loadProfile();
+            }
+          }
+          return result;
+        });
+      this._profilePromise = task;
+      this._profileTask = task;
+      this._profileUid = userId;
+      return task;
+    }
+
+    /**
+     * 采用云端偏好（#44 的「不冲突」规则）：
+     *   - 本机**没有**设置记录（新设备/清缓存）→ 采用云端声音/操作偏好并写入本机；
+     *   - 本机**已有**设置记录 → 本地优先，不自动覆盖（避免登录后声音突变），
+     *     保存设置时以本机为准上传云端，并在设置页提示差异。
+     * @param {object} prefs 云端 profiles.prefs
+     * @returns {boolean} 是否应用到了本机
+     */
+    _applyCloudPrefs(prefs) {
+      const normalized = normalizePrefsForSave(prefs);
+      this._cloudPrefs = normalized;
+      let applied = false;
+      if (!this._settingsStored) {
+        this.soundOn = normalized.sound;
+        this._settings.sound = normalized.sound;
+        this._settings.touch = normalizeTouchMode(normalized.touch);
+        this._writeSettings();
+        this.input.setTouchMode(this._settings.touch);
+        this._applySoundState();
+        applied = true;
+      }
+      const local = normalizePrefsForSave(this._settings);
+      this._cloudPrefsDiffer = local.sound !== normalized.sound || local.touch !== normalized.touch;
+      return applied;
+    }
+
+    /** 把触屏按键偏好应用到输入系统与设置界面按钮（立即生效） */
+    _applyTouchPref() {
+      const mode = normalizeTouchMode(this._settings.touch);
+      if (this.input && typeof this.input.setTouchMode === 'function') this.input.setTouchMode(mode);
+      const btn = this._ui.btnPrefTouch;
+      if (btn) {
+        this._text(btn, '📱 触屏按键：' + touchModeLabel(mode));
+        if (btn.classList) btn.classList.toggle('pref-on', mode === 'on');
+      }
+      return mode;
+    }
+
+    /** 循环切换触屏按键偏好（自动 → 常开 → 关闭 → 自动），立即生效并写盘 */
+    _cycleTouchPref() {
+      const list = touchModeList();
+      const current = normalizeTouchMode(this._settings.touch);
+      const next = list[(list.indexOf(current) + 1) % list.length] || 'auto';
+      this._settings.touch = next;
+      const saved = this._writeSettings();
+      this._applyTouchPref();
+      this._setSettingsMessage(saved
+        ? '触屏按键：' + touchModeLabel(next) + '（已保存到本机，立即生效）'
+        : '触屏按键：' + touchModeLabel(next) + '（已生效，但本机存储不可用，刷新后会丢失）',
+      saved ? '' : 'error');
+      this._refreshCloudPrefsDiffer();
+      return next;
+    }
+
+    /** 重新计算「云端偏好与本机是否不同」并刷新设置页说明（切偏好后调用） */
+    _refreshCloudPrefsDiffer() {
+      if (!this._cloudPrefs) return false;
+      const local = normalizePrefsForSave(this._settings);
+      this._cloudPrefsDiffer = local.sound !== this._cloudPrefs.sound
+        || local.touch !== this._cloudPrefs.touch;
+      if (this._settingsVisible()) this._refreshSettingsCloudNote();
+      return this._cloudPrefsDiffer;
+    }
+
+    /** 账户设置 screen 当前是否可见 */
+    _settingsVisible() {
+      const el = this._ui.settingsScreen;
+      return !!(el && el.classList && !el.classList.contains('hidden'));
+    }
+
+    /** 从标题或登录面板打开设置（游客或云端资料功能未就绪时仅可调整本机偏好） */
+    _openSettingsScreen() {
+      if (this.state !== STATE.TITLE) return false;
+      const signedIn = !!this._currentSession();
+      this._hide(this._ui.loginScreen);
+      this._hide(this._ui.titleScreen);
+      this._show(this._ui.settingsScreen);
+      this._selectedAvatar = avatarAllowed(this.profile && this.profile.avatar)
+        ? this.profile.avatar
+        : AVATAR_DEFAULT;
+      this._fillSettingsForm();
+      this._refreshSettingsUI();
+      this._setSettingsMessage('', '');
+      // 只有「还没拿到过资料」才自动重试；保存失败时资料本身有效，不重新拉取，
+      // 避免后台 GET 迟到后覆盖玩家正在编辑的内容。
+      if (signedIn && this.account && !this.profile) this._loadProfile();
+      return true;
+    }
+
+    /** 关闭账户设置：回到登录面板（仍登录）或标题（已登出） */
+    _closeSettingsScreen() {
+      if (this.state !== STATE.TITLE || !this._settingsVisible()) return false;
+      this._hide(this._ui.settingsScreen);
+      this._selectedAvatar = '';
+      this._setSettingsMessage('', '');
+      if (this._currentSession()) {
+        this._show(this._ui.loginScreen);
+        this._refreshAuthUI();
+      } else {
+        this._show(this._ui.titleScreen);
+        this._refreshTitle();
+      }
+      return true;
+    }
+
+    /** 把当前 profile / 本地偏好填入设置界面（打开界面、资料加载/保存成功后调用） */
+    _fillSettingsForm() {
+      this._avatarTouched = false;
+      if (this._ui.settingsNickname) {
+        this._ui.settingsNickname.value = this.profile && this.profile.nickname
+          ? this.profile.nickname
+          : 'NSWER';
+      }
+      this._refreshNicknameCount();
+      const avatarId = avatarAllowed(this._selectedAvatar)
+        ? this._selectedAvatar
+        : (this.profile && avatarAllowed(this.profile.avatar) ? this.profile.avatar : AVATAR_DEFAULT);
+      this._selectedAvatar = avatarId;
+      this._syncAvatarSelection(avatarId);
+      this._applyTouchPref();
+      this._applySoundState();
+      const session = this._currentSession();
+      const email = session && session.user ? session.user.email : '';
+      this._text(this._ui.settingsAccount, email ? '已登录：' + email : '未登录：仅可调整本机偏好');
+      this._refreshSettingsCloudNote();
+    }
+
+    /** 昵称字数提示（按 Unicode 码点计，与数据库 char_length 一致） */
+    _refreshNicknameCount() {
+      const el = this._ui.settingsNicknameCount;
+      if (!el) return;
+      const input = this._ui.settingsNickname;
+      const length = nicknameCharLength(input && typeof input.value === 'string' ? input.value : '');
+      this._text(el, length + '/16');
+      if (el.classList) el.classList.toggle('settings-hint-error', length > 16);
+      if (input && typeof input.setAttribute === 'function') {
+        input.setAttribute('aria-invalid', length > 16 ? 'true' : 'false');
+      }
+    }
+
+    /** 同步头像选中态 / 预览色块与名字 */
+    _syncAvatarSelection(avatarId) {
+      const id = avatarAllowed(avatarId) ? avatarId : AVATAR_DEFAULT;
+      const buttons = this._ui.avatarBtns || {};
+      for (const key of Object.keys(buttons)) {
+        const btn = buttons[key];
+        if (btn && btn.classList) btn.classList.toggle('is-selected', key === id);
+        if (btn && typeof btn.setAttribute === 'function') {
+          btn.setAttribute('aria-pressed', key === id ? 'true' : 'false');
+        }
+      }
+      const presets = avatarPresetsFor(this.root);
+      let preset = presets[0];
+      for (let i = 0; i < presets.length; i++) {
+        if (presets[i].id === id) { preset = presets[i]; break; }
+      }
+      if (this._ui.avatarPreview && this._ui.avatarPreview.style) {
+        this._ui.avatarPreview.style.background = preset ? preset.color : '#7FB8E6';
+      }
+      this._text(this._ui.avatarPreviewName, preset ? preset.name : '');
+    }
+
+    /** 设置界面登录态 / 忙碌态 / 云端说明（不重填昵称输入框，避免打断输入） */
+    _refreshSettingsUI() {
+      const signedIn = !!this._currentSession();
+      const busy = this._accountBusy;
+      // 资料未加载成功前禁止保存：否则表单默认值（NSWER / muse-1）会覆盖云端
+      // 现有昵称/头像（评审发现的阻塞级数据覆盖问题，Issue #44）。
+      const profileReady = !!this.profile;
+      const formDisabled = !signedIn || !this.account || busy || !profileReady;
+      const saveBtn = this._ui.btnSettingsSave;
+      if (saveBtn) {
+        saveBtn.disabled = formDisabled;
+        this._text(saveBtn, busy ? '正在保存…' : '💾 保存设置');
+      }
+      if (this._ui.btnSettingsBack) this._ui.btnSettingsBack.disabled = busy;
+      // 保存期间冻结偏好按钮，避免 PATCH 快照与界面显示不一致
+      if (this._ui.btnPrefSound) this._ui.btnPrefSound.disabled = busy;
+      if (this._ui.btnPrefTouch) this._ui.btnPrefTouch.disabled = busy;
+      if (this._ui.settingsNickname) this._ui.settingsNickname.disabled = formDisabled;
+      const buttons = this._ui.avatarBtns || {};
+      for (const key of Object.keys(buttons)) {
+        if (buttons[key]) buttons[key].disabled = formDisabled;
+      }
+      const retry = this._ui.btnSettingsRetry;
+      if (retry) {
+        const showRetry = signedIn && !!this.account && !profileReady && !busy
+          && !this._profilePromise && !!this.profileError;
+        this._toggleHidden(retry, !showRetry);
+      }
+      this._refreshSettingsCloudNote();
+    }
+
+    /** 云端资料说明行：未登录 / 读取中 / 云端不可用 / 偏好差异 */
+    _refreshSettingsCloudNote() {
+      const el = this._ui.settingsCloudNote;
+      if (!el) return;
+      if (!this._currentSession()) {
+        this._text(el, '未登录：昵称与头像不可用；声音与操作偏好只保存在本机。');
+        return;
+      }
+      if (!this.account) {
+        this._text(el, '云端资料功能未启用：昵称、头像与云端保存不可用；声音与操作偏好只保存在本机并立即生效。');
+        return;
+      }
+      if (this.profileError) {
+        const canRetry = !this._profilePromise && !this._accountBusy;
+        this._text(el, '云端资料暂不可用：'
+          + (this.profileError.message || '请稍后再试')
+          + (canRetry ? '（可点「重试读取云端资料」）' : ''));
+        return;
+      }
+      if (!this.profile) {
+        this._text(el, '正在读取云端资料…资料就绪前无法保存昵称与头像。');
+        return;
+      }
+      const unknownAvatar = !this._avatarTouched
+        && this.profile.avatarRaw && this.profile.avatarRaw !== this.profile.avatar;
+      let text = this._cloudPrefsDiffer
+        ? '昵称与头像保存到云端；云端偏好与本机不同，点击保存后以本机为准。'
+        : '昵称与头像保存到云端；声音与操作偏好同时保存到本机并立即生效。';
+      if (unknownAvatar) {
+        text += ' 云端头像 ' + this.profile.avatarRaw + ' 不在当前可选集，已显示默认头像；'
+          + '保存昵称/偏好不会改动云端头像。';
+      }
+      this._text(el, text);
+    }
+
+    /** 设置界面提示：kind = '' | 'ok' | 'error' */
+    _setSettingsMessage(text, kind) {
+      this.settingsMessage = text || '';
+      const el = this._ui.settingsMsg;
+      if (!el) return;
+      this._text(el, this.settingsMessage);
+      if (!el.classList) return;
+      el.classList.remove('settings-msg-error');
+      el.classList.remove('settings-msg-ok');
+      if (kind === 'error') el.classList.add('settings-msg-error');
+      else if (kind === 'ok') el.classList.add('settings-msg-ok');
+    }
+
+    /** 昵称输入：只刷新字数提示，保存时再统一校验 */
+    _onNicknameInput() {
+      this._refreshNicknameCount();
+    }
+
+    /** 选择固定头像：只更新待保存值，点击「保存设置」后才写云端 */
+    _onAvatarPick(id) {
+      if (!this._settingsVisible() || !avatarAllowed(id)) return false;
+      this._selectedAvatar = id;
+      this._avatarTouched = true;
+      this._syncAvatarSelection(id);
+      this._setSettingsMessage('已选择头像，点击「保存设置」后同步到云端。', '');
+      this._refreshSettingsCloudNote(); // 主动选头像后「不改动云端头像」提示不再适用
+      return true;
+    }
+
+    /**
+     * 保存设置：昵称/头像写云端 profiles，声音/触屏偏好即时生效并写本机。
+     * 昵称超长等客户端校验失败时不发请求，只给中文提示。
+     * @returns {Promise<object|null>}
+     */
+    _onSettingsSave() {
+      if (this.state !== STATE.TITLE || !this._settingsVisible()) return null;
+      if (this._accountBusy && this._accountPromise) return this._accountPromise;
+      const signedIn = !!this._currentSession();
+      // 资料未加载成功前禁止保存（按钮已置灰，这里是双保险）：否则表单默认值
+      // （NSWER / muse-1）会当作玩家输入 PATCH 覆盖云端现有昵称/头像。
+      if (signedIn && this.account && !this.profile) {
+        if (this.profileError) {
+          this._setSettingsMessage('云端资料暂不可用，正在重试读取；资料就绪后再保存。', 'error');
+        } else {
+          this._setSettingsMessage('正在读取云端资料，请稍候再保存。', '');
+        }
+        this._loadProfile();
+        this._refreshSettingsUI();
+        return null;
+      }
+      const nickname = normalizeNicknameForSave(
+        this._ui.settingsNickname && typeof this._ui.settingsNickname.value === 'string'
+          ? this._ui.settingsNickname.value
+          : ''
+      );
+      if (!nickname.ok) {
+        this._setSettingsMessage(nickname.message, 'error');
+        this._refreshNicknameCount();
+        if (this._ui.settingsNickname && typeof this._ui.settingsNickname.setAttribute === 'function') {
+          this._ui.settingsNickname.setAttribute('aria-invalid', 'true');
+        }
+        return null;
+      }
+      // 头像：玩家主动改过才写所选头像；未改动时只有云端原始 id 已知且与展示一致
+      // 才回写，避免未知 / 未来版本头像在「只改昵称」时被覆盖成默认 muse-1。
+      let avatarToSave;
+      if (this._avatarTouched) {
+        if (!avatarAllowed(this._selectedAvatar)) {
+          this._setSettingsMessage('请选择列表中的固定头像。', 'error');
+          return null;
+        }
+        avatarToSave = this._selectedAvatar;
+      } else if (this.profile && this.profile.avatarRaw && this.profile.avatarRaw === this.profile.avatar) {
+        avatarToSave = this.profile.avatar;
+      }
+      const prefs = normalizePrefsForSave({ sound: this.soundOn, touch: this._settings.touch });
+      // 本地先落盘：云端失败也不丢本机偏好（声音/触屏已即时生效）
+      this._settings.v = SAVE_VERSION;
+      this._settings.sound = prefs.sound;
+      this._settings.touch = prefs.touch;
+      const localSaved = this._writeSettings();
+      this._applySoundState();
+      this._applyTouchPref();
+
+      if (!signedIn || !this.account) {
+        this._setSettingsMessage(localSaved
+          ? '已保存到本机；登录后可同步昵称与头像。'
+          : '设置已生效，但本机存储不可用（隐私模式或空间不足），刷新后会丢失。',
+        localSaved ? 'ok' : 'error');
+        this._refreshSettingsUI();
+        return null;
+      }
+      const saveUserId = this._currentUserId();
+      this._accountBusy = true;
+      this._setSettingsMessage('正在保存到云端…', '');
+      this._refreshSettingsUI();
+      const self = this;
+      const task = Promise.resolve()
+        .then(function () {
+          return self.account.save({ nickname: nickname.value, avatar: avatarToSave, prefs: prefs });
+        })
+        .then(function (profile) {
+          if (self._destroyed) return null;
+          // 保存期间切号/登出：丢弃旧账号的回包，避免把 A 的资料写到 B 的界面
+          if (self._currentUserId() !== saveUserId || self._profileUserId !== saveUserId) {
+            self._emit('profile', { action: 'save-stale', nickname: profile.nickname });
+            return null;
+          }
+          self.profile = profile;
+          self.profileError = null;
+          self._selectedAvatar = profile.avatar;
+          self._avatarTouched = false;
+          self._applyCloudPrefs(profile.prefs);
+          self._setSettingsMessage(localSaved
+            ? '设置已保存。'
+            : '设置已保存到云端；但本机存储不可用（隐私模式或空间不足），本机偏好刷新后可能丢失。',
+          localSaved ? 'ok' : 'error');
+          self._fillSettingsForm();
+          self._refreshAccountButton();
+          self._refreshAuthUI();
+          self._refreshSettingsUI();
+          self._emit('profile', { action: 'save', nickname: profile.nickname, avatar: profile.avatar });
+          return profile;
+        })
+        .catch(function (err) {
+          if (self._destroyed) return null;
+          if (self._currentUserId() !== saveUserId || self._profileUserId !== saveUserId) {
+            self._emit('profile', { action: 'save-stale-error', code: err && err.code });
+            return null;
+          }
+          self._handleProfileError(err);
+          return null;
+        })
+        .then(function (result) {
+          if (!self._destroyed) {
+            self._accountBusy = false;
+            self._refreshSettingsUI();
+          }
+          return result;
+        });
+      this._accountPromise = task;
+      return task;
+    }
+
+    /** 资料保存失败：中文提示；登录过期时同步回游客态（auth 已清会话） */
+    _handleProfileError(err) {
+      const message = (err && err.message) || '操作失败，请稍后再试';
+      // 只有「从未加载成功」才记 profileError（用于禁用保存/显示重试）；
+      // 已有资料时的保存失败只提示在 settings-msg，资料仍是有效的旧值。
+      if (!this.profile) this.profileError = err;
+      this._setSettingsMessage(message, 'error');
+      this._refreshSettingsCloudNote();
+      this._emit('profile', { action: 'save-error', code: err && err.code });
+      if (err && (err.code === 'not_signed_in' || err.code === 'unauthorized')) {
+        this._syncProfile();
+      }
+    }
+
+    /**
+     * 按 GAME.avatarPresets 动态渲染头像按钮（新增头像只改 data.js，无需改 HTML/JS）。
+     * 未知 id 在 _syncAvatarSelection 中回退默认头像。
+     */
+    _renderAvatarOptions() {
+      const box = this._ui.avatarOptions;
+      this._ui.avatarBtns = {};
+      if (!box || typeof box.appendChild !== 'function') return;
+      const doc = this.doc;
+      if (!doc || typeof doc.createElement !== 'function') return;
+      const presets = avatarPresetsFor(this.root);
+      // 清空容器：真实 DOM 用 innerHTML；测试桩的 children 是普通数组
+      if (box.children && Array.isArray(box.children)) box.children.length = 0;
+      else box.innerHTML = '';
+      const self = this;
+      for (let i = 0; i < presets.length; i++) {
+        const preset = presets[i];
+        const btn = doc.createElement('button');
+        if (!btn || !btn.classList) continue;
+        btn.type = 'button';
+        btn.classList.add('avatar-btn');
+        if (typeof btn.setAttribute === 'function') {
+          btn.setAttribute('data-avatar', preset.id);
+          btn.setAttribute('aria-label', '头像 ' + preset.name);
+          btn.setAttribute('aria-pressed', 'false');
+        }
+        if (btn.style) btn.style.background = preset.color;
+        const face = doc.createElement('span');
+        if (face && face.classList) {
+          face.classList.add('avatar-face');
+          btn.appendChild(face);
+        }
+        const name = doc.createElement('span');
+        if (name && name.classList) {
+          name.classList.add('avatar-name');
+          name.textContent = preset.name;
+          btn.appendChild(name);
+        }
+        this._on(btn, 'click', function () { self._onAvatarPick(preset.id); });
+        box.appendChild(btn);
+        this._ui.avatarBtns[preset.id] = btn;
+      }
+      this._syncAvatarSelection(this._selectedAvatar || AVATAR_DEFAULT);
     }
 
     /** 标题「新游戏」：优先占用第一个空档；三档全满则打开选择存档界面要求覆盖 */
@@ -1542,32 +2247,57 @@
       return (lv.entities || []).filter((e) => e.type === 'star').length;
     }
 
-    /** 声音按钮文案与当前设置一致（构造函数 / 切换 / 读设置后调用） */
+    /** 声音按钮文案与当前设置一致（标题快捷开关 + 设置界面按钮；#44） */
     _applySoundState() {
       this._text(this._ui.btnSound, this.soundOn ? '♪ 声音：开' : '♪ 声音：关');
+      const prefBtn = this._ui.btnPrefSound;
+      if (prefBtn) {
+        this._text(prefBtn, this.soundOn ? '♪ 声音：开' : '♪ 声音：关');
+        if (prefBtn.classList) prefBtn.classList.toggle('pref-on', !!this.soundOn);
+      }
       const audio = this.root.MIXX && this.root.MIXX.audio;
       if (audio && typeof audio.setEnabled === 'function') {
         try { audio.setEnabled(this.soundOn); } catch (e) { /* 音频不可用不阻断游戏 */ }
       }
     }
 
-    /** 读独立的声音设置（与存档位无关；损坏或缺失时按默认开） */
+    /**
+     * 读独立设置（与存档位无关）：{ v, sound, touch }。
+     * 缺失/损坏/显式版本不兼容时按默认值，兼容缺少 v 的旧记录；
+     * `_settingsStored` 记录「本机是否已有有效设置记录」，
+     * 供 #44 判断能否采用云端偏好（新设备才采用，老玩家本地优先）。
+     */
     _readSettings() {
-      const fallback = { v: SAVE_VERSION, sound: true };
+      const fallback = { v: SAVE_VERSION, sound: true, touch: 'auto' };
+      this._settingsStored = false;
       if (!this.storage) return fallback;
       try {
         const raw = this.storage.getItem(SETTINGS_KEY);
         if (!raw) return fallback;
         const data = JSON.parse(raw);
-        return { v: SAVE_VERSION, sound: !data || data.sound !== false };
+        if (!data || typeof data !== 'object' || Array.isArray(data)
+          || (Object.prototype.hasOwnProperty.call(data, 'v') && data.v !== SAVE_VERSION)) return fallback;
+        this._settingsStored = true;
+        return {
+          v: SAVE_VERSION,
+          sound: data.sound !== false,
+          touch: normalizeTouchMode(data.touch),
+        };
       } catch (e) {
         return fallback;
       }
     }
 
+    /** 写本地设置（声音/触屏偏好立即生效；写入成功标记「本机已有设置记录」） */
     _writeSettings() {
-      if (!this.storage) return;
-      try { this.storage.setItem(SETTINGS_KEY, JSON.stringify(this._settings)); } catch (e) { /* 忽略配额/禁用 */ }
+      if (!this.storage) return false;
+      try {
+        this.storage.setItem(SETTINGS_KEY, JSON.stringify(this._settings));
+        this._settingsStored = true;
+        return true;
+      } catch (e) {
+        return false; // 配额/禁用：内存设置仍立即生效，只是刷新后丢失
+      }
     }
 
     /* ── 关卡生命周期 ── */
@@ -2198,18 +2928,24 @@
       this.soundOn = !this.soundOn;
       this._settings.sound = this.soundOn;
       this._applySoundState();
-      this._writeSettings(); // 设置独立于存档位，立即生效
+      const saved = this._writeSettings(); // 设置独立于存档位，立即生效
+      if (!saved && this._settingsVisible()) {
+        this._setSettingsMessage('声音已生效，但本机存储不可用（隐私模式或空间不足），刷新后会丢失。', 'error');
+      }
+      this._refreshCloudPrefsDiffer(); // 设置页「云端偏好与本机不同」提示随切换更新
     }
 
     _show(el) { if (el && el.classList) el.classList.remove('hidden'); }
     _hide(el) { if (el && el.classList) el.classList.add('hidden'); }
     _text(el, v) { if (el) el.textContent = v; }
 
+    /** 切换状态或销毁实例时隐藏全部界面，包含账户设置及存储提示。 */
     _hideAllScreens() {
       this._hide(this._ui.titleScreen);
       this._hide(this._ui.helpScreen);
       this._hide(this._ui.saveScreen);
       this._hide(this._ui.loginScreen);
+      this._hide(this._ui.settingsScreen); // #44
       this._hide(this._ui.accountNote);
       this._hide(this._ui.pauseScreen);
       this._hide(this._ui.clearScreen);
@@ -2281,6 +3017,26 @@
         'btn-register': 'btnRegister',
         'btn-logout': 'btnLogout',
         'btn-login-back': 'btnLoginBack',
+        // #44 账户设置
+        'btn-settings': 'btnSettings',
+        'btn-title-settings': 'btnTitleSettings',
+        'login-nickname-label': 'loginNicknameLabel',
+        'login-account-note': 'loginAccountNote',
+        'settings-screen': 'settingsScreen',
+        'settings-account': 'settingsAccount',
+        'settings-nickname': 'settingsNickname',
+        'settings-nickname-count': 'settingsNicknameCount',
+        'avatar-preview': 'avatarPreview',
+        'avatar-preview-name': 'avatarPreviewName',
+        'avatar-options': 'avatarOptions',
+        'btn-pref-sound': 'btnPrefSound',
+        'btn-pref-touch': 'btnPrefTouch',
+        'settings-cloud-note': 'settingsCloudNote',
+        'settings-msg': 'settingsMsg',
+        'btn-settings-save': 'btnSettingsSave',
+        'btn-settings-retry': 'btnSettingsRetry',
+        'link-delete-account': 'linkDeleteAccount',
+        'btn-settings-back': 'btnSettingsBack',
       };
       const doc = this.doc;
       const get = doc && typeof doc.getElementById === 'function'
@@ -2291,8 +3047,10 @@
       this._ui.slotBtns = [this._ui.btnSlot1, this._ui.btnSlot2, this._ui.btnSlot3];
       this._ui.slotMetas = [this._ui.slotMeta1, this._ui.slotMeta2, this._ui.slotMeta3];
       this._ui.slotDelBtns = [this._ui.btnSlotDel1, this._ui.btnSlotDel2, this._ui.btnSlotDel3];
+      this._ui.avatarBtns = {}; // #44：按 GAME.avatarPresets 在 _renderAvatarOptions 中填充
     }
 
+    /** 统一绑定菜单、账户设置与对话事件；通过 _on 登记，供销毁时解绑。 */
     _bindUI() {
       const ui = this._ui;
       this._on(ui.btnStart, 'click', () => this._startNewGame());
@@ -2317,6 +3075,17 @@
       this._on(ui.btnLogout, 'click', () => { this._logout(); });
       this._on(ui.loginEmail, 'keydown', (ev) => this._onLoginKeydown(ev));
       this._on(ui.loginPassword, 'keydown', (ev) => this._onLoginKeydown(ev));
+      // #44 账户设置
+      this._on(ui.btnSettings, 'click', () => { this._openSettingsScreen(); });
+      this._on(ui.btnTitleSettings, 'click', () => { this._openSettingsScreen(); });
+      this._on(ui.btnSettingsBack, 'click', () => { this._closeSettingsScreen(); });
+      this._on(ui.btnSettingsSave, 'click', () => { this._onSettingsSave(); });
+      this._on(ui.btnSettingsRetry, 'click', () => {
+        if (this._settingsVisible()) this._loadProfile();
+      });
+      this._on(ui.btnPrefSound, 'click', () => this._toggleSound());
+      this._on(ui.btnPrefTouch, 'click', () => this._cycleTouchPref());
+      this._on(ui.settingsNickname, 'input', () => this._onNicknameInput());
       this._on(ui.btnResume, 'click', () => {
         if (this.state === STATE.PAUSED) this._setState(STATE.PLAYING);
       });

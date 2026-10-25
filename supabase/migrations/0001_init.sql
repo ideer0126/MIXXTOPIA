@@ -40,7 +40,7 @@ create table if not exists public.profiles (
 -- 头像只约束「形状」，不约束「集合」：
 --   集合会随美术扩展（六位缪斯 × 各关妆造、玩家形象、黑羊彩蛋…，#13 未开始），
 --   写死在 CHECK 里等于以后每加一个头像都要迁移。白名单放前端（js/data.js 的
---   AVATAR_PRESETS，见 #44），DB 只挡非法字符与超长，渲染时未知 id 回退默认头像。
+--   GAME.avatarPresets，见 #44），DB 只挡非法字符与超长，渲染时未知 id 回退默认头像。
 --   用 drop-if-exists + add 保证对新库、旧库、重复执行都成立。
 alter table public.profiles drop constraint if exists profiles_avatar_check;
 alter table public.profiles add constraint profiles_avatar_check

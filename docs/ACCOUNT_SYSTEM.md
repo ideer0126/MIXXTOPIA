@@ -98,7 +98,13 @@
 - 三表全开 RLS，策略只授 `authenticated` 且限定 `auth.uid()` 本人；`anon` 的表权限已 `revoke`，等于 RLS 之外再加一道锁；
 - `updated_at` 由 `touch_updated_at()` 触发器维护，客户端不用传；
 - `saves.version` 乐观锁：`PATCH ...?version=eq.<期望值>` 且 body 带 `version: 期望值 + 1`，请求带 `Prefer: return=representation`；返回数组长度 1 = 成功、0 = 冲突（HTTP 仍可能是 200），不能只看状态码。期望值来自 `mixxtopia.cloud.v1` 的逐档基线（见 §9），本地存档位不保存 `version`；
-- **头像不锁集合**：`profiles.avatar` 只校验格式 `^[a-z0-9][a-z0-9-]{0,31}$`，白名单放前端（`js/data.js` 的 `AVATAR_PRESETS`，见 #44）。否则以后每加一个头像（六位缪斯 × 各关妆造、玩家形象、黑羊彩蛋…）都得写迁移；未知 id 在渲染时回退默认头像。
+- **头像不锁集合**：`profiles.avatar` 只校验格式 `^[a-z0-9][a-z0-9-]{0,31}$`，白名单放前端（`js/data.js` 的 `GAME.avatarPresets`，见 #44；6 条 `muse-1…muse-6`）。否则以后每加一个头像（六位缪斯 × 各关妆造、玩家形象、黑羊彩蛋…）都得写迁移；未知 id 在渲染时回退默认头像 `muse-1`。
+- **昵称 / 偏好校验（#44）**：客户端 `js/account.js` 先校验（昵称 trim 后 1–16 个 Unicode 码点、无控制字符；偏好只保留 `sound` / `touch`），不合法不发起请求；`PATCH /rest/v1/profiles?id=eq.<uid>` 带 `Prefer: return=representation`，返回数组长度 1 = 成功、0 = 资料行缺失；400 按 `profiles_nickname_check` / `profiles_avatar_check` 映射中文提示。
+- **防默认值覆盖（#44）**：profile 未成功加载前设置页禁用保存（失败时显示重试），避免 `NSWER` / `muse-1` 等表单默认值覆盖云端；读取时保留 `avatarRaw`，未知/未来版本头像在只改昵称/偏好时通过 PATCH 省略 `avatar` 字段保留原值（PostgREST 部分更新），玩家主动选择新头像才回写。
+- **保存账号绑定（#55 评审修复）**：发起保存时记录账号 id，等待 `ensureFresh()` 完成及 401 续期重试前校验返回会话与当前会话仍属于该账号；账号改变则拒绝请求，防止旧表单写入新账号。相同账号续期可使用新令牌重试。
+- **设置版本兼容（#55 评审修复）**：`mixxtopia.settings.v1` 缺少 `v` 的历史记录继续有效；显式 `v` 与当前版本不一致时按默认值处理，不标记为本机已有有效设置，允许后续采用云端偏好。
+- **偏好与本地设置（#44）**：`mixxtopia.settings.v1`（`{ v, sound, touch }`，`touch` ∈ `auto|on|off`）是运行时唯一来源；未登录 / 离线只写本机；登录后点击「保存设置」把 `sound` / `touch` 同步到 `profiles.prefs`（标题声音开关、设置页即时切换只写本机）。采用规则：本机**无**设置记录（新设备 / 清缓存）时采用一次云端偏好；本机已有记录则本地优先、不自动覆盖，设置页提示差异，保存时以本机为准上传云端。
+  - **设备级取舍（#44 明确）**：声音/触屏偏好视为**设备级**设置——同一设备换账号不自动切换偏好，新设备首次登录采用一次云端值后，后续云端变化也不再自动覆盖；这是为避免登录/切号导致设备体验突变，若未来要按账号同步需记录 `prefsOwner/source/dirty` 并单独评审。
 
 ### A / A2：Postgres
 
@@ -191,7 +197,7 @@ match /users/{uid} {
 
 - **anon key 是公开的**（新控制台叫 **publishable key**，`sb_publishable_...`；旧的 JWT 版 anon key 在 Legacy 页签，两者等价），安全边界只在 RLS；测试必须包含「A 用户 token 读 B 用户存档 → 失败」用例
 - 只存游戏所需：昵称、固定头像 id、偏好、存档、统计；邮箱由 Auth 托管，不复制进业务表
-- **删除账户**：前端只有 publishable key，**不能**直接删除 `auth.users`（需仅在服务端使用的特权密钥；删 `profiles` 等业务行也不等于删账号）。当前定为**人工处理流程**：账户设置页只提交「删除账户」申请，维护者核实后通过 Supabase 后台删除 `auth.users`，`profiles/saves/stats` 由外键级联删除，不可恢复。若后续要提供自助删除，须先增加受信任的服务端端点（持 `service_role` 的 Edge Function，或仅授 `authenticated` 的 `security definer` RPC），单独评审并补测试；在该端点落地前，文案不承诺即时自助删除
+- **删除账户**：前端只有 publishable key，**不能**直接删除 `auth.users`（需仅在服务端使用的特权密钥；删 `profiles` 等业务行也不等于删账号）。当前定为**人工处理流程**（#44 已实现入口）：账户设置页「删除账户（提交申请）」跳转预填标题/说明的 GitHub issue 模板，维护者核实后通过 Supabase 后台删除 `auth.users`，`profiles/saves/stats` 由外键级联删除，不可恢复。若后续要提供自助删除，须先增加受信任的服务端端点（持 `service_role` 的 Edge Function，或仅授 `authenticated` 的 `security definer` RPC），单独评审并补测试；在该端点落地前，文案不承诺即时自助删除
 - **隐私说明**：已建 `docs/PRIVACY.md`，登录界面一屏摘要 + 链接；不接入任何第三方分析
 - 玩家未登录时**零数据上传**，保持现状
 
@@ -201,7 +207,7 @@ match /users/{uid} {
 |---|---|---|---|---|
 | #42 | 选型落地与后端初始化 | 建项目、跑迁移、RLS、公开配置注入 | 已建 `js/cloud-config.js`、`supabase/migrations/0001_init.sql`、`docs/PRIVACY.md`；迁移已在项目 `hlnubesywvcxdghfyoux` 执行成功（2026-10-24）；文档已并入 §8/§10 | ✅ 真实项目端到端验证通过：匿名访问 42501、跨用户读写隔离、注册自动建档、非法头像被 CHECK 拒绝、`version` 乐观锁、`updated_at` 触发器、迁移幂等 |
 | #43 | Auth | 注册/登录/登出/会话恢复/游客态、标题入口 | ✅ 已新增 `js/auth.js`（手写 GoTrue 封装）；改 `js/main.js`、`index.html`、`styles.css`、`tools/smoke-main.html`；新增 `tools/test-auth.js` | ✅ `fetch` 桩单测 19 项（注册 / 密码错 / 邮箱已注册 / token 过期自动续期 / 网络失败 / 登出不动存档）+ test-main 账户 UI 9 项 + 冒烟：打开/返回登录界面、游客零请求、刷新仍登录 |
-| #44 | 账户设置 UI | 昵称、固定头像集（前端白名单）、音效/操作偏好、删除账户申请（提交后人工处理） | 同上 + `js/settings.js` | 保存后重登一致；非法格式被拒；未知 id 回退默认头像；删除申请不直接调 `auth.users` |
+| #44 | 账户设置 UI | 昵称、固定头像集（前端白名单）、音效/操作偏好、删除账户申请（提交后人工处理） | ✅ 新增 `js/account.js`（profiles 读写/校验/中文错误映射）；`js/data.js` 增 `GAME.avatarPresets`；`js/engine.js` 增触屏按键偏好 `Input.setTouchMode`；改 `js/main.js`、`index.html`、`styles.css`、`tools/smoke-main.html`、`tools/test-main.js`、`tools/test-engine.js`；新增 `tools/test-account.js` | ✅ `fetch` 桩单测 21 项 + test-main 98 项 + test-engine 48 项 + `smoke-main.html` 84 项 + `smoke-input.html` 22 项检查通过（合入 #18 战斗系统后的当前计数）：昵称保存→重载往返一致、超长被拒且有中文提示、头像只认白名单（未知 id 回退 muse-1 且保存时不覆盖云端原值）、资料未就绪/失败时禁止保存并提供重试、切号/登出清空旧资料、偏好立即生效且以 `mixxtopia.settings.v1` 为唯一运行时来源、删除申请只跳 GitHub issue（不调 `auth.users`） |
 | #45 | 云存档同步 | 上传/下载/冲突三选一/离线降级、`mixxtopia.cloud.v1` 逐档同步基线 | 新增 `js/cloud.js`；改 `js/main.js` 存档段 | 三档同步、冲突不自动覆盖、离线可玩；刷新后仍能凭基线判断本机/云端是否同版 |
 | #46 | 统计 | 时长、成就、收集率 | 新增 `js/stats.js` | 云端累计与本地一致 |
 | #47 | 上线验证 | #17 扩展：线上注册/登录/同步冒烟 | `tools/smoke-main.html`（人工跑，不改 CI 配置） | 正式域名走通一遍 |
@@ -219,7 +225,9 @@ done
 node tools/test-engine.js
 node tools/test-main.js
 node tools/test-auth.js   # 账户 Auth（#43）：全部走 fetch 桩
-# 无头浏览器跑 tools/smoke-main.html，断言 data-smoke="ok"
+node tools/test-account.js # 账户资料 profiles（#44）：全部走 fetch 桩
+node tools/test-channels.js
+# 无头浏览器跑 tools/smoke-main.html / tools/smoke-input.html，断言 data-smoke="ok"
 node tools/validate.js   # 已知红：levels 为空导致 91 条基线错误，不计回归
 ```
 
@@ -228,7 +236,7 @@ node tools/validate.js   # 已知红：levels 为空导致 91 条基线错误，
 ## 13. 影响下游
 
 - #8 存档系统（保留 localStorage 本地层，新增云端同步层）
-- #6 游戏状态机与 UI 接线（标题界面登录入口、账户设置界面）
+- #6 游戏状态机与 UI 接线（标题界面登录入口、账户设置界面，**#44 已接线**）
 - #17 Pages 上线验证（注册 / 登录 / 云存档冒烟）
 - `PLAN.md` 与 `docs/GAME_DESIGN.md` §10 存档规范更新
 
@@ -243,3 +251,4 @@ node tools/validate.js   # 已知红：levels 为空导致 91 条基线错误，
 | 日期 | 结论 | 备注 |
 |---|---|---|
 | 2026-10-24 | 选定 **A2：Supabase + 手写 `fetch` 封装**（不引 SDK） | 放弃 B（Firebase 需引 SDK）；不做「导出/导入码」折中；三条遗留假设见 §7。已建子 issue #42–#47 并挂到 #22 下 |
+| 2026-10-25 | #44 账户设置 UI 落地 | 新增 `js/account.js`（profiles 读写/校验/中文错误映射）+ `GAME.avatarPresets` 白名单 + 触屏按键偏好；昵称/头像写云端、偏好以 `mixxtopia.settings.v1` 为准并即时生效；删除账户仍走人工 issue 申请（前端不碰 `auth.users`）；测试见 #44 行 |

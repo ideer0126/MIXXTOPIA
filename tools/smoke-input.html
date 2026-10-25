@@ -8,10 +8,10 @@
 </head>
 <body>
   <!--
-    tools/smoke-input.html —— 输入系统（Issue #5 + #18 战斗键）浏览器冒烟测试
+    tools/smoke-input.html —— 输入系统（Issue #5 + #18 + #44）浏览器冒烟测试
     运行：任意静态服务器 + 无头浏览器 dump-dom，断言 <body data-smoke="ok">。
     覆盖真实浏览器环境下的 KeyboardEvent / PointerEvent / 粗指针检测链路，
-    以及 F/G 攻击键与 B/C 触屏键（#18）。
+    以及 F/G 攻击键、B/C 触屏键（#18）、触屏按键显示偏好（auto / on / off，Issue #44）与菜单显隐的正交关系。
   -->
   <div id="touch-controls">
     <div id="dpad">
@@ -110,6 +110,17 @@
       ok('setTouchVisible(false) → 隐藏', getComputedStyle(tc).display === 'none');
       touchInput.setTouchVisible(true);
       ok('setTouchVisible(true) → 恢复显示', getComputedStyle(tc).display !== 'none');
+
+      // 3b) 操作偏好（Issue #44）：auto 跟随设备检测；on / off 显式覆盖（真实 styles.css）
+      touchInput.setTouchMode('off');
+      ok('偏好关闭 → 强制隐藏', getComputedStyle(tc).display === 'none');
+      touchInput.setTouchMode('on');
+      ok('偏好常开 → 强制显示', getComputedStyle(tc).display === 'flex');
+      touchInput.setTouchVisible(false);
+      ok('菜单隐藏优先于偏好常开', getComputedStyle(tc).display === 'none');
+      touchInput.setTouchVisible(true);
+      ok('返回游玩恢复偏好常开', getComputedStyle(tc).display === 'flex');
+      touchInput.setTouchMode('auto');
       touchInput.destroy();
       window.matchMedia = realMM;
 

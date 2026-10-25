@@ -8,13 +8,14 @@
 </head>
 <body>
   <!--
-    tools/smoke-main.html —— 游戏状态机（Issue #6）+ 对话（#7）+ 存档（#8）+ 机制（#9）+ 战斗（#18）冒烟测试
+    tools/smoke-main.html —— 游戏状态机（#6）+ 对话（#7）+ 存档（#8）+ 机制（#9）+ 战斗（#18）+ 账户（#43/#44）冒烟测试
     运行：静态服务器或 file:// + 无头浏览器 dump-dom，断言 <body data-smoke="ok">。
     覆盖真实浏览器环境下六态往返（标题/游玩/对话/暂停/结算/结局）与无状态泄漏，
     打字机逐字显示、点按快进、翻页退出（Issue #7），手动保存并退出、
-    通关自动存档、继续冒险读档（Issue #8），关门阻挡/推箱压开关/开门通行、
+    通关自动存档、继续冒险读档（Issue #8），以及关门阻挡/推箱压开关/开门通行、
     星星粒子、传送门激活与踩入结算（Issue #9），以及 HUD/敌人/F 轻击（#18）。
-    UI 骨架与 index.html 一致（main.js 按 id 接线）。
+    账户部分用 fetch 桩切「在线/离线」：游客态零上传、登录后拉取 profile、设置保存 PATCH、
+    偏好即时生效、删除账户只跳 GitHub issue（Issue #44）。UI 骨架与 index.html 一致（main.js 按 id 接线）。
   -->
   <canvas id="game" width="320" height="224"></canvas>
 
@@ -34,11 +35,12 @@
     <button id="btn-saves" class="menu-btn">▤ 选择存档</button>
     <button id="btn-help" class="menu-btn">? 操作说明</button>
     <button id="btn-sound" class="menu-btn">♪ 声音：开</button>
+    <button type="button" id="btn-title-settings" class="menu-btn">⚙ 设置</button>
     <button id="btn-account" class="menu-btn account-btn">☁ 登录 / 注册</button>
   </div>
   <p id="account-note" class="account-note hidden"></p>
 
-  <!-- 登录 / 账户（Issue #43）：只验证打开/返回与游客态零请求，不连真实后端 -->
+  <!-- 登录 / 账户（Issue #43）：游客态零请求；#44 追加资料与账户设置冒烟 -->
   <div id="login-screen" class="screen hidden">
     <h2 id="login-title" class="screen-title">登录 / 注册</h2>
     <div id="login-form" class="login-form">
@@ -49,10 +51,44 @@
     </div>
     <div id="login-account" class="login-account hidden">
       <p>已登录：<span id="login-email-label"></span></p>
+      <p>昵称：<span id="login-nickname-label"></span></p>
+      <p id="login-account-note" class="login-note"></p>
+      <button type="button" id="btn-settings" class="menu-btn small">⚙ 账户设置</button>
       <button type="button" id="btn-logout" class="menu-btn small">↩ 登出</button>
     </div>
     <p id="login-msg" class="login-msg" role="status"></p>
     <button type="button" id="btn-login-back" class="menu-btn small">← 返回</button>
+  </div>
+
+  <!-- 账户设置（Issue #44）：昵称 + 固定头像集 + 音效/操作偏好（不连真实后端） -->
+  <div id="settings-screen" class="screen hidden">
+    <h2 class="screen-title">账户设置</h2>
+    <p id="settings-account" class="settings-account"></p>
+    <div class="settings-avatar-panel">
+      <div id="avatar-preview" class="avatar-preview">
+        <span class="avatar-face" aria-hidden="true"></span>
+        <span id="avatar-preview-name" class="avatar-preview-name"></span>
+      </div>
+      <div id="avatar-options" class="avatar-options" role="group" aria-label="选择固定头像"></div>
+    </div>
+    <label class="settings-field">
+      <span>昵称（1–16 字）</span>
+      <input id="settings-nickname" type="text" autocomplete="nickname" placeholder="NSWER" aria-describedby="settings-nickname-count" aria-invalid="false" />
+    </label>
+    <p id="settings-nickname-count" class="settings-hint" aria-live="polite">0/16</p>
+    <div class="settings-prefs">
+      <button type="button" id="btn-pref-sound" class="menu-btn">♪ 声音：开</button>
+      <button type="button" id="btn-pref-touch" class="menu-btn">📱 触屏按键：自动</button>
+    </div>
+    <p id="settings-cloud-note" class="settings-hint"></p>
+    <p id="settings-msg" class="settings-msg" role="status"></p>
+    <button type="button" id="btn-settings-retry" class="menu-btn small hidden">↻ 重试读取云端资料</button>
+    <button type="button" id="btn-settings-save" class="menu-btn">💾 保存设置</button>
+    <div class="settings-danger">
+      <a id="link-delete-account" class="settings-delete" href="https://github.com/ideer0126/MIXXTOPIA/issues/new?title=%E7%94%B3%E8%AF%B7%E5%88%A0%E9%99%A4%E8%B4%A6%E6%88%B7&amp;body=smoke" target="_blank" rel="noopener">删除账户（提交申请）</a>
+      <p class="settings-delete-note">前端无法直接删除账号，提交申请后由维护者人工处理。</p>
+    </div>
+    <button type="button" id="btn-settings-back" class="menu-btn small">← 返回</button>
   </div>
 
   <div id="save-screen" class="screen hidden">
@@ -123,21 +159,59 @@
 
   <script>
     window.MIXX_NO_BOOT = true;
-    // 账户冒烟不连真实后端：fetch 只计数，任何意外请求都会令「游客态零上传」失败
+    // 账户 / 资料冒烟不连真实后端：默认 fetch 拒绝（验证游客态零上传），
+    // 需要验证登录/保存时把 __smokeOnline 切 true，桩返回固定会话与 profiles 行。
     window.MIXX_CLOUD_CONFIG = { url: 'https://smoke.supabase.co', anonKey: 'sb_publishable_smoke' };
     window.__authFetchCalls = 0;
-    window.fetch = function () {
+    window.__smokeOnline = false;
+    window.__fetchCalls = [];
+    window.__profileRow = { nickname: '小星', avatar: 'muse-3', prefs: { sound: true, touch: 'auto' } };
+    function jsonResponse(status, body) {
+      return {
+        ok: status >= 200 && status < 300,
+        status: status,
+        json: function () { return Promise.resolve(body); }
+      };
+    }
+    window.fetch = function (url, init) {
       window.__authFetchCalls++;
-      return Promise.reject(new TypeError('smoke: offline'));
+      var u = String(url);
+      var cfg = init || {};
+      var call = { url: u, method: cfg.method || 'GET', init: cfg, body: null };
+      if (typeof cfg.body === 'string') {
+        try { call.body = JSON.parse(cfg.body); } catch (e) { call.body = cfg.body; }
+      }
+      window.__fetchCalls.push(call);
+      if (!window.__smokeOnline) return Promise.reject(new TypeError('smoke: offline'));
+      if (u.indexOf('/auth/v1/token?grant_type=password') >= 0) {
+        return Promise.resolve(jsonResponse(200, {
+          access_token: 'smoke-access',
+          token_type: 'bearer',
+          expires_in: 3600,
+          refresh_token: 'smoke-refresh',
+          user: { id: 'u-smoke', email: 'smoke@example.com' }
+        }));
+      }
+      if (u.indexOf('/rest/v1/profiles') >= 0) {
+        if (call.method === 'PATCH') {
+          window.__profileRow = Object.assign({}, window.__profileRow, call.body);
+          return Promise.resolve(jsonResponse(200, [window.__profileRow]));
+        }
+        return Promise.resolve(jsonResponse(200, [window.__profileRow]));
+      }
+      if (u.indexOf('/auth/v1/logout') >= 0) return Promise.resolve(jsonResponse(204, null));
+      return Promise.reject(new Error('smoke: unexpected ' + u));
     };
   </script>
+  <script src="../js/data.js"></script>
   <script src="../js/cloud-config.js"></script>
   <script src="../js/engine.js"></script>
   <script src="../js/audio.js"></script>
   <script src="../js/auth.js"></script>
+  <script src="../js/account.js"></script>
   <script src="../js/main.js"></script>
   <script>
-    (function () {
+    (async function () {
       'use strict';
       var results = [];
       var errors = [];
@@ -145,6 +219,19 @@
       function ok(name, cond) { results.push((cond ? 'PASS' : 'FAIL') + ' ' + name); }
       function shown(id) { return !document.getElementById(id).classList.contains('hidden'); }
       function text(id) { return document.getElementById(id).textContent; }
+      function nextTick() { return new Promise(function (resolve) { setTimeout(resolve, 0); }); }
+      async function settle() {
+        await nextTick();
+        if (game && game._profileTask) {
+          try { await game._profileTask; } catch (e) { /* 用例自行断言错误提示 */ }
+        }
+        await nextTick();
+      }
+      function profilePatches() {
+        return window.__fetchCalls.filter(function (c) {
+          return c.url.indexOf('/rest/v1/profiles') >= 0 && c.method === 'PATCH';
+        });
+      }
 
       // 清掉历史存档，保证冒烟页面每次运行起点一致
       try {
@@ -154,6 +241,7 @@
       } catch (e) { /* 存储不可用时仍可验证游戏流程 */ }
 
       var main = window.MIXX.main;
+      try {
       ok('main 就绪', !!main && typeof main.Game === 'function');
       var game = main.boot();
       ok('boot 成功', !!game);
@@ -330,15 +418,105 @@
 
       // 8) 无泄漏
       ok('无残留屏幕', !shown('hud') && !shown('dialog') && !shown('pause-screen')
-        && !shown('clear-screen') && !shown('ending-screen') && !shown('save-screen'));
+        && !shown('clear-screen') && !shown('ending-screen') && !shown('save-screen')
+        && !shown('settings-screen'));
       ok('对话框清空', text('dialog-text') === '' && text('dialog-name') === '');
+
+      // 9) 账户资料 / 设置（Issue #44）：真实 DOM + fetch 桩切到「在线」
+      ok('游客态标题设置入口可见', shown('btn-title-settings'));
+      document.getElementById('btn-title-settings').click();
+      ok('游客打开设置', shown('settings-screen') && !shown('title-screen') && !shown('login-screen'));
+      ok('游客昵称与头像禁用', document.getElementById('settings-nickname').disabled
+        && Array.from(document.querySelectorAll('#avatar-options button')).every(btn => btn.disabled));
+      ok('游客触屏偏好可用', !document.getElementById('btn-pref-touch').disabled);
+      document.getElementById('btn-settings-back').click();
+      ok('游客设置返回标题', shown('title-screen') && !shown('settings-screen'));
+      window.__smokeOnline = true;
+      document.getElementById('btn-account').click();
+      document.getElementById('login-email').value = 'smoke@example.com';
+      document.getElementById('login-password').value = 'secret123';
+      document.getElementById('btn-login').click();
+      await game._authPromise;
+      await settle();
+      ok('登录成功（冒烟）', text('btn-account') === '☁ 账户 · 小星');
+      ok('设置入口显示', shown('btn-settings'));
+      ok('登录面板昵称回填', text('login-nickname-label') === '小星');
+      document.getElementById('btn-settings').click();
+      ok('设置界面打开', shown('settings-screen') && !shown('login-screen'));
+      ok('昵称输入回填', document.getElementById('settings-nickname').value === '小星');
+      ok('资料就绪后才可保存', document.getElementById('btn-settings-save').disabled === false
+        && document.getElementById('btn-settings-retry').classList.contains('hidden'));
+      ok('字数提示 2/16', text('settings-nickname-count') === '2/16');
+      var avatarBox = document.getElementById('avatar-options');
+      ok('六个固定头像', avatarBox.children.length === 6);
+      var muse3 = avatarBox.querySelector('[data-avatar="muse-3"]');
+      ok('默认选中云端头像', !!muse3 && muse3.classList.contains('is-selected'));
+      ok('头像预览名', text('avatar-preview-name') === 'Sullyoon');
+
+      // 选头像 + 改昵称 + 切偏好 → 保存（PATCH profiles）
+      avatarBox.querySelector('[data-avatar="muse-5"]').click();
+      document.getElementById('settings-nickname').value = '冒烟小星';
+      game._onNicknameInput();
+      ok('字数提示 4/16', text('settings-nickname-count') === '4/16');
+      document.getElementById('btn-pref-touch').click(); // auto → on
+      ok('触屏偏好立即生效', document.getElementById('touch-controls').classList.contains('touch-pref-on'));
+      document.getElementById('btn-pref-sound').click(); // 开 → 关
+      ok('声音偏好立即生效', text('btn-pref-sound') === '♪ 声音：关' && text('btn-sound') === '♪ 声音：关');
+      var patchesBefore = profilePatches().length;
+      document.getElementById('btn-settings-save').click();
+      await game._accountPromise;
+      await settle();
+      var patches = profilePatches();
+      ok('保存发一次 PATCH', patches.length === patchesBefore + 1);
+      var patch = patches[patches.length - 1];
+      ok('PATCH 内容正确', !!patch && patch.body.nickname === '冒烟小星'
+        && patch.body.avatar === 'muse-5'
+        && patch.body.prefs.sound === false && patch.body.prefs.touch === 'on');
+      ok('保存成功提示', text('settings-msg') === '设置已保存。');
+      ok('标题显示新昵称', text('btn-account') === '☁ 账户 · 冒烟小星');
+      var localSettings = JSON.parse(localStorage.getItem('mixxtopia.settings.v1'));
+      ok('偏好写入本地 settings', !!localSettings
+        && localSettings.sound === false && localSettings.touch === 'on');
+
+      // 超长昵称：客户端拒绝且不发请求
+      document.getElementById('settings-nickname').value = '一二三四五六七八九十一二三四五六七';
+      var patchesBeforeBad = profilePatches().length;
+      document.getElementById('btn-settings-save').click();
+      await nextTick();
+      ok('超长昵称被拒', /昵称最多 16 字/.test(text('settings-msg'))
+        && profilePatches().length === patchesBeforeBad);
+
+      // 删除账户只走 GitHub issue 申请链接（前端不删 auth.users）
+      var del = document.getElementById('link-delete-account');
+      ok('删除账户走 GitHub 申请',
+        /github\.com\/ideer0126\/MIXXTOPIA\/issues\/new/.test(del.getAttribute('href'))
+        && del.getAttribute('target') === '_blank');
+
+      // 返回登录面板 → 登出回游客
+      document.getElementById('btn-settings-back').click();
+      ok('设置返回登录面板', shown('login-screen') && !shown('settings-screen') && shown('login-account'));
+      document.getElementById('btn-logout').click();
+      await game._authPromise;
+      await settle();
+      ok('登出回游客（冒烟）', text('btn-account') === '☁ 登录 / 注册' && game.profile === null);
+      ok('登出后设置入口隐藏', !shown('btn-settings'));
+      document.getElementById('btn-login-back').click();
+      ok('返回标题（冒烟）', shown('title-screen'));
+
       ok('无运行时错误', errors.length === 0);
+      } catch (e) {
+        errors.push('FATAL: ' + (e && (e.stack || e.message) || e));
+      }
 
       var pre = document.getElementById('results');
       pre.textContent = results.join('\n') + (errors.length ? '\nERRORS: ' + errors.join(' | ') : '');
       document.body.setAttribute('data-smoke',
         results.every(function (l) { return l.indexOf('PASS') === 0; }) && errors.length === 0 ? 'ok' : 'fail');
-    })();
+    })().catch(function (e) {
+      var pre = document.getElementById('results');
+      if (pre) pre.textContent = 'FATAL: ' + (e && (e.stack || e.message) || e);
+      document.body.setAttribute('data-smoke', 'fail');
+    });
   </script>
 </body>
 </html>

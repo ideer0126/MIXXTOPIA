@@ -3,7 +3,8 @@
  * 所属任务：Issue #11 地图数据（未开始，levels 暂空） / Issue #12 对话文案（已接入）。
  *
  * 数据格式规格见 docs/GAME_DESIGN.md §11（GAME 全局对象：
- * meta / scenes / characters / levels / dialogue / saveKey）。
+ * meta / scenes / avatarPresets / characters / levels / dialogue / saveKey）。
+ * 头像固定选项集（avatarPresets）供账户设置（#44）使用，白名单在前端维护。
  * 对话节点规格见 GAME_DESIGN.md §7：type / trigger / once / entry / scopeId /
  * lines（{s 说话人, t 台词}）/ options（{label, goto}）/ next。
  *
@@ -33,6 +34,20 @@
     scenes: {
       p0: { title: '生日夜的房间' },
     },
+
+    /* 账户头像固定选项集（Issue #44）：昵称/头像读写 profiles 表，白名单放在前端。
+       数据库只校验 id 格式（^[a-z0-9][a-z0-9-]{0,31}$，见 supabase/migrations/0001_init.sql），
+       所以后续新增头像只需在这里追加一条（id + 显示名 + 占位色），无需数据库迁移；
+       账户设置界面按本数组动态渲染选项，未知 id 在渲染时回退默认头像 muse-1。
+       美术素材（#13）就位后，可给每条追加 art 字段并在渲染时换用图片。 */
+    avatarPresets: [
+      { id: 'muse-1', name: 'Lily', color: '#7FB8E6' },
+      { id: 'muse-2', name: 'Haewon', color: '#FFB14E' },
+      { id: 'muse-3', name: 'Sullyoon', color: '#B49BFF' },
+      { id: 'muse-4', name: 'Bae', color: '#FF7BA9' },
+      { id: 'muse-5', name: 'Jiwoo', color: '#FFE066' },
+      { id: 'muse-6', name: 'Kyujin', color: '#5EE6B8' },
+    ],
 
     /* 说话人字典（GAME_DESIGN.md §3：姓名框色与显示名） */
     characters: {
