@@ -81,6 +81,21 @@ function assertMeta(html, channel) {
   );
 }
 
+// 与 build-channels.js 的 verifySite 对齐：noindex 必须校验 content，
+// 只看到 name="robots" 就放行的话，`content="index, follow"` 也能混过去。
+function robotsContents(html) {
+  return (html.match(/<meta\b[^>]*>/gi) || [])
+    .filter((tag) => /name\s*=\s*["']robots["']/i.test(tag))
+    .map((tag) => {
+      const content = /content\s*=\s*["']([^"']*)["']/i.exec(tag);
+      return content ? content[1] : '';
+    });
+}
+
+function hasNoindex(html) {
+  return robotsContents(html).some((content) => /\bnoindex\b/i.test(content));
+}
+
 function assertNoJunk(site) {
   for (const name of ['docs', 'tools', 'supabase', '.github', '.coderabbit.yaml']) {
     assert.ok(!fs.existsSync(path.join(site, name)), site + ' 混入 ' + name);
@@ -104,14 +119,14 @@ try {
 
     assert.ok(/稳定版尚未发布/.test(stable));
     assert.ok(stable.indexOf('js/main.js') < 0, '测试期 stable 不应加载游戏');
-    assert.ok(/name="robots"/.test(stable));
+    assert.ok(hasNoindex(stable), '测试期 stable 占位页应带 noindex');
 
     assert.ok(/预览版尚未开放/.test(preview));
     assert.ok(preview.indexOf('js/main.js') < 0, '首个稳定版前 preview 不应加载游戏');
-    assert.ok(/name="robots"/.test(preview));
+    assert.ok(hasNoindex(preview), '测试期 preview 占位页应带 noindex');
 
     assertGameIndex(beta, 'beta');
-    assert.ok(/name="robots"/.test(beta));
+    assert.ok(hasNoindex(beta), 'beta 游戏应带 noindex');
     assertMeta(stable, 'stable');
     assertMeta(beta, 'beta');
     assertMeta(preview, 'preview');
@@ -140,13 +155,13 @@ try {
     const betaHtml = read(path.join(stable, 'beta/index.html'));
 
     assertGameIndex(stableHtml, 'stable');
-    assert.ok(!/name="robots"/.test(stableHtml), 'stable 游戏应可索引');
+    assert.strictEqual(robotsContents(stableHtml).length, 0, 'stable 游戏应可索引');
     assertGameIndex(previewHtml, 'preview');
-    assert.ok(/name="robots"/.test(previewHtml), 'preview 应带 noindex');
+    assert.ok(hasNoindex(previewHtml), 'preview 应带 noindex');
 
     assert.ok(/测试版已停用/.test(betaHtml));
     assert.ok(betaHtml.indexOf('js/main.js') < 0, 'beta 停用后不应加载游戏');
-    assert.ok(/name="robots"/.test(betaHtml));
+    assert.ok(hasNoindex(betaHtml), 'beta 停用页应带 noindex');
     assert.ok(betaHtml.indexOf('../preview/') >= 0, 'beta 停用页应指向 preview');
 
     assertMeta(stableHtml, 'stable');

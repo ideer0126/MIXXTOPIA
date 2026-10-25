@@ -364,6 +364,22 @@ function readChannelInfo(file) {
   }
 }
 
+// 取页面里所有 robots meta 的 content 值。
+// 只认标签名不够：`content="index, follow"` 也是 name="robots"，
+// 所以 noindex 必须校验 content；属性顺序、单双引号、大小写都不敏感。
+function robotsContents(html) {
+  return (html.match(/<meta\b[^>]*>/gi) || [])
+    .filter((tag) => /name\s*=\s*["']robots["']/i.test(tag))
+    .map((tag) => {
+      const content = /content\s*=\s*["']([^"']*)["']/i.exec(tag);
+      return content ? content[1] : '';
+    });
+}
+
+function hasNoindex(html) {
+  return robotsContents(html).some((content) => /\bnoindex\b/i.test(content));
+}
+
 function verifySite(outDir, expected) {
   const infos = {
     stable: readChannelInfo(path.join(outDir, 'channel.json')),
@@ -402,7 +418,7 @@ function verifySite(outDir, expected) {
 
     if (!isGame) {
       if (info.label !== null || info.ref !== null) fail(channel + ' 占位页不应带 label/ref');
-      if (!/name="robots"/.test(page.html)) fail(channel + ' 占位页缺少 noindex');
+      if (!hasNoindex(page.html)) fail(channel + ' 占位页缺少 noindex');
       if (page.html.indexOf(page.placeholder) < 0) {
         fail(channel + ' 占位页缺少文案：' + page.placeholder);
       }
@@ -416,8 +432,8 @@ function verifySite(outDir, expected) {
       fail(channel + ' 的 channel.js/main.js 注入顺序错误');
     }
     if (channel === 'stable') {
-      if (/name="robots"/.test(page.html)) fail('stable 游戏不应带 noindex');
-    } else if (!/name="robots"/.test(page.html)) {
+      if (robotsContents(page.html).length) fail('stable 游戏不应带 robots meta');
+    } else if (!hasNoindex(page.html)) {
       fail(channel + ' 游戏缺少 noindex');
     }
   }
