@@ -392,6 +392,70 @@ testAsync('save：401 后无法续期 → unauthorized（登录已过期）', as
   assert.match(err.message, /登录已过期/);
 });
 
+testAsync('save：等待 ensureFresh 时切号/登出，不发出旧表单 PATCH', async () => {
+  for (const nextSession of [null, { user: { id: 'u-2' }, accessToken: 'access-B' }]) {
+    const { client, auth, fetchStub } = makeClient(() => response(200, [row()]));
+    let finish;
+    auth.ensureFresh = () => new Promise((resolve) => { finish = resolve; });
+    const saving = rejectsCode(client.save({ nickname: '账号A', avatar: 'muse-2' }),
+      nextSession ? 'unauthorized' : 'not_signed_in');
+    auth.session = nextSession;
+    finish(nextSession);
+    await saving;
+    assert.strictEqual(fetchStub.calls.length, 0);
+  }
+});
+
+testAsync('save：401 回包前切号，不刷新或重试新账号', async () => {
+  let finish;
+  let started;
+  const requestStarted = new Promise((resolve) => { started = resolve; });
+  const { client, auth, fetchStub } = makeClient(() => {
+    started();
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  const saving = rejectsCode(client.save({ nickname: '账号A', avatar: 'muse-2' }), 'unauthorized');
+  await requestStarted;
+  auth.session = { user: { id: 'u-2' }, accessToken: 'access-B' };
+  finish(response(401, {}));
+  await saving;
+  assert.strictEqual(auth.refreshCalls, 0);
+  assert.strictEqual(fetchStub.calls.length, 1);
+  assert.match(fetchStub.calls[0].url, /id=eq\.u-1&/);
+  assert.strictEqual(fetchStub.calls[0].init.headers.Authorization, 'Bearer access-1');
+  assert.strictEqual(fetchStub.calls[0].body.nickname, '账号A');
+});
+
+testAsync('save：401 续期等待时切号，不用新账号令牌重试旧表单', async () => {
+  const { client, auth, fetchStub } = makeClient(() => response(401, {}));
+  let finish;
+  let started;
+  const refreshStarted = new Promise((resolve) => { started = resolve; });
+  auth.refresh = () => {
+    started();
+    return new Promise((resolve) => { finish = resolve; });
+  };
+  const saving = rejectsCode(client.save({ nickname: '账号A', avatar: 'muse-2' }), 'unauthorized');
+  await refreshStarted;
+  auth.session = { user: { id: 'u-2' }, accessToken: 'access-B' };
+  finish(auth.session);
+  await saving;
+  assert.strictEqual(fetchStub.calls.length, 1, '只有发给 A 的首次 PATCH，无发给 B 的重试');
+  assert.strictEqual(fetchStub.calls[0].init.headers.Authorization, 'Bearer access-1');
+  assert.match(fetchStub.calls[0].url, /id=eq\.u-1&/);
+});
+
+testAsync('save：同账号 401 续期可重试，URL 与 payload 不变，仅令牌更新', async () => {
+  const { client, auth, fetchStub } = makeClient((call) =>
+    response(call.init.headers.Authorization === 'Bearer access-1' ? 401 : 200, [row()]));
+  await client.save({ nickname: '小星', avatar: 'muse-2', prefs: { sound: false, touch: 'on' } });
+  assert.strictEqual(auth.refreshCalls, 1);
+  assert.strictEqual(fetchStub.calls.length, 2);
+  assert.strictEqual(fetchStub.calls[0].url, fetchStub.calls[1].url);
+  assert.deepStrictEqual(fetchStub.calls[0].body, fetchStub.calls[1].body);
+  assert.strictEqual(fetchStub.calls[1].init.headers.Authorization, 'Bearer access-2');
+});
+
 testAsync('超时：请求超过 cloudConfig.timeoutMs 后 abort → timeout 中文提示', async () => {
   const { client } = makeClient((call) => new Promise((resolve, reject) => {
     const signal = call.init.signal;

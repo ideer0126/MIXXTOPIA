@@ -2197,6 +2197,31 @@ test('#44 本地设置向后兼容：旧 {v,sound} 记录读取后 touch 默认 
   game.destroy();
 });
 
+test('#44 设置版本：拒绝显式不兼容版本，保留无版本旧记录兼容', () => {
+  for (const v of [2, 0, null, '1']) {
+    localStorageStub.clear();
+    localStorageStub.setItem(main.SETTINGS_KEY, JSON.stringify({ v, sound: false, touch: 'off' }));
+    const game = makeGame({ keepStorage: true });
+    assert.strictEqual(game.soundOn, true);
+    assert.strictEqual(game._settings.touch, 'auto');
+    assert.strictEqual(game._settingsStored, false, '不兼容记录不能阻止采用云端偏好');
+    game._applyCloudPrefs({ sound: false, touch: 'on' });
+    assert.strictEqual(game.soundOn, false);
+    assert.strictEqual(game.input.getTouchMode(), 'on');
+    game.destroy();
+  }
+  localStorageStub.clear();
+  localStorageStub.setItem(main.SETTINGS_KEY, JSON.stringify({ sound: false, touch: 'off' }));
+  const legacy = makeGame({ keepStorage: true });
+  assert.strictEqual(legacy.soundOn, false);
+  assert.strictEqual(legacy._settings.touch, 'off');
+  assert.strictEqual(legacy._settingsStored, true, '缺少版本的旧记录仍有效');
+  legacy._applyCloudPrefs({ sound: true, touch: 'on' });
+  assert.strictEqual(legacy.soundOn, false, '旧记录依旧遵循本机优先');
+  assert.strictEqual(legacy._settings.touch, 'off');
+  legacy.destroy();
+});
+
 test('#44 损坏设置容错：JSON 非法按默认值，且不阻塞游戏', () => {
   localStorageStub.clear();
   localStorageStub.setItem(main.SETTINGS_KEY, '{oops');

@@ -86,6 +86,7 @@
     }
   }
 
+  /** 检查自有属性，避免把原型字段当作显式配置。 */
   function hasOwn(obj, key) {
     return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
   }
@@ -294,6 +295,7 @@
    *   root    默认全局对象
    */
   class ProfileClient {
+    /** 注入配置和认证客户端；未提供 fetch 时在请求时从 root 读取。 */
     constructor(opts) {
       opts = opts || {};
       this.root = opts.root || root;
@@ -309,12 +311,14 @@
       return !!(this.config && this.config.enabled) && !!this.auth;
     }
 
+    /** 取得注入的 fetch 或当前运行环境的 fetch。 */
     _fetchImpl() {
       if (this._fetch) return this._fetch;
       const f = this.root && this.root.fetch;
       return typeof f === 'function' ? f.bind(this.root) : null;
     }
 
+    /** 合并公开配置请求头与当前会话的访问令牌。 */
     _headers(token) {
       const base = this.config && typeof this.config.headers === 'function'
         ? this.config.headers(token)
@@ -409,22 +413,36 @@
     /**
      * 带会话执行请求；401 时用 refresh_token 续期后重试一次
      * （ensureFresh 已提前续期，这里只是兜底时钟偏差）。
+     * 保存时绑定发起账号，在初次请求和重试前检查，防止旧表单写入新账号。
      */
-    async _withSession(build) {
+    async _withSession(build, userId) {
       const session = await this._session();
+      this._assertUser(session, userId);
       try {
         return await build(session);
       } catch (err) {
         if (err && err.code === 'unauthorized' && this.auth && typeof this.auth.refresh === 'function') {
+          this._assertUser(this.auth.session, userId);
           let fresh = null;
           try {
             fresh = await this.auth.refresh();
           } catch (refreshErr) {
             throw mapAuthError(refreshErr);
           }
+          this._assertUser(fresh, userId);
           if (fresh && fresh.user && fresh.user.id) return build(fresh);
         }
         throw err;
+      }
+    }
+
+    /** 绑定账号的写请求仅接受同一账号的有效会话；读取请求不传 userId。 */
+    _assertUser(session, userId) {
+      if (userId === undefined) return;
+      const current = this.auth.session;
+      if (!session || !session.user || session.user.id !== userId
+        || !current || !current.user || current.user.id !== userId) {
+        throw new AccountError('unauthorized');
       }
     }
 
@@ -457,6 +475,9 @@
       if (!this.available) {
         throw new AccountError(this.config && this.config.enabled ? 'not_signed_in' : 'unavailable');
       }
+      const initiatingSession = this.auth.session;
+      const userId = initiatingSession && initiatingSession.user && initiatingSession.user.id;
+      if (!userId) throw new AccountError('not_signed_in');
       return this._withSession(async (session) => {
         const headers = this._headers(session.accessToken);
         headers['Content-Type'] = 'application/json';
@@ -469,10 +490,11 @@
           body: body,
         });
         return this._rowsToProfile(res.data);
-      });
+      }, userId);
     }
   }
 
+  /** 创建资料客户端；配置、认证客户端和 fetch 均可注入。 */
   function createClient(opts) {
     return new ProfileClient(opts);
   }

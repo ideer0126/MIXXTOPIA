@@ -2094,7 +2094,8 @@
 
     /**
      * 读独立设置（与存档位无关）：{ v, sound, touch }。
-     * 缺失/损坏时按默认值；`_settingsStored` 记录「本机是否已有设置记录」，
+     * 缺失/损坏/显式版本不兼容时按默认值，兼容缺少 v 的旧记录；
+     * `_settingsStored` 记录「本机是否已有有效设置记录」，
      * 供 #44 判断能否采用云端偏好（新设备才采用，老玩家本地优先）。
      */
     _readSettings() {
@@ -2105,7 +2106,8 @@
         const raw = this.storage.getItem(SETTINGS_KEY);
         if (!raw) return fallback;
         const data = JSON.parse(raw);
-        if (!data || typeof data !== 'object' || Array.isArray(data)) return fallback;
+        if (!data || typeof data !== 'object' || Array.isArray(data)
+          || (Object.prototype.hasOwnProperty.call(data, 'v') && data.v !== SAVE_VERSION)) return fallback;
         this._settingsStored = true;
         return {
           v: SAVE_VERSION,
