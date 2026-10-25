@@ -30,12 +30,20 @@ jobs:
           rsync -a \
             --exclude='.git' \
             --exclude='.github' \
+            --exclude='.ds' \
+            --exclude='.vscode' \
+            --exclude='.idea' \
+            --exclude='.coderabbit.yaml' \
+            --exclude='.gitkeep' \
+            --exclude='dist' \
             --exclude='_site' \
             --exclude='docs' \
             --exclude='tools' \
+            --exclude='supabase' \
             --exclude='*.md' \
             --exclude='LICENSE' \
             --exclude='.gitignore' \
+            --exclude='.DS_Store' \
             ./ _site/
 
       - name: Setup Pages

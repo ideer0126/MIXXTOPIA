@@ -1,0 +1,226 @@
+name: Release
+
+# 发布流程（PLAN.md §10.6）：push v* tag（或手动指定已有 tag）→ 质量门禁 →
+# 打包静态站 → GitHub Release。重复运行会更新同一 Release（幂等）。
+# - 质量门禁：node --check + test-engine + test-main。
+#   validate.js 因 #11 空关卡是已知红门禁（PLAN.md §4），待 #11 落地后再加回
+#   `node tools/validate.js --require-data`。
+# - 产物：mixxtopia-<version>.zip（解压即玩）+ SHA-256。
+# - Pages 部署仍由 pages.yml 负责（push main 触发），本流程只产出可下载快照。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '已存在的 tag（如 v0.1.0）'
+        required: true
+        type: string
+      draft:
+        description: '创建为草稿 Release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  PAGES_URL: https://ideer0126.github.io/MIXXTOPIA/
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Resolve tag
+        id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-$REF_NAME}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag '$TAG' 不符合 v<major>.<minor>.<patch>[-pre] 约定"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "发布版本：$TAG"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Ensure tag is on main
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$(git rev-parse "${TAG}^{commit}")" origin/main; then
+            echo "::error::tag $TAG 不在 main 历史上；main 是唯一长期分支，请先合并再发布"
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Syntax check
+        run: |
+          set -euo pipefail
+          for file in js/*.js tools/*.js; do
+            node --check "$file"
+          done
+
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          node tools/test-engine.js
+          node tools/test-main.js
+
+      - name: Build release package
+        id: package
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          NAME="mixxtopia-${VERSION}"
+          STAGE="dist/${NAME}"
+          mkdir -p "$STAGE"
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.ds' \
+            --exclude='.vscode' \
+            --exclude='.idea' \
+            --exclude='.coderabbit.yaml' \
+            --exclude='.gitkeep' \
+            --exclude='dist' \
+            --exclude='_site' \
+            --exclude='docs' \
+            --exclude='tools' \
+            --exclude='supabase' \
+            --exclude='*.md' \
+            --exclude='LICENSE' \
+            --exclude='.gitignore' \
+            --exclude='.DS_Store' \
+            ./ "$STAGE/"
+          cp README.md LICENSE "$STAGE/"
+          ( cd dist && zip -qr "${NAME}.zip" "$NAME" )
+          ( cd dist && sha256sum "${NAME}.zip" > "${NAME}.zip.sha256" )
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Verify package
+        env:
+          NAME: ${{ steps.package.outputs.name }}
+        run: |
+          set -euo pipefail
+          STAGE="dist/${NAME}"
+          for file in index.html styles.css README.md LICENSE js/*.js; do
+            if [[ ! -f "${STAGE}/${file}" ]]; then
+              echo "::error::发布包缺少 ${file}"
+              exit 1
+            fi
+          done
+          unzip -Z1 "dist/${NAME}.zip" > dist/zip-list.txt
+          if ! grep -Fqx "${NAME}/index.html" dist/zip-list.txt; then
+            echo "::error::zip 根目录应为 ${NAME}/"
+            exit 1
+          fi
+          while IFS= read -r entry; do
+            case "$entry" in
+              "${NAME}/docs/"*|"${NAME}/tools/"*|"${NAME}/supabase/"*|"${NAME}/.github/"*|"${NAME}/.ds/"*|"${NAME}/.git/"*|"${NAME}/.coderabbit.yaml"|*"/.gitkeep")
+                echo "::error::发布包混入开发文件：$entry"
+                exit 1
+                ;;
+            esac
+          done < dist/zip-list.txt
+          ( cd dist && sha256sum -c "${NAME}.zip.sha256" )
+          du -h "dist/${NAME}.zip"
+
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          NAME: ${{ steps.package.outputs.name }}
+        run: |
+          set -euo pipefail
+          CHECKSUM="$(cut -d' ' -f1 "dist/${NAME}.zip.sha256")"
+          TAG_SHA="$(git rev-parse "${TAG}^{commit}")"
+          {
+            echo "# MIXXTOPIA ${TAG}"
+            echo
+            echo "像素剧情冒险网页游戏 · 灵感来自 NMIXX《Strange Muse》。"
+            echo
+            echo "- 🌐 在线试玩：${PAGES_URL}"
+            echo "- 📦 离线包：\`${NAME}.zip\`（解压后执行 \`python3 -m http.server 8000\`）"
+            echo "- 🔐 SHA-256：\`${CHECKSUM}\`"
+            echo
+            echo "> 粉丝自制同人作品，非官方、非商用；不使用原曲音频与官方素材。"
+            echo
+          } > release-notes.md
+          if ! gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$TAG" -f target_commitish="$TAG_SHA" --jq .body >> release-notes.md; then
+            printf '\n## 变更\n\n（自动生成失败，请查看提交历史。）\n' >> release-notes.md
+          fi
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          NAME: ${{ steps.package.outputs.name }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+          DRAFT: ${{ inputs.draft || 'false' }}
+        run: |
+          set -euo pipefail
+          ARGS=(
+            --repo "$GITHUB_REPOSITORY"
+            --title "MIXXTOPIA ${TAG}"
+            --notes-file release-notes.md
+            --prerelease="$PRERELEASE"
+            --draft="$DRAFT"
+          )
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，更新说明与产物"
+            gh release edit "$TAG" "${ARGS[@]}"
+            gh release upload "$TAG" \
+              "dist/${NAME}.zip" "dist/${NAME}.zip.sha256" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" \
+              "dist/${NAME}.zip" "dist/${NAME}.zip.sha256" \
+              "${ARGS[@]}"
+          fi
+
+      - name: Summary
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          NAME: ${{ steps.package.outputs.name }}
+        run: |
+          CHECKSUM="$(cut -d' ' -f1 "dist/${NAME}.zip.sha256")"
+          {
+            echo "## Release ${TAG}"
+            echo
+            echo "| 项目 | 内容 |"
+            echo "|---|---|"
+            echo "| 在线试玩 | ${PAGES_URL} |"
+            echo "| 离线包 | \`${NAME}.zip\` |"
+            echo "| SHA-256 | \`${CHECKSUM}\` |"
+            echo "| Release | https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG} |"
+          } >> "$GITHUB_STEP_SUMMARY"
