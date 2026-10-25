@@ -12,7 +12,7 @@
 
 - **账户**：注册 / 登录（邮箱 + 密码，后续可扩展 OAuth）；未登录可继续以游客身份游玩，登录后提示合并本地与云端存档
 - **账户设置**：昵称、头像（**固定选项集**，不支持上传自定义图片；集合由前端白名单维护，可随美术扩展）、音效 / 操作等偏好设置
-- **云存档 / 跨设备同步**：进度（当前关、已收集、已解锁关卡）上传与下载；冲突处理（版本号 / 更新时间，以新覆盖或手动选择）
+- **云存档 / 跨设备同步**：进度（当前关、已收集、已解锁关卡）上传与下载；冲突处理（版本号 / 更新时间，逐档手动选择，默认不自动覆盖）
 - **用户资料 / 统计**：游戏时长、成就、收集率
 - **隐私与合规**：最小化收集，仅存游戏所需数据；隐私说明文案随登录流程提供
 
@@ -97,7 +97,7 @@
 - `profiles` 由 `handle_new_user()` 触发器在注册时自动建档，客户端**没有 insert 权限**——否则会出现「注册成功但资料写不进去」的隐性失败（0 行受影响，不报错）；
 - 三表全开 RLS，策略只授 `authenticated` 且限定 `auth.uid()` 本人；`anon` 的表权限已 `revoke`，等于 RLS 之外再加一道锁；
 - `updated_at` 由 `touch_updated_at()` 触发器维护，客户端不用传；
-- `saves.version` 乐观锁：`PATCH ...?version=eq.<旧值>` 且 body 带 `version: 旧值 + 1`，影响 0 行即冲突；
+- `saves.version` 乐观锁：`PATCH ...?version=eq.<旧值>` 且 body 带 `version: 旧值 + 1`，请求带 `Prefer: return=representation`；返回数组长度 1 = 成功、0 = 冲突（HTTP 仍可能是 200），不能只看状态码；
 - **头像不锁集合**：`profiles.avatar` 只校验格式 `^[a-z0-9][a-z0-9-]{0,31}$`，白名单放前端（`js/data.js` 的 `AVATAR_PRESETS`，见 #44）。否则以后每加一个头像（六位缪斯 × 各关妆造、玩家形象、黑羊彩蛋…）都得写迁移；未知 id 在渲染时回退默认头像。
 
 ### A / A2：Postgres
@@ -150,7 +150,7 @@ revoke all on public.saves    from anon, public;
 revoke all on public.stats    from anon, public;
 ```
 
-存档行 `data` 与本地档同构（去掉 `slot`，把 `updatedAt` 交给服务端列），便于双向直传、不做字段映射。
+存档行 `data` 与本地档同构（去掉 `slot` 与 `updatedAt`）：`updatedAt` 由 `saves.updated_at` 列承担。上传时不要把 `updatedAt` 写进 `data`；下载时必须在调用 `SaveStore.writeSlot()` 前把 `saves.updated_at`（ISO 字符串）转成本地毫秒时间戳写入 `updatedAt`——`normalizeSlot()` 不会从 `updated_at` 补齐该字段，缺失会按 `0` 处理。除时间字段外，双向直传、不做字段映射。
 
 ### B：Firestore
 
@@ -173,12 +173,12 @@ match /users/{uid} {
 ## 9. 云同步与冲突策略
 
 - **写时机**：沿用 #8 手动存档制——仅「保存并退出」与通关自动存档触发；本地先写，再标 `dirty`，随后尝试云端 upsert。云端失败不阻塞回标题。
-- **版本号**：`version` 单调递增，上传时带 `expectedVersion`；服务端不匹配则返回冲突（Postgres 可用 `update ... where version = $expected` 判断 0 行）。
-- **登录时**：拉云端 3 档的 `{ version, updatedAt }` 元数据，与本地逐档比较 →
+- **版本号**：`version` 单调递增，上传时带 `expectedVersion`；服务端不匹配则返回冲突（Postgres 可用 `update ... where version = $expected` 判断 0 行；调用方 PATCH 时带 `Prefer: return=representation`，返回数组长度 1 = 成功、0 = 冲突，不能只看 HTTP 状态码）。
+- **登录时**：拉云端 3 档的 `{ version, updated_at }` 元数据（把 `updated_at` 转成本地 `updatedAt` 后比较），与本地逐档比较 →
   - 仅云端有：提示「载入云端存档」
   - 仅本地有：提示「上传本机进度」
-  - 两边都有且 `version`/`updatedAt` 不同：在 #8 的选择存档界面加「☁ 云端较新」标记，做**逐档手动选择**（默认不自动覆盖）
-- **游客 → 账户**：登录成功后弹一次「把本机进度并入账户？」，默认「并入」（同档位取较新），也可「仅保留云端」。
+  - 两边都有且 `version` / `updated_at` 不同：在 #8 的选择存档界面加「☁ 云端较新」标记，做**逐档手动选择**（默认不自动覆盖）
+- **游客 → 账户**：登录成功后弹一次「把本机进度并入账户？」，可选「并入」或「仅保留云端」；选「并入」后，**同档位双方都有进度时不自动取较新**，而是进入 #8 选择存档界面的逐档选择（标注「本机」/「云端」及各自时间），玩家确认后才写入；仅一边有进度的档位可直接并入。
 - **降级**：离线 / 未登录 / 请求失败 → 一切照本地跑，`dirty` 标记留待下次登录或下次保存重试；界面只在账户区显示「未同步」小字。
 - **不做的**：不做实时多端推送、不做后台轮询、不做自动覆盖式合并（避免吞档）。
 
@@ -186,7 +186,7 @@ match /users/{uid} {
 
 - **anon key 是公开的**（新控制台叫 **publishable key**，`sb_publishable_...`；旧的 JWT 版 anon key 在 Legacy 页签，两者等价），安全边界只在 RLS；测试必须包含「A 用户 token 读 B 用户存档 → 失败」用例
 - 只存游戏所需：昵称、固定头像 id、偏好、存档、统计；邮箱由 Auth 托管，不复制进业务表
-- **删除账户**：提供入口，`auth.users` 级联删除 `profiles/saves/stats`；文案明示不可恢复
+- **删除账户**：前端只有 publishable key，**不能**直接删除 `auth.users`（需仅在服务端使用的特权密钥；删 `profiles` 等业务行也不等于删账号）。当前定为**人工处理流程**：账户设置页只提交「删除账户」申请，维护者核实后通过 Supabase 后台删除 `auth.users`，`profiles/saves/stats` 由外键级联删除，不可恢复。若后续要提供自助删除，须先增加受信任的服务端端点（持 `service_role` 的 Edge Function，或仅授 `authenticated` 的 `security definer` RPC），单独评审并补测试；在该端点落地前，文案不承诺即时自助删除
 - **隐私说明**：已建 `docs/PRIVACY.md`，登录界面一屏摘要 + 链接；不接入任何第三方分析
 - 玩家未登录时**零数据上传**，保持现状
 
@@ -196,7 +196,7 @@ match /users/{uid} {
 |---|---|---|---|---|
 | #42 | 选型落地与后端初始化 | 建项目、跑迁移、RLS、公开配置注入 | 已建 `js/cloud-config.js`、`supabase/migrations/0001_init.sql`、`docs/PRIVACY.md`；迁移已在项目 `hlnubesywvcxdghfyoux` 执行成功（2026-10-24）；文档已并入 §8/§10 | ✅ 真实项目端到端验证通过：匿名访问 42501、跨用户读写隔离、注册自动建档、非法头像被 CHECK 拒绝、`version` 乐观锁、`updated_at` 触发器、迁移幂等 |
 | #43 | Auth | 注册/登录/登出/会话恢复/游客态、标题入口 | 新增 `js/auth.js`；改 `js/main.js`、`index.html`、`styles.css` | `fetch` 桩单测 + 冒烟：注册→登录→刷新仍登录 |
-| #44 | 账户设置 UI | 昵称、固定头像集（前端白名单）、音效/操作偏好 | 同上 + `js/settings.js` | 保存后重登一致；非法格式被拒；未知 id 回退默认头像 |
+| #44 | 账户设置 UI | 昵称、固定头像集（前端白名单）、音效/操作偏好、删除账户申请（提交后人工处理） | 同上 + `js/settings.js` | 保存后重登一致；非法格式被拒；未知 id 回退默认头像；删除申请不直接调 `auth.users` |
 | #45 | 云存档同步 | 上传/下载/冲突三选一/离线降级 | 新增 `js/cloud.js`；改 `js/main.js` 存档段 | 三档同步、冲突不自动覆盖、离线可玩 |
 | #46 | 统计 | 时长、成就、收集率 | 新增 `js/stats.js` | 云端累计与本地一致 |
 | #47 | 上线验证 | #17 扩展：线上注册/登录/同步冒烟 | `tools/smoke-main.html`（人工跑，不改 CI 配置） | 正式域名走通一遍 |
@@ -208,7 +208,9 @@ match /users/{uid} {
 单测/冒烟都走仓库既有方式，不新增 npm 依赖：
 
 ```
-node --check js/*.js
+for file in js/*.js; do
+  node --check "$file" || exit 1
+done
 node tools/test-engine.js
 node tools/test-main.js
 # 无头浏览器跑 tools/smoke-main.html，断言 data-smoke="ok"

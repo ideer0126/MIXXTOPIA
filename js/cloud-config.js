@@ -16,8 +16,8 @@
  * 未配置 `url` / `anonKey` 时 `enabled === false`，调用方应静默跳过云功能，
  * 保持「未登录 / 离线也能正常玩」的既有行为。
  *
- * 测试覆盖：沙箱里设 `globalThis.MIXX_CLOUD_CONFIG = { url, anonKey }` 可覆盖默认值，
- * 便于 tools/test-*.js 用假地址跑（不需要真实后端）。
+ * 测试 / 部署覆盖：沙箱里设 `globalThis.MIXX_CLOUD_CONFIG = { url, anonKey }` 可覆盖默认值；
+ * 显式空串（`{ url: '', anonKey: '' }`）会关闭云功能，便于离线测试。不需要真实后端。
  */
 'use strict';
 
@@ -39,7 +39,7 @@
   });
 
   /**
-   * 归一化项目地址：去空格、去尾部斜杠，并容忍误粘贴的 `/rest/v1`。
+   * 归一化项目地址：只接受 HTTPS；去空格、去尾部斜杠，并容忍误粘贴的 `/rest/v1`。
    * @param {string} raw
    * @returns {string} 形如 `https://xxx.supabase.co`；非法则返回空串
    */
@@ -47,7 +47,7 @@
     if (typeof raw !== 'string') return '';
     let url = raw.trim().replace(/\/+$/, '');
     url = url.replace(/\/rest\/v1$/i, '');
-    if (!/^https?:\/\/[^/\s]+$/i.test(url)) return '';
+    if (!/^https:\/\/[^/\s]+$/i.test(url)) return '';
     return url;
   }
 
@@ -66,8 +66,12 @@
     ? root.MIXX_CLOUD_CONFIG
     : {};
 
-  const url = normalizeUrl(override.url || DEFAULTS.url);
-  const anonKey = String(override.anonKey || DEFAULTS.anonKey || '').trim();
+  // 只在属性未提供时回退默认值；显式空串保留，用于离线/测试时关闭云功能。
+  const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+  const rawUrl = hasOwn(override, 'url') ? override.url : DEFAULTS.url;
+  const rawKey = hasOwn(override, 'anonKey') ? override.anonKey : DEFAULTS.anonKey;
+  const url = normalizeUrl(rawUrl);
+  const anonKey = typeof rawKey === 'string' ? rawKey.trim() : '';
   const timeoutMs = Number(override.timeoutMs) > 0 ? Number(override.timeoutMs) : DEFAULTS.timeoutMs;
   const enabled = !!(url && anonKey);
 

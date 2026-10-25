@@ -11,8 +11,11 @@
 --      auth.uid() = 本人，anon 既无策略也无表权限；
 --   3. service_role / `sb_secret_...` 绝不能进前端（绕过全部 RLS）。
 --
--- 存档位 `data` 与 GAME_DESIGN.md §10 的存档位结构同构（去掉 slot 字段，
--- updatedAt 由本表的列承担），便于本地与云端双向直传、不做字段映射。
+-- 存档位 `data` 与 GAME_DESIGN.md §10 的存档位结构同构（去掉 slot 与 updatedAt；
+-- updatedAt 由本表 updated_at 列承担）。上传时不要把 updatedAt 写进 data；
+-- 下载时须先把 updated_at 转成本地毫秒时间戳写入 updatedAt，再调用
+-- SaveStore.writeSlot()——normalizeSlot() 不会从 updated_at 补齐该字段。
+-- 除时间字段外，双向直传、不做字段映射。
 
 -- 注意：脚本里**不写** begin/commit。
 --   - `supabase db push` / CLI 会对每个迁移文件自动包一层事务；
@@ -47,8 +50,12 @@ alter table public.profiles add constraint profiles_avatar_check
 --    写入约定（#45）：
 --      insert 首档：POST /rest/v1/saves   { user_id, slot, version: 1, data }
 --      覆盖已有档：PATCH /rest/v1/saves?user_id=eq.<uid>&slot=eq.<1-3>&version=eq.<旧值>
---                  body { version: 旧值 + 1, updated_at: now(), data }
---      影响 0 行 = 版本冲突，交由界面让玩家逐档选择（见 ACCOUNT_SYSTEM.md §9）
+--                  Prefer: return=representation
+--                  body { version: 旧值 + 1, data }
+--                  （updated_at 由 touch_updated_at() 触发器维护，无需传）
+--      调用方必须检查返回数组长度：1 = 更新成功；0 = 版本冲突
+--      （HTTP 仍可能是 200）。不能只看 HTTP 成功状态判断同步结果。
+--      冲突交由界面让玩家逐档选择（见 ACCOUNT_SYSTEM.md §9）。
 -- ---------------------------------------------------------------------------
 create table if not exists public.saves (
   user_id    uuid not null references auth.users (id) on delete cascade,
