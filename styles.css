@@ -41,7 +41,8 @@ body {
   display: none !important;
 }
 
-/* ── 触屏虚拟按键（Issue #5）：pointer:coarse 设备显示十字键 + A 键 ── */
+/* ── 触屏虚拟按键（Issue #5）：pointer:coarse 设备显示十字键 + 操作键。
+   Issue #18：A 确认，B 轻击，C 重击（右侧 2×2 网格，避免窄屏横向溢出） ── */
 
 #touch-controls {
   display: none;
@@ -52,8 +53,8 @@ body {
   z-index: 50;
   justify-content: space-between;
   align-items: flex-end;
-  gap: 12px;
-  padding: 0 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  gap: 8px;
+  padding: 0 8px calc(12px + env(safe-area-inset-bottom, 0px));
   pointer-events: none; /* 容器穿透，仅按键自身响应 */
   user-select: none;
   -webkit-user-select: none;
@@ -121,14 +122,48 @@ body {
 }
 
 #tbtn-a {
-  width: 64px;
-  height: 64px;
+  grid-area: 2 / 1 / 3 / 3;
+  justify-self: end;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   border-color: #ff8fa3;
   background: rgba(255, 143, 163, 0.55);
   color: #ffffff;
   font-size: 20px;
   pointer-events: auto;
+}
+
+/* 右侧操作区：#18 战斗键 B（轻击）/ C（重击）在上，A（确认）在下 */
+#touch-actions {
+  display: grid;
+  grid-template-columns: 46px 46px;
+  grid-template-rows: 46px 56px;
+  gap: 6px;
+  justify-items: center;
+  align-items: center;
+  pointer-events: none;
+}
+
+#touch-actions #tbtn-b,
+#touch-actions #tbtn-c {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  font-size: 14px;
+  pointer-events: auto;
+}
+
+#tbtn-b {
+  grid-area: 1 / 1;
+  border-color: #5ee6b8;
+  background: rgba(94, 230, 184, 0.32);
+}
+
+#tbtn-c {
+  grid-area: 1 / 2;
+  border-color: #ffc857;
+  background: rgba(255, 200, 87, 0.32);
 }
 
 /* ── 屏幕层与菜单（Issue #6）── */
@@ -486,12 +521,13 @@ body {
 }
 
 /* ── HUD（Issue #6）：游戏画面上方、左缘对齐的关卡名 + 星数，不压画面。
-   引擎已为这一行预留空间（hudReserve=24px），HUD 隐藏时仍占位避免画布跳动 */
+   引擎已为这一行预留空间（hudReserve=24px），HUD 隐藏时仍占位避免画布跳动。
+   Issue #18：追加 HP 与被动能量条（窄屏下关卡名截断，保证一行放下） */
 #hud {
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 3px;
   height: 17px;        /* 固定带宽：有字/无字/隐藏都占同样高度，画布不跳动 */
   margin: 0 0 6px;
   font-family: "Press Start 2P", monospace;
@@ -501,6 +537,7 @@ body {
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
   pointer-events: none;
   white-space: nowrap;
+  max-width: 100%;
 }
 
 /* 隐藏态只不可见、仍占位：保证标题/游玩切换时画布不上下跳动 */
@@ -510,11 +547,83 @@ body {
 }
 
 #hud-level {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 136px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
   color: #ffc857;
 }
 
 #hud-shards {
+  flex: none;
   color: #ffffff;
+}
+
+/* HP：♥ 当前/上限；低血量变红 */
+#hud-hp {
+  flex: none;
+  font-size: 9px;
+  color: #ff8fa3;
+}
+
+#hud-hp.low {
+  color: #ff4d6d;
+  animation: hp-low-blink 0.7s steps(2, end) infinite;
+}
+
+@keyframes hp-low-blink {
+  50% { opacity: 0.45; }
+}
+
+/* 被动能量条：攒满后金色脉冲 + 标签提示 F/G 能量炮 */
+#hud-energy {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 8px;
+  color: #b8a8e0;
+}
+
+#hud-energy-bar {
+  display: block;
+  width: 40px;
+  height: 8px;
+  padding: 1px;
+  box-sizing: border-box;
+  border: 1px solid #8b7bb8;
+  background: #1a1033;
+}
+
+#hud-energy-fill {
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: #5ee6b8;
+  transition: width 0.12s linear;
+}
+
+#hud-energy-label {
+  min-width: 22px;
+}
+
+#hud-energy.ready #hud-energy-bar {
+  border-color: #ffc857;
+}
+
+#hud-energy.ready #hud-energy-fill {
+  background: #ffc857;
+  animation: energy-ready-pulse 0.55s steps(2, end) infinite;
+}
+
+#hud-energy.ready #hud-energy-label {
+  color: #ffc857;
+}
+
+@keyframes energy-ready-pulse {
+  50% { opacity: 0.5; }
 }
 
 /* ── 对话框（Issue #6 外壳；打字机/快进/翻页由 Issue #7 扩充）──
@@ -622,10 +731,10 @@ body {
   50% { opacity: 0.35; }
 }
 
-/* 触屏设备：对话框抬高，避开底部虚拟按键 */
+/* 触屏设备：对话框抬高，避开底部虚拟按键（#18 右侧操作区两行更高） */
 @media (pointer: coarse), (any-pointer: coarse) {
   #dialog {
-    bottom: 92px;
+    bottom: calc(132px + env(safe-area-inset-bottom, 0px));
   }
 
   /* 矮横屏为抬高的对话框上方留出空间，头像保留 3:4 比例。 */

@@ -15,6 +15,7 @@
  *   7. 未知地形符号不崩溃
  *   8. 输入系统（Issue #5）：键盘绑定/边沿/轴向量、触屏虚拟按键、粗指针检测、开关与销毁
  *   9. 机制与粒子（Issue #9）：地形/实体碰撞、推箱（含门格拒绝箱子）、压力开关门、粒子生命周期与绘制
+ *  10. 战斗（Issue #18）：自动锁敌、正面 180°、墙体视线遮挡、能量炮 2.2 倍、HP/倒下复位
  */
 'use strict';
 
@@ -516,7 +517,7 @@ test('输入 API：createInput 暴露、初始状态、动作常量', () => {
   assert.strictEqual(input.wasPressed('confirm'), false);
   assert.strictEqual(input.wasReleased('mute'), false);
   assert.deepStrictEqual(Object.keys(engine.KEY_BINDINGS),
-    ['up', 'down', 'left', 'right', 'confirm', 'pause', 'mute']);
+    ['up', 'down', 'left', 'right', 'confirm', 'light', 'heavy', 'pause', 'mute']);
   input.destroy();
 });
 
@@ -632,6 +633,35 @@ test('事件订阅：press/release 回调收到动作名，可退订', () => {
   fireWindow('keydown', keyEvent('p'));
   assert.deepStrictEqual(seen, ['press:mute']);
   input.destroy();
+});
+
+test('战斗键（#18）：键盘 F/G 与触屏 B/C 映射 light/heavy', () => {
+  const input = engine.createInput();
+  fireWindow('keydown', keyEvent('f'));
+  assert.strictEqual(input.wasPressed('light'), true);
+  fireWindow('keyup', keyEvent('f'));
+  input.endFrame();
+  fireWindow('keydown', keyEvent('G'));
+  assert.strictEqual(input.wasPressed('heavy'), true);
+  fireWindow('keyup', keyEvent('G'));
+  input.endFrame();
+  input.destroy();
+
+  const savedQSA = document.querySelectorAll;
+  const lightBtn = fakeButton('light');
+  const heavyBtn = fakeButton('heavy');
+  document.querySelectorAll = (sel) => (sel === '[data-key]' ? [lightBtn, heavyBtn] : []);
+  const touch = engine.createInput();
+  lightBtn._fire('pointerdown', { pointerId: 1, preventDefault() {} });
+  assert.strictEqual(touch.wasPressed('light'), true, 'B 键 = 轻击');
+  heavyBtn._fire('pointerdown', { pointerId: 2, preventDefault() {} });
+  assert.strictEqual(touch.wasPressed('heavy'), true, 'C 键 = 重击');
+  lightBtn._fire('pointerup', { pointerId: 1 });
+  heavyBtn._fire('pointerup', { pointerId: 2 });
+  assert.strictEqual(touch.isDown('light'), false);
+  assert.strictEqual(touch.isDown('heavy'), false);
+  touch.destroy();
+  document.querySelectorAll = savedQSA;
 });
 
 test('触屏虚拟按键：十字键移动 + A 键确认，与键盘等价，多指同键安全', () => {
@@ -983,6 +1013,225 @@ test('粒子：burst 计数、寿命更新、上限与绘制', () => {
   assert.ok(ctx.pixels[i + 3] > 0, '粒子像素已绘制');
   assert.strictEqual(ctx.pixels[i], 255);
   assert.strictEqual(ctx.pixels[i + 1], 200);
+});
+
+/* ─────────────────── 11. 战斗（Issue #18） ─────────────────── */
+
+test('战斗 API 与数值：F/G 动作、普攻射程一致、能量炮 2.2 倍', () => {
+  assert.strictEqual(typeof engine.createCombat, 'function');
+  assert.strictEqual(typeof engine.Combat, 'function');
+  assert.deepStrictEqual(engine.KEY_BINDINGS.light, ['f']);
+  assert.deepStrictEqual(engine.KEY_BINDINGS.heavy, ['g']);
+  assert.strictEqual(engine.COMBAT_TUNING.attackRange, 24);
+  assert.strictEqual(engine.COMBAT_TUNING.cannonMultiplier, 2.2);
+  assert.strictEqual(engine.COMBAT_TUNING.cannon.range, 52.8);
+  const combat = engine.createCombat(mechanicsLevel([]));
+  assert.strictEqual(combat.attackRange, 24);
+  assert.strictEqual(combat.cannonRange, 52.8, '能量炮射程 = 24 × 2.2');
+  assert.strictEqual(combat.hp, 10);
+  assert.strictEqual(combat.maxHp, 10);
+  assert.strictEqual(engine.COMBAT_TUNING.maxHp, 10, '玩家 10 HP');
+  assert.strictEqual(combat.maxEnergy, 100);
+  // 朝向：水平优先；攻击区从玩家中心向前延伸
+  combat.face(1, 0);
+  assert.deepStrictEqual(combat.facing, { x: 1, y: 0 });
+  assert.deepStrictEqual(combat.hitArea({ x: 32, y: 32 }, { x: 1, y: 0 }, 24, 24),
+    { x: 40, y: 28, w: 24, h: 24 });
+  combat.face(0, -1);
+  assert.deepStrictEqual(combat.facing, { x: 0, y: -1 });
+  combat.face(1, 1);
+  assert.deepStrictEqual(combat.facing, { x: 1, y: 1 }, '八向移动朝向');
+});
+
+test('战斗：攻击方向自动锁敌，无敌人时跟随八向移动方向', () => {
+  const player = { x: 2 * engine.TILE, y: 2 * engine.TILE };
+  // 最近目标优先：右侧 16px 的 e1 比右下 22.6px 的 e2 更近
+  const near = engine.createCombat(mechanicsLevel([
+    { type: 'enemy', id: 'e1', kind: 'dreamling', x: 3, y: 2 },
+    { type: 'enemy', id: 'e2', kind: 'dreamling', x: 3, y: 3 },
+  ]));
+  near.face(0, 1); // 移动朝向下方，但范围内有敌人 → 锁定
+  const r1 = near.attack('light', player, null);
+  assert.strictEqual(r1.target, 'e1', '锁定范围内最近敌人');
+  assert.ok(r1.dir.x > 0.9 && Math.abs(r1.dir.y) < 0.01, '方向指向右侧目标');
+
+  // 斜向目标：方向按目标中心归一化，命中判定支持斜向
+  const diag = engine.createCombat(mechanicsLevel([
+    { type: 'enemy', id: 'e3', kind: 'dreamling', x: 3, y: 3 },
+  ]));
+  diag.face(0, 1);
+  const r2 = diag.attack('light', player, null);
+  assert.strictEqual(r2.target, 'e3');
+  assert.ok(Math.abs(r2.dir.x - Math.SQRT1_2) < 1e-6 && Math.abs(r2.dir.y - Math.SQRT1_2) < 1e-6, '斜向锁定');
+  assert.strictEqual(r2.hits.length, 1, '斜向攻击可命中');
+
+  // 范围内无敌人：跟随移动方向（八向）
+  const empty = engine.createCombat(mechanicsLevel([]));
+  empty.face(1, -1);
+  const r3 = empty.attack('light', player, null);
+  assert.strictEqual(r3.hits.length, 0);
+  assert.ok(Math.abs(r3.dir.x - Math.SQRT1_2) < 1e-6 && Math.abs(r3.dir.y + Math.SQRT1_2) < 1e-6, '无敌人时沿右上移动方向');
+
+  // 能量炮：锁定更远的目标（48px，普攻范围外）
+  const far = engine.createCombat(mechanicsLevel([
+    { type: 'enemy', id: 'e4', kind: 'dreamling', x: 5, y: 2 },
+  ]));
+  far.face(0, 1);
+  far.energy = far.maxEnergy;
+  const r4 = far.attack('heavy', player, null);
+  assert.strictEqual(r4.cannon, true);
+  assert.strictEqual(r4.target, 'e4', '能量炮锁定 52.8px 内的敌人');
+  assert.ok(r4.dir.x > 0.9 && r4.hits.length === 1, '能量炮转向并命中远处目标');
+});
+
+test('战斗：只锁正面 180°，背后敌人不锁定也不转身', () => {
+  const player = { x: 2 * engine.TILE, y: 2 * engine.TILE }; // 中心 (40,40)
+  const level = mechanicsLevel([
+    { type: 'enemy', id: 'e1', kind: 'dreamling', x: 1, y: 2 }, // 左侧 16px
+  ]);
+  const mech = engine.createMechanics(level);
+
+  const front = engine.createCombat(level);
+  front.face(1, 0); // 正面朝右，敌人在背后
+  const r1 = front.attack('light', player, mech);
+  assert.strictEqual(r1.target, null, '背后敌人不锁定');
+  assert.strictEqual(r1.hits.length, 0, '不转身命中背后目标');
+  assert.ok(r1.dir.x > 0.9, '无正面目标时保持移动方向');
+
+  const back = engine.createCombat(level);
+  back.face(-1, 0); // 正面朝左
+  const r2 = back.attack('light', player, mech);
+  assert.strictEqual(r2.target, 'e1', '正面敌人可锁定');
+  assert.strictEqual(r2.hits.length, 1);
+  assert.ok(r2.dir.x < -0.9);
+});
+
+test('战斗：墙体遮挡视线时不锁定，也不穿墙造成伤害', () => {
+  const level = {
+    map: {
+      w: 6,
+      h: 4,
+      rows: [
+        '######',
+        '#.#..#',
+        '#....#',
+        '######',
+      ],
+      legend: { '#': 'wall', '.': 'floor' },
+    },
+    entities: [{ type: 'enemy', id: 'e1', kind: 'dreamling', x: 3, y: 1 }],
+  };
+  const player = { x: 1 * engine.TILE, y: 1 * engine.TILE }; // 中心 (24,24)
+  const mech = engine.createMechanics(level);
+  const combat = engine.createCombat(level);
+  combat.face(1, 0);
+  combat.energy = combat.maxEnergy;
+  const r = combat.attack('heavy', player, mech);
+  assert.strictEqual(r.cannon, true, '能量满仍会开炮');
+  assert.strictEqual(r.target, null, '墙体后敌人不锁定');
+  assert.strictEqual(r.hits.length, 0, '能量炮不穿墙');
+  assert.ok(r.dir.x > 0.9, '无锁定目标时沿移动方向');
+});
+
+test('战斗：轻击/重击命中同一射程，冷却与能量增长正确', () => {
+  const level = mechanicsLevel([{ type: 'enemy', id: 'e1', kind: 'dreamling', x: 3, y: 2 }]);
+  const combat = engine.createCombat(level);
+  const player = { x: 2 * engine.TILE, y: 2 * engine.TILE }; // 中心 (40,40)
+  combat.face(1, 0);
+  const enemy = combat.enemies[0];
+  assert.strictEqual(enemy.x, 3 * 16 + 2);
+
+  const light = combat.attack('light', player, null);
+  assert.ok(light && light.hits.length === 1, '轻击命中 1 格内敌人');
+  assert.strictEqual(light.kind, 'light');
+  assert.strictEqual(light.range, 24);
+  assert.strictEqual(enemy.hp, 2);
+  assert.strictEqual(combat.energy, 5, '命中 +5 能量');
+  assert.ok(combat.cooldown > 0);
+  assert.strictEqual(combat.attack('light', player, null), null, '冷却中不能连击');
+  assert.ok(combat.swing && combat.swing.kind === 'light');
+
+  for (let i = 0; i < 6; i++) combat.update(0.05, player, null);
+  assert.strictEqual(combat.cooldown, 0);
+  const beforeHeavy = combat.energy;
+  const heavy = combat.attack('heavy', player, null);
+  assert.ok(heavy && heavy.hits.length === 1);
+  assert.strictEqual(heavy.range, 24, '重击射程与轻击相同');
+  assert.strictEqual(enemy.dead, true);
+  assert.strictEqual(combat.aliveCount(), 0);
+  assert.strictEqual(combat.energy, beforeHeavy + 5, '击杀 +5 能量（重击不叠加命中充能）');
+});
+
+test('战斗：普攻 24px 够不到的目标，能量炮 52.8px 可命中并清空能量', () => {
+  const level = mechanicsLevel([{ type: 'enemy', id: 'e1', kind: 'dreamling', x: 4, y: 2 }]);
+  const combat = engine.createCombat(level);
+  const player = { x: 2 * engine.TILE, y: 2 * engine.TILE };
+  combat.face(1, 0);
+  const enemy = combat.enemies[0];
+
+  // 敌人在 32px 外：普攻射程 24 打不到
+  const miss = combat.attack('light', player, null);
+  assert.ok(miss && miss.hits.length === 0, '普攻够不到 32px 外目标');
+  assert.strictEqual(enemy.hp, 3);
+  for (let i = 0; i < 6; i++) combat.update(0.05, player, null);
+
+  // 能量满：F/G 均升级为能量炮
+  combat.energy = combat.maxEnergy;
+  const cannon = combat.attack('heavy', player, null);
+  assert.ok(cannon, '能量满时按 G 释放能量炮');
+  assert.strictEqual(cannon.cannon, true);
+  assert.strictEqual(cannon.kind, 'cannon');
+  assert.strictEqual(cannon.range, 52.8, '能量炮射程为普攻 2.2 倍');
+  assert.strictEqual(cannon.hits.length, 1, '能量炮命中 32px 外目标');
+  assert.strictEqual(enemy.hp, 0);
+  assert.strictEqual(combat.energy, 0, '释放后清空能量');
+});
+
+test('战斗：被动能量自动回复、命中加速、满能量事件只发一次', () => {
+  const combat = engine.createCombat(mechanicsLevel([]));
+  const player = { x: 32, y: 32 };
+  for (let i = 0; i < 20; i++) combat.update(0.05, player, null); // 1s
+  assert.ok(Math.abs(combat.energy - 7) < 1e-6, '1s 被动充能 +7');
+  combat.energy = 99.8;
+  const events = combat.update(0.1, player, null); // dt 上限 0.05 → +0.35
+  assert.ok(combat.energy >= combat.maxEnergy);
+  assert.ok(events.some((e) => e.type === 'energy-full'), '充满时发出 energy-full');
+  const again = combat.update(0.05, player, null);
+  assert.ok(!again.some((e) => e.type === 'energy-full'), '满能量不重复发事件');
+});
+
+test('战斗：敌人追击、接触伤害、无敌帧、倒下与复活复位', () => {
+  const level = mechanicsLevel([{ type: 'enemy', id: 'e1', kind: 'dreamling', x: 5, y: 2 }]);
+  const combat = engine.createCombat(level);
+  const player = { x: 2 * engine.TILE, y: 2 * engine.TILE };
+  const enemy = combat.enemies[0];
+  const x0 = enemy.x;
+  for (let i = 0; i < 10; i++) combat.update(0.05, player, null); // 0.5s
+  assert.ok(enemy.x < x0, '敌人在仇恨范围内追击玩家');
+
+  // 直接放到玩家身上：接触伤害 + 无敌帧
+  enemy.x = player.x;
+  enemy.y = player.y;
+  let events = combat.update(0.016, player, null);
+  assert.ok(events.some((e) => e.type === 'player-hit' && e.hp === 9));
+  assert.ok(combat.invuln > 0);
+  events = combat.update(0.016, player, null);
+  assert.ok(!events.some((e) => e.type === 'player-hit'), '无敌帧内不重复受伤');
+
+  combat.hp = 1;
+  combat.invuln = 0;
+  events = combat.update(0.016, player, null);
+  assert.ok(events.some((e) => e.type === 'player-down'));
+  assert.strictEqual(combat.hp, 0);
+  assert.strictEqual(combat.down, true);
+
+  combat.revive();
+  assert.strictEqual(combat.hp, 10);
+  assert.strictEqual(combat.down, false);
+  assert.strictEqual(combat.invuln, engine.COMBAT_TUNING.respawnInvuln);
+  assert.strictEqual(enemy.hp, enemy.maxHp, '复活时敌人重置');
+  assert.strictEqual(enemy.x, enemy.spawnX);
+  assert.strictEqual(enemy.y, enemy.spawnY);
 });
 
 /* ─────────────────── 汇总 ─────────────────── */
