@@ -39,6 +39,15 @@
  *   - 声音设置独立存 `mixxtopia.settings.v1`（同样按通道加后缀），开关立即生效。
  *   - 发布通道（#17）：stable 保持历史键；beta/preview 使用独立键，避免同源覆盖正式存档。
  *
+ * 账户 / 登录（Issue #43，规范见 docs/ACCOUNT_SYSTEM.md §6/§10）：
+ *   - js/auth.js 手写 GoTrue 封装；本文件只做 UI 接线，账户会话存
+ *     `mixxtopia.account.v1`（beta/preview 加通道后缀，与存档键隔离一致）；
+ *   - 标题「登录 / 注册」打开登录 screen（沿用 _show/_hide，不新增游戏状态）；
+ *   - 未登录 = 游客态：不发起任何网络请求，游戏逻辑与 #8 完全一致；
+ *   - 登录/注册/登出异步进行，按钮在请求期间置灰；后端错误码由 auth.js 映射成中文；
+ *   - 网络失败提示「云端暂不可用」并留在登录界面，返回标题即可继续本地游玩；
+ *   - 启动时恢复会话（过期自动 refresh），标题账户按钮随登录态更新文案。
+ *
  * 状态机约定（「无状态泄漏」的实现要点，测试 tools/test-main.js 逐项验收）：
  *   - 每次切换必经 _setState → _leaveState(旧态清理) → _enterState(新态初始化)，
  *     每个状态进入/离开时负责自己的 UI 显隐与输入开关，不允许跨状态残留；
@@ -236,6 +245,7 @@
     return {
       saveKey: 'mixxtopia.save' + suffix + '.v1',
       settingsKey: 'mixxtopia.settings' + suffix + '.v1',
+      accountKey: 'mixxtopia.account' + suffix + '.v1',
     };
   }
 
@@ -243,6 +253,7 @@
   const CHANNEL_KEYS = channelKeys(CHANNEL);
   const SAVE_KEY = CHANNEL_KEYS.saveKey;        // { v, slots: [slot|null ×3] }
   const SETTINGS_KEY = CHANNEL_KEYS.settingsKey; // { v, sound } 独立于存档位
+  const ACCOUNT_KEY = CHANNEL_KEYS.accountKey;   // #43 会话键（stable 为 mixxtopia.account.v1）
   const SAVE_VERSION = 1;
   const SLOT_COUNT = 3;
 
@@ -412,10 +423,12 @@
   class Game {
     /**
      * @param {HTMLCanvasElement} canvas  #game
-     * @param {object} [opts]  { doc, root, onEvent, storage }
+     * @param {object} [opts]  { doc, root, onEvent, storage, auth, fetch }
      *   onEvent(name, data)：测试/冒烟钩子，'state' | 'collect' | 'clear' | 'restart' | 'save'
      *     | 'push' | 'switch' | 'gate' | 'portal' | 'portal-enter'（#9 机制事件）
      *   storage：可注入的 localStorage 兼容对象（测试用）；传 null 模拟存储不可用
+     *   auth：可注入的账户客户端（测试用）；传 null 关闭登录入口
+     *   fetch：传给默认 auth 客户端的 fetch 桩（测试用）
      */
     constructor(canvas, opts) {
       opts = opts || {};
@@ -447,6 +460,16 @@
       this._settings = this._readSettings();
       this.soundOn = this._settings.sound !== false;
 
+      // 账户（Issue #43）：默认用 js/auth.js 创建客户端；opts.auth 注入用于测试/冒烟，
+      // 显式传 null 表示关闭账户入口（游客态与 #8 完全一致）。
+      this.auth = this._createAuth(opts);
+      this._authReady = null;     // 启动时 restore() 的 Promise（测试可 await）
+      this._authPromise = null;   // 最近一次登录/注册/登出 Promise（防重复提交）
+      this._authBusy = false;
+      this._authUnsubscribe = null;
+      this._authOffline = false;  // restore 遇到网络/服务端失败：标题提示「云端暂不可用」
+      this._destroyed = false;   // destroy() 后异步 auth 回调不再动 DOM
+
       // 运行态（可在测试中直接读取）
       this.state = null;
       this.levelIndex = 0;
@@ -477,6 +500,7 @@
       this._bindUI();
       this._applySoundState();
       this._setState(STATE.TITLE);
+      this._initAuth();
     }
 
     /* ── 游戏循环 ── */
@@ -519,11 +543,18 @@
     /** 解绑全部 UI 监听并释放输入与渲染器；此后不再产生任何效果 */
     destroy() {
       this.stop();
+      this._destroyed = true;
       // 对话态下销毁时，对话框与背景虚化层只在 _leaveState(DIALOGUE) 隐藏；
       // 这里显式清理，避免复用同一 DOM 时残留暗化/模糊遮罩（PR #33 评审）
       this._hide(this._ui.dialog);
       this._hide(this._ui.dialogBackdrop);
       this._hide(this._ui.saveScreen); // 销毁时复用的 DOM 不残留选择存档界面
+      this._hide(this._ui.loginScreen); // #43：登录界面同样不残留
+      this._hide(this._ui.accountNote);
+      if (typeof this._authUnsubscribe === 'function') {
+        try { this._authUnsubscribe(); } catch (e) { /* 忽略取消订阅异常 */ }
+      }
+      this._authUnsubscribe = null;
       for (let i = 0; i < this._uiHandlers.length; i++) {
         const el = this._uiHandlers[i][0];
         const type = this._uiHandlers[i][1];
@@ -830,10 +861,298 @@
 
     /* ── 标题与存档（Issue #8） ── */
 
-    /** 刷新标题按钮：有任一存档时才显示「继续冒险」 */
+    /** 刷新标题按钮：有任一存档时才显示「继续冒险」，并同步账户入口文案 */
     _refreshTitle() {
       if (this.store.hasAny()) this._show(this._ui.btnContinue);
       else this._hide(this._ui.btnContinue);
+      this._refreshAccountButton();
+      // 从游戏回到标题后，恢复「云端暂不可用」提示（文案还在时才重新显示）
+      if (this._authOffline && this._ui.accountNote &&
+          typeof this._ui.accountNote.textContent === 'string' && this._ui.accountNote.textContent) {
+        this._show(this._ui.accountNote);
+      }
+    }
+
+    /* ── 账户 / 登录（Issue #43） ── */
+
+    /** 默认账户客户端：js/auth.js + js/cloud-config.js；opts.auth 显式注入优先 */
+    _createAuth(opts) {
+      if (opts && Object.prototype.hasOwnProperty.call(opts, 'auth')) return opts.auth || null;
+      const authModule = this.root.MIXX && this.root.MIXX.auth;
+      if (!authModule || typeof authModule.createClient !== 'function') return null;
+      try {
+        return authModule.createClient({
+          config: this.root.MIXX && this.root.MIXX.cloudConfig,
+          storage: this.storage,
+          key: ACCOUNT_KEY,
+          fetch: opts && typeof opts.fetch === 'function' ? opts.fetch : undefined,
+        });
+      } catch (e) {
+        return null; // 账户模块异常不影响本地游玩
+      }
+    }
+
+    /**
+     * 启动时恢复会话（异步，不阻塞标题）：token 未过期直接登录态，
+     * 过期则 auth.js 自动 refresh；网络失败只提示，游戏照常本地运行。
+     */
+    _initAuth() {
+      const auth = this.auth;
+      this._refreshAccountButton();
+      if (!auth) return;
+      if (typeof auth.onChange === 'function') {
+        this._authUnsubscribe = auth.onChange(() => {
+          if (this._destroyed) return;
+          this._refreshAccountButton();
+          this._refreshAuthUI();
+        });
+      }
+      if (typeof auth.restore !== 'function') return;
+      this._authReady = Promise.resolve()
+        .then(() => auth.restore())
+        .then((session) => {
+          if (this._destroyed) return session;
+          if (auth.lastError) this._handleAuthOffline(auth.lastError);
+          this._refreshAccountButton();
+          this._refreshAuthUI();
+          return session;
+        })
+        .catch((err) => {
+          if (this._destroyed) return null;
+          this._handleAuthOffline(err);
+          this._refreshAccountButton();
+          this._refreshAuthUI();
+          return null;
+        });
+    }
+
+    /** 当前会话（auth 缺失/异常一律按游客态处理） */
+    _currentSession() {
+      if (!this.auth) return null;
+      if (typeof this.auth.getSession === 'function') {
+        try { return this.auth.getSession(); } catch (e) { return null; }
+      }
+      return this.auth.session || null;
+    }
+
+    /** 标题账户入口：游客「登录 / 注册」，登录后显示邮箱（CSS 省略号截断） */
+    _refreshAccountButton() {
+      const btn = this._ui.btnAccount;
+      if (!btn) return;
+      if (!this.auth) { this._hide(btn); return; }
+      this._show(btn);
+      const session = this._currentSession();
+      const email = session && session.user && session.user.email ? session.user.email : '';
+      if (email) {
+        this._text(btn, '☁ 账户 · ' + email);
+        btn.classList.add('signed-in');
+        if (this._authOffline) { this._authOffline = false; this._hideAccountNote(); }
+      } else {
+        this._text(btn, '☁ 登录 / 注册');
+        btn.classList.remove('signed-in');
+      }
+    }
+
+    /** 打开登录 / 账户界面（仅标题态；沿用 _show/_hide，不新增游戏状态） */
+    _openLoginScreen() {
+      if (this.state !== STATE.TITLE) return;
+      this._hide(this._ui.titleScreen);
+      this._hide(this._ui.helpScreen);
+      this._show(this._ui.loginScreen);
+      this._refreshAuthUI();
+      if (this._authOffline && this.auth && this.auth.lastError) {
+        this._setLoginMessage(this.auth.lastError.message || '云端暂不可用', 'error');
+      } else if (this.auth && this.auth.available === false) {
+        this._setLoginMessage('云端暂不可用：尚未配置云端服务；仍可继续本地游玩。', 'error');
+      } else {
+        this._setLoginMessage('', '');
+      }
+      const emailEl = this._ui.loginEmail;
+      if (!this._currentSession() && emailEl && typeof emailEl.focus === 'function') {
+        try { emailEl.focus(); } catch (e) { /* 测试桩无焦点能力 */ }
+      }
+    }
+
+    /** 关闭登录界面回到标题（已登录态保留，游客态不变） */
+    _closeLoginScreen() {
+      if (this.state !== STATE.TITLE) return;
+      // 退出界面时清掉密码，避免下次打开残留明文；邮箱保留方便再次登录
+      if (this._ui.loginPassword) this._ui.loginPassword.value = '';
+      this._setLoginMessage('', '');
+      this._hide(this._ui.loginScreen);
+      this._show(this._ui.titleScreen);
+      this._refreshTitle();
+    }
+
+    /** 按登录态切换「表单 / 已登录面板」 */
+    _refreshAuthUI() {
+      const session = this._currentSession();
+      const signedIn = !!(session && session.user);
+      this._toggleHidden(this._ui.loginForm, signedIn);
+      this._toggleHidden(this._ui.loginAccount, !signedIn);
+      this._text(this._ui.loginTitle, signedIn ? '账户' : '登录 / 注册');
+      this._text(this._ui.loginEmailLabel, signedIn ? (session.user.email || '') : '');
+      this._setLoginBusy(this._authBusy);
+    }
+
+    _toggleHidden(el, shouldHide) {
+      if (!el || !el.classList) return;
+      if (shouldHide) el.classList.add('hidden');
+      else el.classList.remove('hidden');
+    }
+
+    _setLoginBusy(busy) {
+      this._authBusy = !!busy;
+      const buttons = [this._ui.btnLogin, this._ui.btnRegister, this._ui.btnLogout];
+      for (let i = 0; i < buttons.length; i++) {
+        if (buttons[i]) buttons[i].disabled = !!busy;
+      }
+    }
+
+    /** 登录界面提示：kind = '' | 'ok' | 'error' */
+    _setLoginMessage(text, kind) {
+      this.loginMessage = text || '';
+      const el = this._ui.loginMsg;
+      if (!el) return;
+      this._text(el, this.loginMessage);
+      if (!el.classList) return;
+      el.classList.remove('login-msg-error');
+      el.classList.remove('login-msg-ok');
+      if (kind === 'error') el.classList.add('login-msg-error');
+      else if (kind === 'ok') el.classList.add('login-msg-ok');
+    }
+
+    _showAccountNote(text) {
+      if (!this._ui.accountNote) return;
+      this._text(this._ui.accountNote, text || '');
+      this._show(this._ui.accountNote);
+    }
+
+    _hideAccountNote() {
+      this._text(this._ui.accountNote, '');
+      this._hide(this._ui.accountNote);
+    }
+
+    _readLoginForm() {
+      const emailEl = this._ui.loginEmail;
+      const passEl = this._ui.loginPassword;
+      return {
+        email: emailEl && typeof emailEl.value === 'string' ? emailEl.value : '',
+        password: passEl && typeof passEl.value === 'string' ? passEl.value : '',
+      };
+    }
+
+    _clearLoginInputs() {
+      if (this._ui.loginEmail) this._ui.loginEmail.value = '';
+      if (this._ui.loginPassword) this._ui.loginPassword.value = '';
+    }
+
+    /** restore 失败分类：网络类才在标题提示「云端暂不可用」；登录过期只提示重新登录 */
+    _handleAuthOffline(err) {
+      const code = err && err.code;
+      const offline = code === 'network' || code === 'timeout' || code === 'server' ||
+        code === 'unavailable' || code === 'invalid_response';
+      if (offline) {
+        this._authOffline = true;
+        this._showAccountNote((err && err.message) || '云端暂不可用，已用本地存档继续。');
+      } else if (code === 'invalid_refresh_token' || code === 'not_signed_in') {
+        this._authOffline = false;
+        this._hideAccountNote();
+      }
+    }
+
+    _handleAuthError(err) {
+      const message = (err && err.message) || '操作失败，请稍后再试';
+      const code = err && err.code;
+      const offline = code === 'network' || code === 'timeout' || code === 'server' ||
+        code === 'unavailable' || code === 'invalid_response';
+      if (offline) {
+        this._authOffline = true;
+        this._showAccountNote(message);
+      } else {
+        // 服务端已返回业务错误（如密码错），说明云端正可达：清掉旧的离线提示
+        this._authOffline = false;
+        this._hideAccountNote();
+      }
+      this._setLoginMessage(message, 'error');
+    }
+
+    /**
+     * 登录 / 注册提交（异步，按钮置灰防重复）。
+     * @param {'signin'|'signup'} mode
+     * @returns {Promise<object|null>} 完成后 resolve 当前会话
+     */
+    _authSubmit(mode) {
+      if (this.state !== STATE.TITLE) return null;
+      if (this._authBusy && this._authPromise) return this._authPromise;
+      const auth = this.auth;
+      if (!auth) {
+        this._setLoginMessage('云端暂不可用：账户功能未就绪；仍可继续本地游玩。', 'error');
+        return null;
+      }
+      const isSignup = mode === 'signup';
+      const method = isSignup ? 'signUp' : 'signIn';
+      if (typeof auth[method] !== 'function') {
+        this._setLoginMessage('云端暂不可用：账户功能未就绪；仍可继续本地游玩。', 'error');
+        return null;
+      }
+      const form = this._readLoginForm();
+      this._setLoginBusy(true);
+      this._setLoginMessage(isSignup ? '正在注册…' : '正在登录…', '');
+      this._authPromise = Promise.resolve()
+        .then(() => auth[method](form.email, form.password))
+        .then((result) => {
+          if (isSignup && result && result.needsConfirmation) {
+            this._setLoginMessage('注册成功，请到邮箱完成验证后再登录。', 'ok');
+            return result;
+          }
+          this._clearLoginInputs();
+          this._authOffline = false;
+          this._hideAccountNote();
+          this._setLoginMessage(isSignup ? '注册成功，已自动登录。' : '登录成功。', 'ok');
+          return result;
+        })
+        .catch((err) => {
+          this._handleAuthError(err);
+          return null;
+        })
+        .then((result) => {
+          if (this._destroyed) return null;
+          this._setLoginBusy(false);
+          this._refreshAccountButton();
+          this._refreshAuthUI();
+          return this._currentSession() || (result && result.session) || null;
+        });
+      return this._authPromise;
+    }
+
+    /** 登出：清会话回游客态；本地存档 / 设置 / 游戏进度不受影响 */
+    _logout() {
+      if (this.state !== STATE.TITLE) return null;
+      if (this._authBusy && this._authPromise) return this._authPromise;
+      if (!this.auth || typeof this.auth.signOut !== 'function') return null;
+      this._setLoginBusy(true);
+      this._setLoginMessage('正在登出…', '');
+      this._authPromise = Promise.resolve()
+        .then(() => this.auth.signOut())
+        .catch(() => null)
+        .then(() => {
+          if (this._destroyed) return false;
+          this._clearLoginInputs();
+          this._authOffline = false;
+          this._hideAccountNote();
+          this._setLoginMessage('已登出，已回到游客模式；本机存档不受影响。', 'ok');
+          this._setLoginBusy(false);
+          this._refreshAccountButton();
+          this._refreshAuthUI();
+          return true;
+        });
+      return this._authPromise;
+    }
+
+    /** 登录输入框回车 = 登录（避免在无 form 的桩环境里依赖 submit 事件） */
+    _onLoginKeydown(ev) {
+      if (ev && ev.key === 'Enter') this._authSubmit('signin');
     }
 
     /** 标题「新游戏」：优先占用第一个空档；三档全满则打开选择存档界面要求覆盖 */
@@ -1677,6 +1996,8 @@
       this._hide(this._ui.titleScreen);
       this._hide(this._ui.helpScreen);
       this._hide(this._ui.saveScreen);
+      this._hide(this._ui.loginScreen);
+      this._hide(this._ui.accountNote);
       this._hide(this._ui.pauseScreen);
       this._hide(this._ui.clearScreen);
       this._hide(this._ui.endingScreen);
@@ -1729,6 +2050,20 @@
         'ending-screen': 'endingScreen',
         'ending-body': 'endingBody',
         'btn-ending': 'btnEnding',
+        'btn-account': 'btnAccount',
+        'account-note': 'accountNote',
+        'login-screen': 'loginScreen',
+        'login-title': 'loginTitle',
+        'login-form': 'loginForm',
+        'login-email': 'loginEmail',
+        'login-password': 'loginPassword',
+        'login-msg': 'loginMsg',
+        'login-account': 'loginAccount',
+        'login-email-label': 'loginEmailLabel',
+        'btn-login': 'btnLogin',
+        'btn-register': 'btnRegister',
+        'btn-logout': 'btnLogout',
+        'btn-login-back': 'btnLoginBack',
       };
       const doc = this.doc;
       const get = doc && typeof doc.getElementById === 'function'
@@ -1758,6 +2093,13 @@
         if (this.state === STATE.TITLE) this._hide(ui.helpScreen);
       });
       this._on(ui.btnSound, 'click', () => this._toggleSound());
+      this._on(ui.btnAccount, 'click', () => this._openLoginScreen());
+      this._on(ui.btnLoginBack, 'click', () => this._closeLoginScreen());
+      this._on(ui.btnLogin, 'click', () => { this._authSubmit('signin'); });
+      this._on(ui.btnRegister, 'click', () => { this._authSubmit('signup'); });
+      this._on(ui.btnLogout, 'click', () => { this._logout(); });
+      this._on(ui.loginEmail, 'keydown', (ev) => this._onLoginKeydown(ev));
+      this._on(ui.loginPassword, 'keydown', (ev) => this._onLoginKeydown(ev));
       this._on(ui.btnResume, 'click', () => {
         if (this.state === STATE.PAUSED) this._setState(STATE.PLAYING);
       });
@@ -1932,6 +2274,7 @@
     resolveChannel: resolveChannel,
     SAVE_KEY: SAVE_KEY,
     SETTINGS_KEY: SETTINGS_KEY,
+    ACCOUNT_KEY: ACCOUNT_KEY,
     SAVE_VERSION: SAVE_VERSION,
     SLOT_COUNT: SLOT_COUNT,
   };

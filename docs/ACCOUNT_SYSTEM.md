@@ -173,6 +173,7 @@ match /users/{uid} {
 ## 9. 云同步与冲突策略
 
 - **写时机**：沿用 #8 手动存档制——仅「保存并退出」与通关自动存档触发；本地先写，再标 `dirty`，随后尝试云端 upsert。云端失败不阻塞回标题。
+- **账户会话（#43）**：注册 / 登录 / 登出 / refresh_token 续期由 `js/auth.js` 手写 GoTrue 封装承担；会话单独存 `mixxtopia.account.v1`（beta/preview 追加 `.<channel>`，与存档键隔离一致），只含 `accessToken` / `refreshToken` / `expiresAt` / `user{id,email}`，不含密码与存档内容。启动时恢复登录态，access_token 到期前 60s 自动 refresh；refresh token 失效才清会话。登出只清该键，不碰 `mixxtopia.save.v1` 与设置；游客态零网络请求。网络失败 / 5xx 统一提示「云端暂不可用」，不阻塞本地游玩。
 - **本地同步基线**：逐档记录单独存 `mixxtopia.cloud.v1`，不写进 `mixxtopia.save.v1` 的存档位（`normalizeSlot()` 只保留已知字段，额外字段会被丢弃）。结构为 `{ v: 1, slots: [ { version, localUpdatedAt, cloudUpdatedAt } | null, ... ] }`，索引 0–2 对应 1–3 档；`version` / `cloudUpdatedAt` 取成功同步时云端行的 `version` / `updated_at`（转 ms），`localUpdatedAt` 取当时本地档的 `updatedAt`。只在成功上传 / 下载后更新；本地删档时清空该档；存储缺失、损坏或版本不符时视为「从未同步」，不自动覆盖。基线持久化在 localStorage，刷新 / 重开页面后仍可用，不依赖内存中的 `dirty` 标记。
 - **发布通道（Issue #17）**：beta/preview 的本地基线键追加 `.<channel>`（如 `mixxtopia.cloud.beta.v1`），并使用独立 Supabase 项目/schema；禁止测试环境写入正式库。测试期只有 beta 通道可用；首个稳定版发布后 beta 停用、preview 开放。
 - **版本号（仅服务端）**：`version` 只存在于云端，用于上传乐观锁与云端变更检测；本地存档位不保存该字段。PATCH 以基线 `version` 为期望值（无基线时先 GET 当前值），带 `version=eq.<期望值>` 与 `Prefer: return=representation`；返回数组长度 1 = 成功、0 = 冲突，不能只看 HTTP 状态码。冲突后重新拉取云端元数据，让玩家逐档选择；玩家明确选「上传本机」后，用最新云端 `version` 重新 PATCH（云端行不存在则 POST），属于显式覆盖，不自动重试。
@@ -199,7 +200,7 @@ match /users/{uid} {
 | 编号 | 子任务 | 范围 | 涉及文件 | 验收 |
 |---|---|---|---|---|
 | #42 | 选型落地与后端初始化 | 建项目、跑迁移、RLS、公开配置注入 | 已建 `js/cloud-config.js`、`supabase/migrations/0001_init.sql`、`docs/PRIVACY.md`；迁移已在项目 `hlnubesywvcxdghfyoux` 执行成功（2026-10-24）；文档已并入 §8/§10 | ✅ 真实项目端到端验证通过：匿名访问 42501、跨用户读写隔离、注册自动建档、非法头像被 CHECK 拒绝、`version` 乐观锁、`updated_at` 触发器、迁移幂等 |
-| #43 | Auth | 注册/登录/登出/会话恢复/游客态、标题入口 | 新增 `js/auth.js`；改 `js/main.js`、`index.html`、`styles.css` | `fetch` 桩单测 + 冒烟：注册→登录→刷新仍登录 |
+| #43 | Auth | 注册/登录/登出/会话恢复/游客态、标题入口 | ✅ 已新增 `js/auth.js`（手写 GoTrue 封装）；改 `js/main.js`、`index.html`、`styles.css`、`tools/smoke-main.html`；新增 `tools/test-auth.js` | ✅ `fetch` 桩单测 19 项（注册 / 密码错 / 邮箱已注册 / token 过期自动续期 / 网络失败 / 登出不动存档）+ test-main 账户 UI 9 项 + 冒烟：打开/返回登录界面、游客零请求、刷新仍登录 |
 | #44 | 账户设置 UI | 昵称、固定头像集（前端白名单）、音效/操作偏好、删除账户申请（提交后人工处理） | 同上 + `js/settings.js` | 保存后重登一致；非法格式被拒；未知 id 回退默认头像；删除申请不直接调 `auth.users` |
 | #45 | 云存档同步 | 上传/下载/冲突三选一/离线降级、`mixxtopia.cloud.v1` 逐档同步基线 | 新增 `js/cloud.js`；改 `js/main.js` 存档段 | 三档同步、冲突不自动覆盖、离线可玩；刷新后仍能凭基线判断本机/云端是否同版 |
 | #46 | 统计 | 时长、成就、收集率 | 新增 `js/stats.js` | 云端累计与本地一致 |
@@ -217,6 +218,7 @@ for file in js/*.js; do
 done
 node tools/test-engine.js
 node tools/test-main.js
+node tools/test-auth.js   # 账户 Auth（#43）：全部走 fetch 桩
 # 无头浏览器跑 tools/smoke-main.html，断言 data-smoke="ok"
 node tools/validate.js   # 已知红：levels 为空导致 91 条基线错误，不计回归
 ```

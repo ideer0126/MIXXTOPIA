@@ -331,6 +331,142 @@ body {
   color: #ffc857;
 }
 
+/* ── 登录 / 账户（Issue #43）：标题入口 + 登录表单 + 已登录面板 ── */
+
+.account-btn.signed-in {
+  border-color: #8ef0ff;
+  color: #8ef0ff;
+}
+
+.account-note {
+  min-height: 1.2em;
+  margin: 0;
+  max-width: 440px;
+  font-size: 8px;
+  line-height: 1.7;
+  color: #ffb86b;
+}
+
+.login-note {
+  margin: 0;
+  max-width: 360px;
+  font-size: 8px;
+  line-height: 1.9;
+  color: #b8a8e0;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(320px, 86vw);
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 9px;
+  color: #ffc857;
+  text-align: left;
+}
+
+.login-field input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 10px;
+  color: #f0e6d2;
+  background: #0b0b1e;
+  border: 2px solid #3a2a66;
+  border-radius: 6px;
+  outline: none;
+}
+
+.login-field input:focus {
+  border-color: #ffc857;
+}
+
+.login-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.login-actions .menu-btn {
+  flex: 1 1 0;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.login-account {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.login-account-line {
+  margin: 0;
+  max-width: 360px;
+  font-size: 10px;
+  line-height: 1.8;
+  color: #8ef0ff;
+  overflow-wrap: anywhere;
+}
+
+.login-msg {
+  min-height: 1.4em;
+  margin: 0;
+  max-width: 360px;
+  font-size: 8px;
+  line-height: 1.8;
+  color: #b8a8e0;
+}
+
+.login-msg.login-msg-error {
+  color: #ff9bb5;
+}
+
+.login-msg.login-msg-ok {
+  color: #8ef0ff;
+}
+
+.login-privacy {
+  margin: 0;
+  max-width: 360px;
+  font-size: 7px;
+  line-height: 1.9;
+  color: #6f5f95;
+}
+
+.login-privacy a {
+  color: #8ef0ff;
+}
+
+.menu-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+/* 矮屏 / 手机横屏：登录内容可能超出可视高度，允许界面自身滚动，避免按钮被裁掉 */
+@media (max-height: 560px) {
+  #login-screen {
+    justify-content: flex-start;
+    overflow-y: auto;
+    gap: 10px;
+    padding-top: 12px;
+    padding-bottom: 24px;
+  }
+}
+
+/* iOS 对 font-size < 16px 的输入框会自动放大页面；触屏设备上提高输入字号避免跳缩放 */
+@media (pointer: coarse) {
+  .login-field input {
+    font-size: 16px;
+  }
+}
+
 /* 结算与结局 */
 .clear-text {
   font-size: 11px;

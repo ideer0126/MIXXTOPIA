@@ -50,7 +50,9 @@
         <button id="btn-saves" class="menu-btn">▤ 选择存档</button>
         <button id="btn-help" class="menu-btn">? 操作说明</button>
         <button id="btn-sound" class="menu-btn">♪ 声音：开</button>
+        <button id="btn-account" class="menu-btn account-btn">☁ 登录 / 注册</button>
       </div>
+      <p id="account-note" class="account-note hidden" role="status"></p>
       <p class="footer-note">粉丝自制同人小游戏 · 非官方 · 灵感来自 NMIXX《Strange Muse》</p>
     </div>
 
@@ -82,6 +84,34 @@
         </div>
       </div>
       <button id="btn-save-back" class="menu-btn small">← 返回</button>
+    </div>
+
+    <!-- 登录 / 账户（Issue #43）：游客态入口；邮箱 + 密码，账户设置与云存档见 #44/#45 -->
+    <div id="login-screen" class="screen hidden">
+      <h2 id="login-title" class="screen-title">登录 / 注册</h2>
+      <p class="login-note">登录后可把进度同步到其他设备；不登录也能继续游客游玩，本机存档不受影响。</p>
+      <div id="login-form" class="login-form">
+        <label class="login-field">
+          <span>邮箱</span>
+          <input id="login-email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="you@example.com" />
+        </label>
+        <label class="login-field">
+          <span>密码</span>
+          <input id="login-password" type="password" autocomplete="current-password" placeholder="至少 6 位" />
+        </label>
+        <div class="login-actions">
+          <button type="button" id="btn-login" class="menu-btn">▶ 登录</button>
+          <button type="button" id="btn-register" class="menu-btn">✚ 注册</button>
+        </div>
+      </div>
+      <div id="login-account" class="login-account hidden">
+        <p class="login-account-line">已登录：<span id="login-email-label"></span></p>
+        <p class="login-note">账户设置与云存档同步将在后续版本提供。</p>
+        <button type="button" id="btn-logout" class="menu-btn small">↩ 登出</button>
+      </div>
+      <p id="login-msg" class="login-msg" role="status" aria-live="polite"></p>
+      <p class="login-privacy">未登录时零上传，进度只存在本机。登录后仅保存游戏所需的邮箱、昵称、头像与进度；<a href="https://github.com/ideer0126/MIXXTOPIA/blob/main/docs/PRIVACY.md" target="_blank" rel="noopener">隐私说明</a>。</p>
+      <button type="button" id="btn-login-back" class="menu-btn small">← 返回</button>
     </div>
 
     <!-- 帮助界面 -->
@@ -138,10 +168,12 @@
     </div>
   </div>
 
+  <script src="js/cloud-config.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/data.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/sprites.js"></script>
+  <script src="js/auth.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>
