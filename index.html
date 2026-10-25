@@ -19,6 +19,11 @@
       <div id="hud" class="hidden">
         <span id="hud-level"></span>
         <span id="hud-shards"></span>
+        <span id="hud-hp">♥ 10/10</span>
+        <span id="hud-energy" aria-label="能量炮能量">
+          <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
+          <span id="hud-energy-label">0%</span>
+        </span>
       </div>
 
       <!-- 游戏画布 -->
@@ -120,6 +125,9 @@
       <div class="help-body">
         <p><b>移动</b>　WASD / 方向键　（手机：屏幕方向键）</p>
         <p><b>对话 / 确认</b>　E 或 空格　（手机：A 键）</p>
+        <p><b>攻击</b>　F 轻击 / G 重击　（手机：B / C 键）；轻击与重击射程相同，只锁定正面 180° 扇形内、视线可达的敌人；无敌人时朝移动方向</p>
+        <p><b>能量炮</b>　被动能量条自动充能；攒满后按 F 或 G 释放，射程为普攻的 2.2 倍</p>
+        <p><b>倒下</b>　HP 归零会满血回到出生点，已收集星星与用时保留（无惩罚）</p>
         <p><b>对话快进</b>　打字中按住加速 · 点按显示全文 · 点击对话框翻页</p>
         <p><b>解谜</b>　推动礼物盒压住彩色地垫，屏风门会保持打开；星数集齐后星光门点亮，走进去过关</p>
         <p><b>暂停 / 存档</b>　Esc 暂停 →「保存并退出」写入存档；「回到标题（不保存）」丢弃未保存进度</p>
@@ -164,7 +172,11 @@
         <button type="button" class="tbtn" data-key="down" aria-label="下">▼</button>
         <button type="button" class="tbtn" data-key="right" aria-label="右">▶</button>
       </div>
-      <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
+      <div id="touch-actions">
+        <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
+        <button type="button" id="tbtn-b" class="tbtn b" data-key="light" aria-label="轻击">B</button>
+        <button type="button" id="tbtn-c" class="tbtn c" data-key="heavy" aria-label="重击">C</button>
+      </div>
     </div>
   </div>
 

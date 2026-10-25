@@ -8,12 +8,12 @@
 </head>
 <body>
   <!--
-    tools/smoke-main.html —— 游戏状态机（Issue #6）+ 对话系统（Issue #7）+ 存档（Issue #8）+ 机制（Issue #9）冒烟测试
+    tools/smoke-main.html —— 游戏状态机（Issue #6）+ 对话（#7）+ 存档（#8）+ 机制（#9）+ 战斗（#18）冒烟测试
     运行：静态服务器或 file:// + 无头浏览器 dump-dom，断言 <body data-smoke="ok">。
     覆盖真实浏览器环境下六态往返（标题/游玩/对话/暂停/结算/结局）与无状态泄漏，
     打字机逐字显示、点按快进、翻页退出（Issue #7），手动保存并退出、
-    通关自动存档、继续冒险读档（Issue #8），以及关门阻挡/推箱压开关/开门通行、
-    星星粒子、传送门激活与踩入结算（Issue #9）。
+    通关自动存档、继续冒险读档（Issue #8），关门阻挡/推箱压开关/开门通行、
+    星星粒子、传送门激活与踩入结算（Issue #9），以及 HUD/敌人/F 轻击（#18）。
     UI 骨架与 index.html 一致（main.js 按 id 接线）。
   -->
   <canvas id="game" width="320" height="224"></canvas>
@@ -21,6 +21,11 @@
   <div id="hud" class="hidden">
     <span id="hud-level"></span>
     <span id="hud-shards"></span>
+    <span id="hud-hp"></span>
+    <span id="hud-energy">
+      <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
+      <span id="hud-energy-label"></span>
+    </span>
   </div>
 
   <div id="title-screen" class="screen">
@@ -107,7 +112,11 @@
 
   <div id="touch-controls">
     <div id="dpad"></div>
-    <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
+    <div id="touch-actions">
+      <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
+      <button type="button" id="tbtn-b" class="tbtn b" data-key="light" aria-label="轻击">B</button>
+      <button type="button" id="tbtn-c" class="tbtn c" data-key="heavy" aria-label="重击">C</button>
+    </div>
   </div>
 
   <pre id="results"></pre>
@@ -205,6 +214,18 @@
       ok('新游戏占档 1', game.saveSlotIndex === 0);
       ok('HUD 关名', text('hud-level') === '占位关卡 · 烛光梦境');
       ok('HUD 星数 0/3', text('hud-shards') === '★ 0/3');
+
+      // 2b) 战斗（Issue #18）：HUD + 敌人 + F 轻击
+      ok('战斗 HUD', text('hud-hp') === '♥ 10/10' && !!text('hud-energy-label'));
+      ok('占位关敌人', !!game.combat && game.combat.enemies.length === 3);
+      var enemy0 = game.combat.enemies[0];
+      game.player.x = enemy0.x - 16;
+      game.player.y = enemy0.y;
+      game.combat.facing = { x: 0, y: 1 }; // 朝下，敌人位于右侧（正面 180° 边界内）：验证自动锁敌
+      press('f');
+      frame();
+      ok('F 轻击命中并自动锁敌', enemy0.hp === 2 && game.combat.energy > 0
+        && !!game.combat.swing && game.combat.swing.dir.x > 0.9);
 
       // 3) 对话往返（Issue #7：打字机逐字 + 点按快进 + 翻页）
       tp(10, 15);
