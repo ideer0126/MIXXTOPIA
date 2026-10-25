@@ -736,6 +736,7 @@
       this.target = opts.target || root;
       this.enabled = true;
       this.coarse = detectCoarsePointer();       // 当前设备是否为触屏（粗指针）
+      this.touchMode = 'auto';                   // 虚拟按键显示偏好（#44）：'auto'|'on'|'off'
       this._keys = new Set();                    // 当前按住的物理键（小写 e.key）
       this._touchPtr = new Map();                // 动作 → 按住的 pointerId 集合
       this._pressed = new Set();                 // 自上次 endFrame 以来的按下边沿
@@ -760,6 +761,7 @@
         }
       }
       if (opts.autoTouch !== false) this._setupTouch();
+      this._applyTouchMode(); // #44：恢复「触屏按键」显示偏好（auto/on/off）
     }
 
     /* ── 状态查询 ── */
@@ -841,6 +843,32 @@
       if (el && el.classList) el.classList.toggle('touch-off', !v);
     }
 
+    /**
+     * 设置虚拟按键显示偏好（Issue #44）：'auto' 跟随设备粗指针检测；'on' 始终显示；
+     * 'off' 始终隐藏。与 setTouchVisible 正交——菜单界面仍可用 setTouchVisible(false)
+     * 临时隐藏，不会覆盖玩家偏好；非法值回退 'auto'。
+     * @param {'auto'|'on'|'off'} mode
+     * @returns {string} 实际生效的模式
+     */
+    setTouchMode(mode) {
+      this.touchMode = mode === 'on' || mode === 'off' ? mode : 'auto';
+      this._applyTouchMode();
+      return this.touchMode;
+    }
+
+    /** 当前虚拟按键显示偏好（'auto'|'on'|'off'） */
+    getTouchMode() {
+      return this.touchMode;
+    }
+
+    /** 把偏好落到 #touch-controls 的 .touch-pref-on / .touch-pref-off 类 */
+    _applyTouchMode() {
+      const el = this._touchEl();
+      if (!el || !el.classList) return;
+      el.classList.toggle('touch-pref-on', this.touchMode === 'on');
+      el.classList.toggle('touch-pref-off', this.touchMode === 'off');
+    }
+
     /** 解绑全部监听，释放后不再产生任何输入 */
     destroy() {
       const t = this.target;
@@ -864,6 +892,13 @@
         if (btn && btn.classList) btn.classList.remove('pressed');
       }
       this._touchButtons = [];
+      // #44：销毁时清掉虚拟按键的偏好类（复用同一 DOM 时不残留）
+      const touchEl = this._touchEl();
+      if (touchEl && touchEl.classList) {
+        touchEl.classList.remove('touch-pref-on');
+        touchEl.classList.remove('touch-pref-off');
+        touchEl.classList.remove('touch-on');
+      }
       this._keys.clear();
       this._touchPtr.clear();
       this._pressed.clear();

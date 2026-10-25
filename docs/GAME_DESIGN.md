@@ -689,7 +689,7 @@ dialogue: {
 
 ## 10. 存档规范（Issue #8，v1：3 存档位 + 手动存档）
 
-- **键**：`mixxtopia.save.v1`（存档位）、`mixxtopia.settings.v1`（声音设置，独立于存档位）、`mixxtopia.cloud.v1`（逐档同步基线，仅登录后使用）、`mixxtopia.account.v1`（账户会话，仅登录后使用；只存 token 与 user id/email，不含密码/存档内容）；均为 localStorage。
+- **键**：`mixxtopia.save.v1`（存档位）、`mixxtopia.settings.v1`（声音/触屏按键偏好，独立于存档位）、`mixxtopia.cloud.v1`（逐档同步基线，仅登录后使用）、`mixxtopia.account.v1`（账户会话，仅登录后使用；只存 token 与 user id/email，不含密码/存档内容）；均为 localStorage。
 - **发布通道（Issue #17）**：stable 使用上述键；beta/preview 与 stable 在同一个 Pages 域名下运行，localStorage 共享，因此由构建注入的通道名派生独立键：`mixxtopia.save.beta.v1` / `mixxtopia.save.preview.v1`（settings 同理）。stable 保持原键，老玩家存档不受影响；未来 `mixxtopia.cloud.v1` 也应沿用通道后缀，并避免测试环境写入正式 Supabase 项目。测试期只开放 beta 游戏（stable/preview 是占位页，不写存档）；首个稳定版发布后 preview 开放、beta 停用。
 - **结构**：
 
@@ -715,7 +715,9 @@ dialogue: {
 }
 
 // mixxtopia.settings.v1
-{ v: 1, sound: true }         // 声音开关；切换即写盘，不影响存档位
+{ v: 1, sound: true, touch: 'auto' }
+// sound：声音开关；touch：触屏虚拟按键显示偏好 'auto'|'on'|'off'（#44）。
+// 修改立即生效并写盘，不影响存档位。
 ```
 
 - **写入时机（手动存档制）**：仅两种操作写盘：
@@ -735,6 +737,9 @@ dialogue: {
 - **云存档（Issue #22，#19 立项；2026-10-24 选型已定）**：后端 **Supabase**（Postgres + Auth），前端**手写 `fetch` 封装**直连 GoTrue / PostgREST，**不引 SDK**，保持零依赖与 Pages 静态部署。正式规格：
   - **保留本地层**：本节 localStorage 存档与云同步互不替代，未登录 / 离线 / 请求失败时一切都按本节本地逻辑跑；
   - **账户（#43）**：`js/auth.js` 手写 GoTrue 封装（注册 / 登录 / 登出 / refresh_token 续期 / 会话恢复），会话存 `mixxtopia.account.v1`（beta/preview 追加通道后缀）；启动时恢复登录态、token 过期自动续期；登出只清该键，不碰存档与设置；未登录零上传；
+  - **账户设置（#44）**：登录后从登录面板进入「账户设置」screen（复用 `_show`/`_hide`，不新增游戏状态）；昵称 1–16 字（按 Unicode 码点计，trim 后非空、不含控制字符），头像固定 6 选 1（`muse-1…muse-6`，白名单为 `GAME.avatarPresets`，数据库只校验 id 格式 `^[a-z0-9][a-z0-9-]{0,31}$`，新增头像只需改 data.js、无需数据库迁移；未知 id 渲染回退默认头像），保存走 `PATCH /rest/v1/profiles?id=eq.<uid>` + `Prefer: return=representation`（0 行视为资料缺失），错误统一中文提示；资料加载失败不阻塞本地游玩；
+  - **偏好与本地设置（#44）**：`mixxtopia.settings.v1` 是运行时唯一来源（`{ v, sound, touch }`），修改立即生效并写本机，再同步到 `profiles.prefs`（只保留 `sound` / `touch`，未知字段丢弃）。云端采用规则：本机**没有**设置记录（新设备/清缓存）时采用云端偏好；本机已有记录则本地优先、不自动覆盖（避免登录后声音突变），设置页提示差异，保存时以本机为准上传云端；
+  - **删除账户（#44）**：前端只有 publishable key，不能直接删除 `auth.users`；设置页提供「删除账户（提交申请）」链接跳 GitHub issue 模板（URL 预填标题/说明，不要求附个人信息），维护者核实后后台删除，`profiles` / `saves` / `stats` 级联删除、不可恢复（详见 `docs/PRIVACY.md` §5）；
   - **表结构**：`profiles`（昵称、头像 id〔固定集合、前端白名单、不支持上传〕、偏好）、`saves`（`user_id, slot, version, updated_at, data jsonb`，一账号 3 个存档位、一行一个存档位）、`stats`（时长 / 成就）；`data` 与本节存档位结构同构（去掉 `slot` 与 `updatedAt`）。`updatedAt` 由 `saves.updated_at` 列承担：上传时不写入 `data`；下载时必须在调用 `SaveStore.writeSlot()` 前把 `updated_at`（ISO 字符串）转成本地毫秒时间戳写入 `updatedAt`，因为 `normalizeSlot()` 不会从 `updated_at` 补齐该字段（缺失按 `0` 处理）。本地存档位不增加 `version` 字段；逐档同步基线（云端 `version`、本地与云端时间）单独存 `mixxtopia.cloud.v1`（结构见 `ACCOUNT_SYSTEM.md` §9），`normalizeSlot()` 不需要保留额外字段。除时间字段外双向直传、不做字段映射；
   - **安全**：三表全开 RLS，策略只授 `authenticated` 且限本人——`profiles` 用 `auth.uid() = id`，`saves` / `stats` 用 `auth.uid() = user_id`；`anon` 无表权限；anon key 公开，安全边界只在 RLS，必测「A 用户 token 读 B 用户存档 → 失败」；
   - **冲突**：`version` 仅存在于云端（上传乐观锁 + 变更检测），本地不存；登录时用 `mixxtopia.cloud.v1` 的逐档基线判断本机/云端是否改过：只有一边改过则提示对应方向，两边都改过或没有基线则标出本机/云端及各自时间，由玩家逐档手动选择，**默认不自动覆盖、不以时间戳自动判定胜负**；游客登录后提示一次「并入本机进度」，同档冲突同样进入逐档选择；
@@ -750,6 +755,14 @@ dialogue: {
 const GAME = {
   meta: { version: '1.0', tile: 16, viewport: { w: 20, h: 14 } },
   scenes: { p0: { title: '生日夜的房间' } },  // 独立场景作用域；序章入口 trigger 为 load:p0
+  avatarPresets: [   // 账户头像固定选项集（#44）：id 进 profiles.avatar，新增头像只加一条
+    { id: 'muse-1', name: 'Lily', color: '#7FB8E6' },
+    { id: 'muse-2', name: 'Haewon', color: '#FFB14E' },
+    { id: 'muse-3', name: 'Sullyoon', color: '#B49BFF' },
+    { id: 'muse-4', name: 'Bae', color: '#FF7BA9' },
+    { id: 'muse-5', name: 'Jiwoo', color: '#FFE066' },
+    { id: 'muse-6', name: 'Kyujin', color: '#5EE6B8' },
+  ],
   characters: {
     lily: { name: 'Lily', color: '#7FB8E6' },
     dj: { name: '街头DJ', color: '#FF5D8F' },

@@ -12,7 +12,7 @@
  *   4. channel.js 注入顺序、channel.json 标识与通道名
  *   5. 稳定版后禁止同时构建 beta
  *   6. 产物不含 docs/tools/supabase/.github/.coderabbit.yaml/.gitkeep
- *   7. 新增的 js/cloud-config.js 会进入每个游戏构建
+ *   7. 新增的 js/cloud-config.js / js/account.js / js/data.js 会进入每个游戏构建
  */
 'use strict';
 
@@ -216,14 +216,12 @@ try {
     assertNoJunk(stable);
   });
 
-  test('每个游戏构建都包含 cloud-config.js', () => {
-    for (const rel of [
-      'beta/js/cloud-config.js',
-      'js/cloud-config.js',
-      'preview/js/cloud-config.js',
-    ]) {
-      const site = rel.startsWith('beta/') ? testing : stable;
-      assert.ok(fs.existsSync(path.join(site, rel)), '缺少 ' + rel);
+  test('每个游戏构建都包含 cloud-config.js / account.js / data.js', () => {
+    for (const name of ['js/cloud-config.js', 'js/account.js', 'js/data.js']) {
+      for (const rel of ['beta/' + name, name, 'preview/' + name]) {
+        const site = rel.startsWith('beta/') ? testing : stable;
+        assert.ok(fs.existsSync(path.join(site, rel)), '缺少 ' + rel);
+      }
     }
   });
 

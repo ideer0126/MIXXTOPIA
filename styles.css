@@ -76,6 +76,16 @@ body {
   display: none !important;
 }
 
+/* ── 操作偏好（Issue #44）：auto 跟随设备检测；on/off 显式覆盖。
+   与菜单态 .touch-off 正交——进入菜单的临时隐藏仍优先，不覆盖玩家偏好 ── */
+#touch-controls.touch-pref-off {
+  display: none !important;
+}
+
+#touch-controls.touch-pref-on:not(.touch-off) {
+  display: flex !important;
+}
+
 #dpad {
   display: grid;
   grid-template-columns: repeat(3, 52px);
@@ -333,6 +343,14 @@ body {
 
 /* ── 登录 / 账户（Issue #43）：标题入口 + 登录表单 + 已登录面板 ── */
 
+/* 标题账户按钮：昵称/邮箱可能较长，单行省略号截断（#44 标题优先显示昵称） */
+.account-btn {
+  max-width: min(320px, 86vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .account-btn.signed-in {
   border-color: #8ef0ff;
   color: #8ef0ff;
@@ -444,14 +462,251 @@ body {
   color: #8ef0ff;
 }
 
+/* ── 账户设置（Issue #44）：昵称 + 固定头像集（前端白名单）+ 音效/操作偏好 ── */
+
+.settings-account {
+  margin: 0;
+  max-width: 360px;
+  font-size: 8px;
+  line-height: 1.8;
+  color: #8ef0ff;
+  overflow-wrap: anywhere;
+}
+
+.settings-avatar-panel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(360px, 88vw);
+}
+
+.avatar-preview {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 68px;
+  height: 68px;
+  background: #7fb8e6;
+  border: 2px solid #ffc857;
+  border-radius: 6px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+}
+
+.avatar-preview-name {
+  font-size: 7px;
+  line-height: 1;
+  color: #0b0b1e;
+  max-width: 62px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 像素小脸：暗底 + 两只浅色眼睛，头像占位色由 JS 按 avatarPresets 设置 */
+.avatar-face {
+  position: relative;
+  display: block;
+  width: 28px;
+  height: 28px;
+  background: rgba(11, 11, 30, 0.55);
+  border-radius: 4px;
+}
+
+.avatar-face::before,
+.avatar-face::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  width: 4px;
+  height: 4px;
+  background: #f0e6d2;
+}
+
+.avatar-face::before { left: 6px; }
+.avatar-face::after { right: 6px; }
+
+.avatar-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.avatar-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 4px;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 7px;
+  color: #f0e6d2;
+  background: #14143a;
+  border: 2px solid #3a2a66;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.avatar-btn .avatar-face {
+  width: 24px;
+  height: 24px;
+}
+
+.avatar-btn .avatar-face::before,
+.avatar-btn .avatar-face::after {
+  top: 8px;
+  width: 3px;
+  height: 3px;
+}
+
+.avatar-btn .avatar-face::before { left: 5px; }
+.avatar-btn .avatar-face::after { right: 5px; }
+
+.avatar-btn .avatar-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* 头像占位色是浅色（缪斯配色），按名字用深色以保证对比度 */
+  color: #0b0b1e;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.avatar-btn:hover,
+.avatar-btn:focus-visible {
+  border-color: #6f5f95;
+  outline: none;
+}
+
+.avatar-btn.is-selected {
+  background: #23235c;
+  border-color: #ffc857;
+  box-shadow: 0 0 0 2px rgba(255, 200, 87, 0.35);
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(360px, 88vw);
+  font-size: 9px;
+  color: #ffc857;
+  text-align: left;
+}
+
+.settings-field input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 10px;
+  color: #f0e6d2;
+  background: #0b0b1e;
+  border: 2px solid #3a2a66;
+  border-radius: 6px;
+  outline: none;
+}
+
+.settings-field input:focus {
+  border-color: #ffc857;
+}
+
+.settings-hint {
+  margin: 0;
+  max-width: 360px;
+  font-size: 8px;
+  line-height: 1.8;
+  color: #b8a8e0;
+}
+
+.settings-hint.settings-hint-error {
+  color: #ff9bb5;
+}
+
+.settings-prefs {
+  display: flex;
+  gap: 10px;
+  width: min(360px, 88vw);
+}
+
+.settings-prefs .menu-btn {
+  flex: 1 1 0;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.settings-prefs .menu-btn.pref-on {
+  border-color: #8ef0ff;
+  color: #8ef0ff;
+}
+
+.settings-msg {
+  min-height: 1.4em;
+  margin: 0;
+  max-width: 360px;
+  font-size: 8px;
+  line-height: 1.8;
+  color: #b8a8e0;
+}
+
+.settings-msg.settings-msg-error {
+  color: #ff9bb5;
+}
+
+.settings-msg.settings-msg-ok {
+  color: #8ef0ff;
+}
+
+.settings-danger {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(360px, 88vw);
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px dashed #3a2a66;
+}
+
+.settings-delete {
+  font-size: 8px;
+  line-height: 1.6;
+  color: #ff9bb5;
+  text-decoration: none;
+  border-bottom: 1px dotted #7a3d5c;
+  padding-bottom: 1px;
+}
+
+.settings-delete:hover,
+.settings-delete:focus-visible {
+  color: #ffc0cf;
+  outline: none;
+}
+
+.settings-delete-note {
+  margin: 0;
+  max-width: 360px;
+  font-size: 7px;
+  line-height: 1.8;
+  color: #6f5f95;
+}
+
 .menu-btn:disabled {
   opacity: 0.55;
   cursor: wait;
 }
 
-/* 矮屏 / 手机横屏：登录内容可能超出可视高度，允许界面自身滚动，避免按钮被裁掉 */
+/* 矮屏 / 手机横屏：登录/账户设置内容可能超出可视高度，允许界面自身滚动，避免按钮被裁掉 */
 @media (max-height: 560px) {
-  #login-screen {
+  #login-screen,
+  #settings-screen {
     justify-content: flex-start;
     overflow-y: auto;
     gap: 10px;
@@ -460,9 +715,20 @@ body {
   }
 }
 
+/* 账户设置元素较多：中等高度也允许滚动，避免「保存/返回」被裁掉 */
+@media (max-height: 720px) {
+  #settings-screen {
+    justify-content: flex-start;
+    overflow-y: auto;
+    padding-top: 12px;
+    padding-bottom: 24px;
+  }
+}
+
 /* iOS 对 font-size < 16px 的输入框会自动放大页面；触屏设备上提高输入字号避免跳缩放 */
 @media (pointer: coarse) {
-  .login-field input {
+  .login-field input,
+  .settings-field input {
     font-size: 16px;
   }
 }

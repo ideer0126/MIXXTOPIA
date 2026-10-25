@@ -59,7 +59,7 @@ NSWER 在生日夜被一道星光带入梦境世界 **MIXXTOPIA**。六位缪斯
 ### 2.5 账户与云存档（已立项，技术选型已定）
 
 - **账户**：注册/登录（邮箱 + 密码，后续可扩展 OAuth）；未登录可游客游玩，登录后提示合并本地与云端存档。
-- **账户设置**：昵称、头像（固定选项集、不支持上传自定义图片；集合由前端白名单维护，可随美术扩展）、音效/操作偏好。
+- **账户设置**（#44 已实现）：昵称（1–16 字）、头像（固定选项集、不支持上传自定义图片；集合由前端白名单 `GAME.avatarPresets` 维护，可随美术扩展，新增头像无需数据库迁移）、音效/操作偏好（声音开关 + 触屏虚拟按键显示模式；立即生效并写 `mixxtopia.settings.v1`，登录后同步到 `profiles.prefs`）。
 - **云存档**：跨设备同步进度（沿用 GAME_DESIGN.md §10 数据结构，以云端 `version` 乐观锁 + 本地 `mixxtopia.cloud.v1` 逐档同步基线做冲突检测）。
 - **资料统计**：游戏时长、成就、收集率；隐私最小化收集。
 - **技术路线（2026-10-24 已定）**：后端 **Supabase**（Postgres + Auth），前端**手写 `fetch` 封装**直连 GoTrue / PostgREST、**不引 SDK**，保持零依赖与 Pages 静态部署；RLS 仅本人可读写，游客数据仅存本地。放弃 Firebase（须引 SDK，与零依赖约定冲突）。
@@ -76,13 +76,15 @@ MIXXTOPIA/
 ├── js/
 │   ├── cloud-config.js  # Supabase 公开配置（url / publishable key，无 SDK）
 │   ├── auth.js           # 账户：GoTrue 手写 fetch 封装（注册/登录/登出/续期/会话恢复）
+│   ├── account.js        # 账户资料：profiles 读写/校验（昵称、固定头像、偏好）（#44）
 │   ├── sprites.js        # 像素素材：瓦片/角色/道具（调色板换色）
 │   ├── audio.js          # WebAudio 芯片音效 + 每关 BGM 循环
-│   ├── data.js           # 关卡数据：6 关地图 + 对话 + 谜题（数据驱动）
+│   ├── data.js           # 关卡数据：6 关地图 + 对话 + 谜题（数据驱动；含 GAME.avatarPresets）
 │   ├── engine.js         # 引擎：渲染、输入、碰撞、摄像机、粒子
-│   └── main.js           # 状态机：标题/游玩/对话/暂停/结算/结局 + 存档 + 账户接线
+│   └── main.js           # 状态机：标题/游玩/对话/暂停/结算/结局 + 存档 + 账户设置接线
 ├── tools/validate.js     # 地图/数据校验脚本（node 运行）
 ├── tools/test-auth.js    # 账户 Auth 单测（fetch 桩，不连真实后端）
+├── tools/test-account.js # 账户资料（profiles）单测（fetch 桩，不连真实后端）（#44）
 ├── tools/build-channels.js  # 三通道站点组装（stable/beta/preview）
 ├── tools/test-channels.js   # 三通道构建测试
 ├── docs/
@@ -106,7 +108,7 @@ MIXXTOPIA/
   3. 本地静态服务器冒烟测试（页面可加载、无控制台报错）。
 - **已知红门禁（2026-10-24）**：`js/data.js` 的 `levels` 仍为空（#11 未开始），
   `node tools/validate.js` 必然报错（91 项，全部由空关卡/对话引用触发），**不视为回归**；
-  期间以 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` + `node tools/test-auth.js` + `node tools/test-channels.js` + 浏览器冒烟为准，
+  期间以 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` + `node tools/test-auth.js` + `node tools/test-account.js` + `node tools/test-channels.js` + 浏览器冒烟为准，
   #11 落地后恢复 validate 门禁。
 - **发布**：测试期（无稳定 tag）`/` 与 `/preview/` 占位，`/beta/` 用 beta/rc tag 或 `main`；
   首个 `vX.Y.Z` 后 `/` 用 stable tag、`/preview/` 用 `main`、`/beta/` 停用（占位页，不再看 beta tag）。
@@ -151,7 +153,7 @@ MIXXTOPIA/
 | 16 | QA：地图校验、浏览器冒烟测试、移动端适配 | QA | 测试报告 | M5 | #11–15 | ⚪ 未开始 |
 | 17 | 发布：Pages 上线验证、README 图文 | 发布 | 线上可玩 + README | M5 | #16 | ⚪ 未开始 |
 | 18 | 战斗系统立项：二代应援棒武器（设计后置，详见 Issue #18） | 策划+程序 | 战斗设计文档（并入 GAME_DESIGN.md） | M2 | #3 #9 | 📋 已立项 |
-| 19 | 账户与云存档：注册/登录、账户设置、云同步、统计（**选型已定 A2：Supabase + 手写 REST，2026-10-24**；立项稿 `docs/ACCOUNT_SYSTEM.md`，Issue #22，子任务 #42–#47） | 策划+程序 | 设计文档（已并入 GAME_DESIGN.md §10） | M2（立项） | #6 #8 | 📋 已评审，子任务已建 |
+| 19 | 账户与云存档：注册/登录、账户设置、云同步、统计（**选型已定 A2：Supabase + 手写 REST，2026-10-24**；立项稿 `docs/ACCOUNT_SYSTEM.md`，Issue #22，子任务 #42–#47） | 策划+程序 | 设计文档（已并入 GAME_DESIGN.md §10） | M2（立项） | #6 #8 | 🔵 #42 建表+RLS、#43 Auth、#44 账户设置已实现（分支 feat/43-auth、feat/44-account-settings）；下一步 #45 云存档同步 |
 
 ---
 
@@ -166,7 +168,7 @@ MIXXTOPIA/
 
 ## 8. 当前进度与后续节奏
 
-**已完成（截至 2026-10-24）**
+**已完成（截至 2026-10-25）**
 - [x] M0 项目基建：仓库、CI（pages.yml）、README/LICENSE/.gitignore、Milestones/Labels/Issues 落地
 - [x] #3 游戏设计文档 docs/GAME_DESIGN.md（PR #19）
 - [x] #4 Canvas 渲染引擎：瓦片图集、调色板、摄像机、整数缩放（PR #20）
@@ -179,12 +181,13 @@ MIXXTOPIA/
 - [x] #8 存档系统（2026-10-24，Issue #8）：3 存档位 + 手动存档（ESC「保存并退出」）+ 通关自动存档；标题改为「继续冒险 / 新游戏 / 选择存档」（**不做选关**）；读档恢复关卡/已收集星/once/黑羊；选择存档支持二次确认删除；损坏存档容错与存储不可用提示；声音设置独立持久化；test-main 52 项 + 无头浏览器冒烟通过（分支 feat/8-save-system）
 - [x] #9 收集与解谜机制（2026-10-24，Issue #9）：`engine.Mechanics`（墙/水/门/箱碰撞、推箱一格、压力开关→门、踩门防夹）+ `engine.Particles`（星星拾取/开门/传送门粒子）+ `js/audio.js` 最小芯片音效（星/箱/开关/门/传送门，无 WebAudio 安静降级）；`main.js` 接线碰撞、推箱、开关门事件、星星拾取、传送门激活与 `portal.to` 跳关；占位关 1 增加「礼物盒 → 地垫 → 屏风门」闭环；test-engine 36 项 + test-main 59 项 + 无头浏览器冒烟 50 项检查通过（分支 feat/9-collect-puzzle-mechanics）
 - [x] #43 Auth（2026-10-25，Issue #43）：新增 `js/auth.js` 手写 GoTrue 封装（注册 / 登录 / 登出 / refresh_token 续期 / 会话恢复，会话键 `mixxtopia.account.v1`，错误码中文映射）；标题加「登录 / 注册」入口与登录 screen（复用 `_show`/`_hide`，不新增游戏状态）；游客态零网络、游戏逻辑不变；`tools/test-auth.js` 19 项 fetch 桩单测 + test-main 账户 UI 9 项 + 无头冒烟通过（分支 feat/43-auth）
+- [x] #44 账户设置（2026-10-25，Issue #44）：新增 `js/account.js` 手写 PostgREST `profiles` 读写（`GET/PATCH /rest/v1/profiles?id=eq.<uid>`，`Prefer: return=representation`；昵称 1–16 字按码点校验、超长/空白/控制字符客户端拒绝；固定头像白名单来自 `GAME.avatarPresets`（6 位缪斯 `muse-1…muse-6`，新增头像只改 data.js、无需迁移；未知 id 回退默认）；偏好 `sound`/`touch` 归一化并丢弃未知键）；登录面板新增「账户设置」入口，设置 screen 支持昵称/头像/声音/触屏按键偏好与删除账户申请（GitHub issue 人工处理，前端不碰 `auth.users`）；云端偏好采用规则：本机无设置记录（新设备）才采用云端，已有记录本地优先并提示差异；`tools/test-account.js` 16 项 + test-main 83 项 + 无头冒烟 80 项检查通过（分支 feat/44-account-settings）
 
 **下一步**
 - [ ] M2：#11 先拆出「关 1 地图」子任务落地，让 `validate.js` 转绿并跑通真正的一关闭环
 - [ ] M2：#10 已取消（不做选关；选存档并入 #8；GitHub Issue #10 文案待人工同步/关闭）
 - [ ] #18 战斗系统：已立项，设计评审后另立子任务
-- [ ] #19 账户系统：**选型已定（A2：Supabase + 手写 REST）**，子任务 #42–#47 已建；#42 建表 + RLS、#43 Auth 已完成，下一步 #44 账户设置 UI / #45 云存档同步（依赖 #43 的会话与 `ensureFresh()`）
+- [ ] #19 账户系统：**选型已定（A2：Supabase + 手写 REST）**，子任务 #42–#47 已建；#42 建表 + RLS、#43 Auth、#44 账户设置已完成，下一步 #45 云存档同步（依赖 #43 的会话与 `ensureFresh()`、#44 的 `mixxtopia.settings.v1` 偏好同步规则）
 
 **节奏**：每个任务一条分支、一个 PR、一次冒烟测试；里程碑完成即向用户演示。
 

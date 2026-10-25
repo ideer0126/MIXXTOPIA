@@ -13,7 +13,8 @@
  *   5. 静态地图渲染像素级断言（背景 / 墙 / 地 / 水）
  *   6. 整数倍放大计算与 imageSmoothingEnabled 关闭
  *   7. 未知地形符号不崩溃
- *   8. 输入系统（Issue #5）：键盘绑定/边沿/轴向量、触屏虚拟按键、粗指针检测、开关与销毁
+ *   8. 输入系统（Issue #5）：键盘绑定/边沿/轴向量、触屏虚拟按键、粗指针检测、开关与销毁；
+ *      触屏按键显示偏好（#44：auto / on / off 与菜单显隐正交）
  *   9. 机制与粒子（Issue #9）：地形/实体碰撞、推箱（含门格拒绝箱子）、压力开关门、粒子生命周期与绘制
  */
 'use strict';
@@ -777,6 +778,48 @@ test('销毁：解绑后键盘与触屏不再产生输入', () => {
   up._fire('pointerdown', { pointerId: 9, preventDefault() {} });
   assert.strictEqual(input.isDown('up'), false);
   document.querySelectorAll = savedQSA;
+});
+
+test('触屏按键显示偏好（#44）：setTouchMode 切换 .touch-pref-on/.touch-pref-off', () => {
+  const classes = new Set();
+  const classList = {
+    add(c) { classes.add(c); },
+    remove(c) { classes.delete(c); },
+    contains(c) { return classes.has(c); },
+    toggle(c, v) {
+      const on = v === undefined ? !classes.has(c) : !!v;
+      if (on) classes.add(c); else classes.delete(c);
+      return on;
+    },
+  };
+  const savedGet = document.getElementById;
+  document.getElementById = (id) => (id === 'touch-controls' ? { classList } : null);
+  try {
+    const input = engine.createInput();
+    assert.strictEqual(input.getTouchMode(), 'auto');
+    assert.strictEqual(classes.has('touch-pref-on'), false);
+    assert.strictEqual(classes.has('touch-pref-off'), false);
+
+    assert.strictEqual(input.setTouchMode('on'), 'on');
+    assert.ok(classes.has('touch-pref-on') && !classes.has('touch-pref-off'));
+    assert.strictEqual(input.setTouchMode('off'), 'off');
+    assert.ok(!classes.has('touch-pref-on') && classes.has('touch-pref-off'));
+
+    // 与菜单态 setTouchVisible 正交：进入菜单的临时隐藏仍由 .touch-off 控制
+    input.setTouchVisible(false);
+    assert.ok(classes.has('touch-off'));
+    input.setTouchVisible(true);
+    assert.ok(!classes.has('touch-off') && classes.has('touch-pref-off'));
+
+    assert.strictEqual(input.setTouchMode('bogus'), 'auto', '非法值回退 auto');
+    assert.ok(!classes.has('touch-pref-on') && !classes.has('touch-pref-off'));
+
+    input.setTouchMode('on');
+    input.destroy();
+    assert.ok(!classes.has('touch-pref-on'), '销毁时清理偏好类，避免复用 DOM 残留');
+  } finally {
+    document.getElementById = savedGet;
+  }
 });
 
 /* ─────────────────── 9. 机制与粒子（Issue #9） ─────────────────── */
