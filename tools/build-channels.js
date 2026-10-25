@@ -365,19 +365,25 @@ function readChannelInfo(file) {
 }
 
 // 取页面里所有 robots meta 的 content 值。
-// 只认标签名不够：`content="index, follow"` 也是 name="robots"，
-// 所以 noindex 必须校验 content；属性顺序、单双引号、大小写都不敏感。
+// - 先去掉 HTML 注释：被注释掉的 meta 不会生效，不能让它蒙混过关
+// - 属性名要完整匹配（`data-content` 不是 `content`）
+// - 属性顺序、单双引号、大小写都不敏感
 function robotsContents(html) {
-  return (html.match(/<meta\b[^>]*>/gi) || [])
-    .filter((tag) => /name\s*=\s*["']robots["']/i.test(tag))
+  const visible = html.replace(/<!--[\s\S]*?-->/g, '');
+  return (visible.match(/<meta\b[^>]*>/gi) || [])
+    .filter((tag) => /\sname\s*=\s*["']robots["']/i.test(tag))
     .map((tag) => {
-      const content = /content\s*=\s*["']([^"']*)["']/i.exec(tag);
+      const content = /\scontent\s*=\s*["']([^"']*)["']/i.exec(tag);
       return content ? content[1] : '';
     });
 }
 
+// robots 指令用逗号分隔：只有整条指令等于 noindex 才算，
+// `not-noindex` / `noindex-disabled` 都不算。
 function hasNoindex(html) {
-  return robotsContents(html).some((content) => /\bnoindex\b/i.test(content));
+  return robotsContents(html).some((content) => content
+    .split(',')
+    .some((directive) => directive.trim().toLowerCase() === 'noindex'));
 }
 
 function verifySite(outDir, expected) {

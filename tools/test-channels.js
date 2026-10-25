@@ -83,17 +83,21 @@ function assertMeta(html, channel) {
 
 // 与 build-channels.js 的 verifySite 对齐：noindex 必须校验 content，
 // 只看到 name="robots" 就放行的话，`content="index, follow"` 也能混过去。
+// 注释里的 meta 不算、`data-content` 不算、`not-noindex` 也不算。
 function robotsContents(html) {
-  return (html.match(/<meta\b[^>]*>/gi) || [])
-    .filter((tag) => /name\s*=\s*["']robots["']/i.test(tag))
+  const visible = html.replace(/<!--[\s\S]*?-->/g, '');
+  return (visible.match(/<meta\b[^>]*>/gi) || [])
+    .filter((tag) => /\sname\s*=\s*["']robots["']/i.test(tag))
     .map((tag) => {
-      const content = /content\s*=\s*["']([^"']*)["']/i.exec(tag);
+      const content = /\scontent\s*=\s*["']([^"']*)["']/i.exec(tag);
       return content ? content[1] : '';
     });
 }
 
 function hasNoindex(html) {
-  return robotsContents(html).some((content) => /\bnoindex\b/i.test(content));
+  return robotsContents(html).some((content) => content
+    .split(',')
+    .some((directive) => directive.trim().toLowerCase() === 'noindex'));
 }
 
 function assertNoJunk(site) {
