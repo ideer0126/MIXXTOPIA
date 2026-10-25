@@ -240,7 +240,7 @@ test('服务端行归一化：昵称 NULL/超长 → NSWER，未知头像 → mu
 /* 2. load */
 
 testAsync('load：GET profiles?id=eq.<uid>&select=…，带 apikey + Bearer，返回归一化资料', async () => {
-  const { client, auth, fetchStub, account } = makeClient(() => response(200, [row()]));
+  const { client, auth, fetchStub } = makeClient(() => response(200, [row()]));
   const profile = await client.load();
   assert.strictEqual(auth.ensureFreshCalls, 1, '请求前取可用 token');
   assert.strictEqual(fetchStub.calls.length, 1);

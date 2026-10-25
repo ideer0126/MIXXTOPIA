@@ -1640,7 +1640,7 @@
       if (this.profileError) {
         const canRetry = !this._profilePromise && !this._accountBusy;
         this._text(el, '云端资料暂不可用：'
-          + ((this.profileError && this.profileError.message) || '请稍后再试')
+          + (this.profileError.message || '请稍后再试')
           + (canRetry ? '（可点「重试读取云端资料」）' : ''));
         return;
       }
