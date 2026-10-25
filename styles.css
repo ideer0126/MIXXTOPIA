@@ -579,10 +579,15 @@ body {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
-.avatar-btn:hover,
-.avatar-btn:focus-visible {
+.avatar-btn:hover {
   border-color: #6f5f95;
-  outline: none;
+}
+
+/* 键盘焦点：与「选中态」的金色边框区分，用青色 outline 保证可见（可访问性） */
+.avatar-btn:focus-visible {
+  border-color: #8ef0ff;
+  outline: 2px solid #8ef0ff;
+  outline-offset: 2px;
 }
 
 .avatar-btn.is-selected {

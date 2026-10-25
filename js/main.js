@@ -571,6 +571,7 @@
       this._accountPromise = null;  // 设置保存 Promise（防重复提交）
       this._accountBusy = false;
       this._selectedAvatar = '';    // 设置界面待保存头像（空 = 跟随 profile / 默认头像）
+      this._avatarTouched = false;  // 玩家是否主动改过头像（决定保存时是否回写 avatar）
 
       // 运行态（可在测试中直接读取）
       this.state = null;
@@ -1128,12 +1129,20 @@
       this._text(this._ui.loginTitle, signedIn ? '账户' : '登录 / 注册');
       this._text(this._ui.loginEmailLabel, signedIn ? (session.user.email || '') : '');
       let nickname = '';
+      let accountNote = '';
       if (signedIn) {
-        if (this.profile) nickname = this.profile.nickname;
-        else if (this.profileError) nickname = '云端资料暂不可用';
-        else nickname = '加载中…';
+        if (!this.account) {
+          nickname = '资料功能未启用';
+          accountNote = '账户资料功能未启用（js/account.js 未加载），登录与本地游玩不受影响。';
+        } else {
+          accountNote = '账户设置可修改昵称、头像与音效/操作偏好；云存档同步见后续版本。';
+          if (this.profile) nickname = this.profile.nickname;
+          else if (this.profileError) nickname = '云端资料暂不可用';
+          else nickname = '加载中…';
+        }
       }
       this._text(this._ui.loginNicknameLabel, nickname);
+      this._text(this._ui.loginAccountNote, accountNote);
       this._setLoginBusy(this._authBusy);
     }
 
@@ -1320,19 +1329,39 @@
       const userId = this._currentUserId();
       if (!userId) {
         const had = !!this.profile || !!this._profileUserId;
+        const wasSettingsOpen = this._settingsVisible();
         this.profile = null;
         this.profileError = null;
         this._profileUserId = '';
         this._selectedAvatar = '';
+        this._avatarTouched = false;
         this._cloudPrefs = null;
         this._cloudPrefsDiffer = false;
-        if (had || this._settingsVisible()) {
+        // 会话失效/登出时若正停在设置页：退回标题，避免残留旧昵称/邮箱与可保存状态
+        if (wasSettingsOpen) this._closeSettingsScreen();
+        if (had || wasSettingsOpen) {
           this._refreshAuthUI();
           this._refreshSettingsUI();
         }
         return;
       }
-      if (userId === this._profileUserId && (this.profile || this._profilePromise)) {
+      const switched = userId !== this._profileUserId;
+      if (switched) {
+        // 切号（含页内直接换会话）：立即清空上一账号资料，避免新资料加载前
+        // 标题/设置页沿用 A 的昵称头像、甚至把 A 的值保存到 B（评审 [重要] 1）。
+        this.profile = null;
+        this.profileError = null;
+        this._selectedAvatar = '';
+        this._avatarTouched = false;
+        this._cloudPrefs = null;
+        this._cloudPrefsDiffer = false;
+        if (this._settingsVisible()) {
+          this._fillSettingsForm(); // 占位 + 禁用（profile 未就绪）
+          this._refreshSettingsUI();
+        }
+        this._refreshAccountButton();
+        this._refreshAuthUI();
+      } else if (this.profile || this._profilePromise) {
         this._refreshAccountButton();
         this._refreshAuthUI();
         return;
@@ -1443,9 +1472,12 @@
       const current = normalizeTouchMode(this._settings.touch);
       const next = list[(list.indexOf(current) + 1) % list.length] || 'auto';
       this._settings.touch = next;
-      this._writeSettings();
+      const saved = this._writeSettings();
       this._applyTouchPref();
-      this._setSettingsMessage('触屏按键：' + touchModeLabel(next) + '（已保存到本机，立即生效）', '');
+      this._setSettingsMessage(saved
+        ? '触屏按键：' + touchModeLabel(next) + '（已保存到本机，立即生效）'
+        : '触屏按键：' + touchModeLabel(next) + '（已生效，但本机存储不可用，刷新后会丢失）',
+      saved ? '' : 'error');
       this._refreshCloudPrefsDiffer();
       return next;
     }
@@ -1487,7 +1519,9 @@
       this._fillSettingsForm();
       this._refreshSettingsUI();
       this._setSettingsMessage('', '');
-      if (!this.profile || this.profileError) this._loadProfile();
+      // 只有「还没拿到过资料」才自动重试；保存失败时资料本身有效，不重新拉取，
+      // 避免后台 GET 迟到后覆盖玩家正在编辑的内容。
+      if (!this.profile) this._loadProfile();
       return true;
     }
 
@@ -1509,6 +1543,7 @@
 
     /** 把当前 profile / 本地偏好填入设置界面（打开界面、资料加载/保存成功后调用） */
     _fillSettingsForm() {
+      this._avatarTouched = false;
       if (this._ui.settingsNickname) {
         this._ui.settingsNickname.value = this.profile && this.profile.nickname
           ? this.profile.nickname
@@ -1536,6 +1571,9 @@
       const length = nicknameCharLength(input && typeof input.value === 'string' ? input.value : '');
       this._text(el, length + '/16');
       if (el.classList) el.classList.toggle('settings-hint-error', length > 16);
+      if (input && typeof input.setAttribute === 'function') {
+        input.setAttribute('aria-invalid', length > 16 ? 'true' : 'false');
+      }
     }
 
     /** 同步头像选中态 / 预览色块与名字 */
@@ -1564,16 +1602,29 @@
     _refreshSettingsUI() {
       const signedIn = !!this._currentSession();
       const busy = this._accountBusy;
+      // 资料未加载成功前禁止保存：否则表单默认值（NSWER / muse-1）会覆盖云端
+      // 现有昵称/头像（评审发现的阻塞级数据覆盖问题，Issue #44）。
+      const profileReady = !!this.profile;
+      const formDisabled = !signedIn || busy || !profileReady;
       const saveBtn = this._ui.btnSettingsSave;
       if (saveBtn) {
-        saveBtn.disabled = !signedIn || busy;
+        saveBtn.disabled = formDisabled;
         this._text(saveBtn, busy ? '正在保存…' : '💾 保存设置');
       }
       if (this._ui.btnSettingsBack) this._ui.btnSettingsBack.disabled = busy;
-      if (this._ui.settingsNickname) this._ui.settingsNickname.disabled = !signedIn || busy;
+      // 保存期间冻结偏好按钮，避免 PATCH 快照与界面显示不一致
+      if (this._ui.btnPrefSound) this._ui.btnPrefSound.disabled = busy;
+      if (this._ui.btnPrefTouch) this._ui.btnPrefTouch.disabled = busy;
+      if (this._ui.settingsNickname) this._ui.settingsNickname.disabled = formDisabled;
       const buttons = this._ui.avatarBtns || {};
       for (const key of Object.keys(buttons)) {
-        if (buttons[key]) buttons[key].disabled = !signedIn || busy;
+        if (buttons[key]) buttons[key].disabled = formDisabled;
+      }
+      const retry = this._ui.btnSettingsRetry;
+      if (retry) {
+        const showRetry = signedIn && !profileReady && !busy
+          && !this._profilePromise && !!this.profileError;
+        this._toggleHidden(retry, !showRetry);
       }
       this._refreshSettingsCloudNote();
     }
@@ -1587,18 +1638,26 @@
         return;
       }
       if (this.profileError) {
-        this._text(el, '云端资料暂不可用：' + ((this.profileError && this.profileError.message) || '请稍后再试'));
+        const canRetry = !this._profilePromise && !this._accountBusy;
+        this._text(el, '云端资料暂不可用：'
+          + ((this.profileError && this.profileError.message) || '请稍后再试')
+          + (canRetry ? '（可点「重试读取云端资料」）' : ''));
         return;
       }
       if (!this.profile) {
-        this._text(el, '正在读取云端资料…');
+        this._text(el, '正在读取云端资料…资料就绪前无法保存昵称与头像。');
         return;
       }
-      if (this._cloudPrefsDiffer) {
-        this._text(el, '昵称与头像保存到云端；云端偏好与本机不同，点击保存后以本机为准。');
-      } else {
-        this._text(el, '昵称与头像保存到云端；声音与操作偏好同时保存到本机并立即生效。');
+      const unknownAvatar = !this._avatarTouched
+        && this.profile.avatarRaw && this.profile.avatarRaw !== this.profile.avatar;
+      let text = this._cloudPrefsDiffer
+        ? '昵称与头像保存到云端；云端偏好与本机不同，点击保存后以本机为准。'
+        : '昵称与头像保存到云端；声音与操作偏好同时保存到本机并立即生效。';
+      if (unknownAvatar) {
+        text += ' 云端头像 ' + this.profile.avatarRaw + ' 不在当前可选集，已显示默认头像；'
+          + '保存昵称/偏好不会改动云端头像。';
       }
+      this._text(el, text);
     }
 
     /** 设置界面提示：kind = '' | 'ok' | 'error' */
@@ -1623,8 +1682,10 @@
     _onAvatarPick(id) {
       if (!this._settingsVisible() || !avatarAllowed(id)) return false;
       this._selectedAvatar = id;
+      this._avatarTouched = true;
       this._syncAvatarSelection(id);
       this._setSettingsMessage('已选择头像，点击「保存设置」后同步到云端。', '');
+      this._refreshSettingsCloudNote(); // 主动选头像后「不改动云端头像」提示不再适用
       return true;
     }
 
@@ -1636,6 +1697,19 @@
     _onSettingsSave() {
       if (this.state !== STATE.TITLE || !this._settingsVisible()) return null;
       if (this._accountBusy && this._accountPromise) return this._accountPromise;
+      const signedIn = !!this._currentSession();
+      // 资料未加载成功前禁止保存（按钮已置灰，这里是双保险）：否则表单默认值
+      // （NSWER / muse-1）会当作玩家输入 PATCH 覆盖云端现有昵称/头像。
+      if (signedIn && this.account && !this.profile) {
+        if (this.profileError) {
+          this._setSettingsMessage('云端资料暂不可用，正在重试读取；资料就绪后再保存。', 'error');
+        } else {
+          this._setSettingsMessage('正在读取云端资料，请稍候再保存。', '');
+        }
+        this._loadProfile();
+        this._refreshSettingsUI();
+        return null;
+      }
       const nickname = normalizeNicknameForSave(
         this._ui.settingsNickname && typeof this._ui.settingsNickname.value === 'string'
           ? this._ui.settingsNickname.value
@@ -1644,39 +1718,65 @@
       if (!nickname.ok) {
         this._setSettingsMessage(nickname.message, 'error');
         this._refreshNicknameCount();
+        if (this._ui.settingsNickname && typeof this._ui.settingsNickname.setAttribute === 'function') {
+          this._ui.settingsNickname.setAttribute('aria-invalid', 'true');
+        }
         return null;
       }
-      const avatar = avatarAllowed(this._selectedAvatar) ? this._selectedAvatar : AVATAR_DEFAULT;
+      // 头像：玩家主动改过才写所选头像；未改动时只有云端原始 id 已知且与展示一致
+      // 才回写，避免未知 / 未来版本头像在「只改昵称」时被覆盖成默认 muse-1。
+      let avatarToSave;
+      if (this._avatarTouched) {
+        if (!avatarAllowed(this._selectedAvatar)) {
+          this._setSettingsMessage('请选择列表中的固定头像。', 'error');
+          return null;
+        }
+        avatarToSave = this._selectedAvatar;
+      } else if (this.profile && this.profile.avatarRaw && this.profile.avatarRaw === this.profile.avatar) {
+        avatarToSave = this.profile.avatar;
+      }
       const prefs = normalizePrefsForSave({ sound: this.soundOn, touch: this._settings.touch });
       // 本地先落盘：云端失败也不丢本机偏好（声音/触屏已即时生效）
       this._settings.v = SAVE_VERSION;
       this._settings.sound = prefs.sound;
       this._settings.touch = prefs.touch;
-      this._writeSettings();
+      const localSaved = this._writeSettings();
       this._applySoundState();
       this._applyTouchPref();
 
-      const signedIn = !!this._currentSession();
       if (!signedIn || !this.account) {
-        this._setSettingsMessage('已保存到本机；登录后可同步昵称与头像。', 'ok');
+        this._setSettingsMessage(localSaved
+          ? '已保存到本机；登录后可同步昵称与头像。'
+          : '设置已生效，但本机存储不可用（隐私模式或空间不足），刷新后会丢失。',
+        localSaved ? 'ok' : 'error');
         this._refreshSettingsUI();
         return null;
       }
+      const saveUserId = this._currentUserId();
       this._accountBusy = true;
       this._setSettingsMessage('正在保存到云端…', '');
       this._refreshSettingsUI();
       const self = this;
       const task = Promise.resolve()
         .then(function () {
-          return self.account.save({ nickname: nickname.value, avatar: avatar, prefs: prefs });
+          return self.account.save({ nickname: nickname.value, avatar: avatarToSave, prefs: prefs });
         })
         .then(function (profile) {
           if (self._destroyed) return null;
+          // 保存期间切号/登出：丢弃旧账号的回包，避免把 A 的资料写到 B 的界面
+          if (self._currentUserId() !== saveUserId || self._profileUserId !== saveUserId) {
+            self._emit('profile', { action: 'save-stale', nickname: profile.nickname });
+            return null;
+          }
           self.profile = profile;
           self.profileError = null;
           self._selectedAvatar = profile.avatar;
+          self._avatarTouched = false;
           self._applyCloudPrefs(profile.prefs);
-          self._setSettingsMessage('设置已保存。', 'ok');
+          self._setSettingsMessage(localSaved
+            ? '设置已保存。'
+            : '设置已保存到云端；但本机存储不可用（隐私模式或空间不足），本机偏好刷新后可能丢失。',
+          localSaved ? 'ok' : 'error');
           self._fillSettingsForm();
           self._refreshAccountButton();
           self._refreshAuthUI();
@@ -1686,6 +1786,10 @@
         })
         .catch(function (err) {
           if (self._destroyed) return null;
+          if (self._currentUserId() !== saveUserId || self._profileUserId !== saveUserId) {
+            self._emit('profile', { action: 'save-stale-error', code: err && err.code });
+            return null;
+          }
           self._handleProfileError(err);
           return null;
         })
@@ -1703,7 +1807,9 @@
     /** 资料保存失败：中文提示；登录过期时同步回游客态（auth 已清会话） */
     _handleProfileError(err) {
       const message = (err && err.message) || '操作失败，请稍后再试';
-      this.profileError = err;
+      // 只有「从未加载成功」才记 profileError（用于禁用保存/显示重试）；
+      // 已有资料时的保存失败只提示在 settings-msg，资料仍是有效的旧值。
+      if (!this.profile) this.profileError = err;
       this._setSettingsMessage(message, 'error');
       this._refreshSettingsCloudNote();
       this._emit('profile', { action: 'save-error', code: err && err.code });
@@ -2610,7 +2716,10 @@
       this.soundOn = !this.soundOn;
       this._settings.sound = this.soundOn;
       this._applySoundState();
-      this._writeSettings(); // 设置独立于存档位，立即生效
+      const saved = this._writeSettings(); // 设置独立于存档位，立即生效
+      if (!saved && this._settingsVisible()) {
+        this._setSettingsMessage('声音已生效，但本机存储不可用（隐私模式或空间不足），刷新后会丢失。', 'error');
+      }
       this._refreshCloudPrefsDiffer(); // 设置页「云端偏好与本机不同」提示随切换更新
     }
 
@@ -2694,6 +2803,7 @@
         // #44 账户设置
         'btn-settings': 'btnSettings',
         'login-nickname-label': 'loginNicknameLabel',
+        'login-account-note': 'loginAccountNote',
         'settings-screen': 'settingsScreen',
         'settings-account': 'settingsAccount',
         'settings-nickname': 'settingsNickname',
@@ -2706,6 +2816,7 @@
         'settings-cloud-note': 'settingsCloudNote',
         'settings-msg': 'settingsMsg',
         'btn-settings-save': 'btnSettingsSave',
+        'btn-settings-retry': 'btnSettingsRetry',
         'link-delete-account': 'linkDeleteAccount',
         'btn-settings-back': 'btnSettingsBack',
       };
@@ -2749,6 +2860,9 @@
       this._on(ui.btnSettings, 'click', () => { this._openSettingsScreen(); });
       this._on(ui.btnSettingsBack, 'click', () => { this._closeSettingsScreen(); });
       this._on(ui.btnSettingsSave, 'click', () => { this._onSettingsSave(); });
+      this._on(ui.btnSettingsRetry, 'click', () => {
+        if (this._settingsVisible()) this._loadProfile();
+      });
       this._on(ui.btnPrefSound, 'click', () => this._toggleSound());
       this._on(ui.btnPrefTouch, 'click', () => this._cycleTouchPref());
       this._on(ui.settingsNickname, 'input', () => this._onNicknameInput());

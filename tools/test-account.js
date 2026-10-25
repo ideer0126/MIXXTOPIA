@@ -227,13 +227,13 @@ test('偏好归一化：只保留 sound/touch；未知字段丢弃；非法值�
 test('服务端行归一化：昵称 NULL/超长 → NSWER，未知头像 → muse-1，prefs 缺省补齐', () => {
   const { sandbox, account } = setup();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(account.normalizeProfileRow({}, sandbox))),
-    { nickname: 'NSWER', avatar: 'muse-1', prefs: { sound: true, touch: 'auto' } });
+    { nickname: 'NSWER', avatar: 'muse-1', avatarRaw: '', prefs: { sound: true, touch: 'auto' } });
   const normalized = account.normalizeProfileRow({
     nickname: '  小星 ', avatar: 'muse-9', prefs: { sound: false, touch: 'on', junk: 1 },
   }, sandbox);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(normalized)), {
-    nickname: '小星', avatar: 'muse-1', prefs: { sound: false, touch: 'on' },
-  });
+    nickname: '小星', avatar: 'muse-1', avatarRaw: 'muse-9', prefs: { sound: false, touch: 'on' },
+  }, '未知头像渲染回退 muse-1，但 avatarRaw 保留云端原值');
   assert.strictEqual(account.normalizeProfileRow({ nickname: 'x'.repeat(17) }).nickname, 'NSWER');
 });
 
@@ -252,7 +252,8 @@ testAsync('load：GET profiles?id=eq.<uid>&select=…，带 apikey + Bearer，�
   assert.strictEqual(call.init.headers.apikey, 'sb_publishable_test');
   assert.strictEqual(call.init.headers.Authorization, 'Bearer access-1');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(profile)), {
-    nickname: '小星', avatar: 'muse-2', prefs: { sound: false, touch: 'on' },
+    nickname: '小星', avatar: 'muse-2', avatarRaw: 'muse-2',
+    prefs: { sound: false, touch: 'on' },
   });
 });
 
@@ -331,6 +332,20 @@ testAsync('save：PATCH profiles?id=eq.<uid>，Prefer representation，body 只�
     prefs: { sound: false, touch: 'off' },
   }, '未知偏好键必须被丢弃');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(saved.prefs)), { sound: false, touch: 'off' });
+});
+
+testAsync('save：省略 avatar 时 PATCH 不含 avatar（保留云端未知/未来版本头像）', async () => {
+  const { client, fetchStub } = makeClient(() => response(200, [row()]));
+  await client.save({ nickname: '小星', prefs: { sound: true, touch: 'auto' } });
+  assert.strictEqual(fetchStub.calls.length, 1);
+  assert.strictEqual(
+    Object.prototype.hasOwnProperty.call(fetchStub.calls[0].body, 'avatar'),
+    false,
+    '省略 avatar 时必须从 PATCH body 中省略该字段'
+  );
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(fetchStub.calls[0].body)), {
+    nickname: '小星', prefs: { sound: true, touch: 'auto' },
+  });
 });
 
 testAsync('save：400 字段约束 → 中文提示（昵称/头像/偏好）', async () => {

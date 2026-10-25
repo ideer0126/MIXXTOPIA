@@ -46,6 +46,7 @@
     <div id="login-account" class="login-account hidden">
       <p>已登录：<span id="login-email-label"></span></p>
       <p>昵称：<span id="login-nickname-label"></span></p>
+      <p id="login-account-note" class="login-note"></p>
       <button type="button" id="btn-settings" class="menu-btn small">⚙ 账户设置</button>
       <button type="button" id="btn-logout" class="menu-btn small">↩ 登出</button>
     </div>
@@ -66,15 +67,16 @@
     </div>
     <label class="settings-field">
       <span>昵称（1–16 字）</span>
-      <input id="settings-nickname" type="text" autocomplete="nickname" placeholder="NSWER" />
+      <input id="settings-nickname" type="text" autocomplete="nickname" placeholder="NSWER" aria-describedby="settings-nickname-count" aria-invalid="false" />
     </label>
-    <p id="settings-nickname-count" class="settings-hint">0/16</p>
+    <p id="settings-nickname-count" class="settings-hint" aria-live="polite">0/16</p>
     <div class="settings-prefs">
       <button type="button" id="btn-pref-sound" class="menu-btn">♪ 声音：开</button>
       <button type="button" id="btn-pref-touch" class="menu-btn">📱 触屏按键：自动</button>
     </div>
     <p id="settings-cloud-note" class="settings-hint"></p>
     <p id="settings-msg" class="settings-msg" role="status"></p>
+    <button type="button" id="btn-settings-retry" class="menu-btn small hidden">↻ 重试读取云端资料</button>
     <button type="button" id="btn-settings-save" class="menu-btn">💾 保存设置</button>
     <div class="settings-danger">
       <a id="link-delete-account" class="settings-delete" href="https://github.com/ideer0126/MIXXTOPIA/issues/new?title=%E7%94%B3%E8%AF%B7%E5%88%A0%E9%99%A4%E8%B4%A6%E6%88%B7&amp;body=smoke" target="_blank" rel="noopener">删除账户（提交申请）</a>
@@ -413,6 +415,8 @@
       document.getElementById('btn-settings').click();
       ok('设置界面打开', shown('settings-screen') && !shown('login-screen'));
       ok('昵称输入回填', document.getElementById('settings-nickname').value === '小星');
+      ok('资料就绪后才可保存', document.getElementById('btn-settings-save').disabled === false
+        && document.getElementById('btn-settings-retry').classList.contains('hidden'));
       ok('字数提示 2/16', text('settings-nickname-count') === '2/16');
       var avatarBox = document.getElementById('avatar-options');
       ok('六个固定头像', avatarBox.children.length === 6);

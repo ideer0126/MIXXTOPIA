@@ -49,12 +49,12 @@ const UI_IDS = [
   'ending-screen', 'ending-body', 'btn-ending',
   'btn-account', 'account-note',
   'login-screen', 'login-title', 'login-form', 'login-email', 'login-password',
-  'login-msg', 'login-account', 'login-email-label', 'login-nickname-label',
+  'login-msg', 'login-account', 'login-email-label', 'login-nickname-label', 'login-account-note',
   'btn-login', 'btn-register', 'btn-logout', 'btn-login-back', 'btn-settings',
   'settings-screen', 'settings-account', 'settings-nickname', 'settings-nickname-count',
   'avatar-preview', 'avatar-preview-name', 'avatar-options',
   'btn-pref-sound', 'btn-pref-touch', 'settings-cloud-note', 'settings-msg',
-  'btn-settings-save', 'link-delete-account', 'btn-settings-back',
+  'btn-settings-retry', 'btn-settings-save', 'link-delete-account', 'btn-settings-back',
   'touch-controls',
 ];
 
@@ -122,7 +122,7 @@ for (const id of [
   'dialog', 'dialog-backdrop', 'hud', 'btn-continue',
   'btn-slot-del-1', 'btn-slot-del-2', 'btn-slot-del-3',
   'login-screen', 'login-account', 'account-note',
-  'settings-screen', 'btn-settings',
+  'settings-screen', 'btn-settings', 'btn-settings-retry',
 ]) {
   registry.get(id).classList.add('hidden');
 }
@@ -131,6 +131,7 @@ registry.get('btn-pref-sound').textContent = '♪ 声音：开';
 registry.get('btn-account').textContent = '☁ 登录 / 注册';
 registry.get('login-title').textContent = '登录 / 注册';
 registry.get('login-nickname-label').textContent = 'NSWER';
+registry.get('login-account-note').textContent = '';
 registry.get('settings-nickname-count').textContent = '0/16';
 registry.get('btn-pref-touch').textContent = '📱 触屏按键：自动';
 registry.get('settings-msg').textContent = '';
@@ -2157,10 +2158,17 @@ test('#44 index.html：设置界面元素齐全、脚本顺序正确、无自定
   const html = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   for (const id of ['settings-screen', 'settings-nickname', 'settings-nickname-count',
     'avatar-options', 'avatar-preview', 'btn-pref-sound', 'btn-pref-touch',
-    'settings-msg', 'btn-settings-save', 'btn-settings-back', 'btn-settings',
-    'link-delete-account']) {
+    'settings-msg', 'btn-settings-retry', 'btn-settings-save', 'btn-settings-back',
+    'btn-settings', 'login-account-note', 'link-delete-account']) {
     assert.ok(html.indexOf('id="' + id + '"') >= 0, 'index.html 缺少 #' + id);
   }
+  assert.match(html, /id="settings-nickname"[^>]*aria-describedby="settings-nickname-count"/,
+    '昵称输入需关联字数提示（可访问性）');
+  assert.match(html, /id="settings-nickname-count"[^>]*aria-live="polite"/,
+    '字数提示应为 live region');
+  const css = fs.readFileSync(path.join(repoRoot, 'styles.css'), 'utf8');
+  assert.match(css, /\.avatar-btn:focus-visible\s*\{[^}]*outline:\s*2px solid/,
+    '头像按钮键盘焦点需有可见 outline（可访问性）');
   const dataAt = html.indexOf('js/data.js');
   const accountAt = html.indexOf('js/account.js');
   const mainAt = html.indexOf('js/main.js');
@@ -2320,6 +2328,7 @@ testAsync('#44 昵称超长/为空：客户端拒绝并给出提示，不发起 
   assert.match(text('settings-msg'), /昵称最多 16 字/);
   assert.match(text('settings-msg'), /17 字/);
   assert.ok(elt('settings-msg').classList.contains('settings-msg-error'));
+  assert.strictEqual(elt('settings-nickname').getAttribute('aria-invalid'), 'true');
   assert.strictEqual(fetchStub.calls.filter(
     (c) => isProfilesCall(c) && c.init.method === 'PATCH').length, patchesBefore,
     '超长昵称不得发请求');
@@ -2348,6 +2357,8 @@ testAsync('#44 保存失败：网络类错误提示云端暂不可用，本机�
   elt('btn-settings').click();
   elt('settings-nickname').value = '离线小星';
   elt('btn-pref-touch').click(); // auto → on
+  const getsBefore = fetchStub.calls.filter(
+    (c) => isProfilesCall(c) && c.init.method === 'GET').length;
 
   elt('btn-settings-save').click();
   await game._accountPromise;
@@ -2358,10 +2369,16 @@ testAsync('#44 保存失败：网络类错误提示云端暂不可用，本机�
   assert.strictEqual(storedSettings.sound, true);
   assert.strictEqual(storedSettings.touch, 'on', '云端失败不丢本机偏好');
   assert.strictEqual(game.input.getTouchMode(), 'on');
+  assert.strictEqual(
+    fetchStub.calls.filter((c) => isProfilesCall(c) && c.init.method === 'GET').length,
+    getsBefore,
+    '保存失败不应触发后台重新 GET（避免迟到结果覆盖正在编辑的内容）'
+  );
+  assert.strictEqual(elt('btn-settings-save').disabled, false, '资料仍有效，可再次尝试保存');
   game.destroy();
 });
 
-testAsync('#44 云端偏好采用规则：新设备采用云端；本机已有设置时本地优先', async () => {
+testAsync('#44 偏好为设备级：新设备采用一次云端；本机已有设置时（换号/云端变化）不自动覆盖', async () => {
   // A) 本机无设置记录（新设备/清缓存）→ 采用云端声音/操作偏好
   localStorageStub.clear();
   seedAccount();
@@ -2468,6 +2485,399 @@ testAsync('#44 切号竞态：旧账号资料请求在途时切到新账号，�
   assert.strictEqual(game.profile.nickname, '账号B');
   assert.strictEqual(text('btn-account'), '☁ 账户 · 账号B');
   game.destroy();
+});
+
+testAsync('#44 资料未就绪：设置页禁用保存，不会用默认值覆盖云端', async () => {
+  localStorageStub.clear();
+  const deferred = [];
+  const saveCalls = [];
+  const fakeProfile = {
+    load() { return new Promise((resolve) => { deferred.push(resolve); }); },
+    save(input) { saveCalls.push(input); return Promise.resolve(null); },
+  };
+  const authState = { session: { user: { id: 'u-a', email: 'a@example.com' } } };
+  const fakeAuth = {
+    available: true,
+    lastError: null,
+    onChange() { return function () {}; },
+    getSession() { return authState.session; },
+    ensureFresh() { return Promise.resolve(authState.session); },
+    refresh() { return Promise.resolve(authState.session); },
+    restore() { return Promise.resolve(authState.session); },
+  };
+  const game = new main.Game(registry.get('game'), {
+    storage: localStorageStub,
+    auth: fakeAuth,
+    profile: fakeProfile,
+  });
+  await game._authReady;
+  await flushMicrotasks();
+  assert.strictEqual(deferred.length, 1, '资料请求已发出但未返回');
+
+  game._openLoginScreen();
+  elt('btn-settings').click();
+  assert.ok(shown('settings-screen'));
+  assert.strictEqual(elt('btn-settings-save').disabled, true, '资料未就绪时保存按钮禁用');
+  assert.strictEqual(elt('settings-nickname').disabled, true, '资料未就绪时昵称输入禁用');
+  assert.strictEqual(elt('settings-nickname').value, 'NSWER', '表单暂为默认占位，不能当玩家输入保存');
+  assert.strictEqual(elt('btn-pref-touch').disabled, false, '本机偏好仍可调整');
+  assert.strictEqual(elt('btn-settings-retry').classList.contains('hidden'), true, '加载中不显示重试');
+
+  // 即使绕过 disabled 直接触发保存，也必须被双保险拦住、不得 PATCH 默认值
+  game._onSettingsSave();
+  await flushMicrotasks();
+  assert.strictEqual(saveCalls.length, 0, '资料未就绪不得保存');
+  assert.match(text('settings-msg'), /正在读取云端资料/);
+
+  deferred[0]({ nickname: '云端小星', avatar: 'muse-3', avatarRaw: 'muse-3', prefs: { sound: true, touch: 'auto' } });
+  await flushMicrotasks();
+  assert.strictEqual(elt('btn-settings-save').disabled, false, '资料就绪后恢复保存');
+  assert.strictEqual(elt('settings-nickname').value, '云端小星');
+  assert.strictEqual(text('avatar-preview-name'), 'Sullyoon');
+  game.destroy();
+});
+
+testAsync('#44 资料加载失败：显示重试，重试成功后恢复表单', async () => {
+  localStorageStub.clear();
+  seedAccount();
+  let profileGets = 0;
+  const fetchStub = authFetch((call) => {
+    if (!isProfilesCall(call)) throw new Error('意外请求：' + call.url);
+    profileGets++;
+    if (profileGets <= 3) throw new TypeError('断网');
+    return profileResponse(call, { nickname: '重试成功', avatar: 'muse-2' });
+  });
+  const game = makeAccountGame(fetchStub, { keepStorage: true });
+  await game._authReady;
+  await settle(game);
+  game._openLoginScreen();
+  await settle(game);
+  elt('btn-settings').click();
+  await settle(game);
+
+  assert.strictEqual(game.profile, null);
+  assert.ok(game.profileError, '资料加载失败应记录错误');
+  assert.match(text('settings-cloud-note'), /云端资料暂不可用/);
+  assert.strictEqual(elt('btn-settings-save').disabled, true, '失败时禁止保存');
+  assert.strictEqual(elt('btn-settings-retry').classList.contains('hidden'), false, '失败时显示重试按钮');
+
+  elt('btn-settings-retry').click();
+  await settle(game);
+  assert.ok(game.profile, '重试后应加载到资料');
+  assert.strictEqual(elt('settings-nickname').value, '重试成功');
+  assert.strictEqual(elt('btn-settings-save').disabled, false);
+  assert.strictEqual(elt('btn-settings-retry').classList.contains('hidden'), true, '成功后隐藏重试');
+  game.destroy();
+});
+
+testAsync('#44 未知/未来版本头像：只改昵称不会把云端头像覆盖成默认', async () => {
+  localStorageStub.clear();
+  seedAccount();
+  const storedRow = { nickname: '小星', avatar: 'muse-9', prefs: { sound: true, touch: 'auto' } };
+  const fetchStub = authFetch((call) => {
+    if (!isProfilesCall(call)) throw new Error('意外请求：' + call.url);
+    return profileResponse(call, storedRow);
+  });
+  const game = makeAccountGame(fetchStub, { keepStorage: true });
+  await game._authReady;
+  await settle(game);
+  assert.strictEqual(game.profile.avatar, 'muse-1', '未知头像渲染回退默认');
+  assert.strictEqual(game.profile.avatarRaw, 'muse-9', '保留云端原始头像 id');
+
+  game._openLoginScreen();
+  elt('btn-settings').click();
+  assert.match(text('settings-cloud-note'), /muse-9/, '提示云端头像不在可选集');
+  assert.strictEqual(text('avatar-preview-name'), 'Lily', '预览回退默认头像');
+
+  elt('settings-nickname').value = '只改昵称';
+  elt('btn-settings-save').click();
+  await game._accountPromise;
+  await settle(game);
+  const patches = fetchStub.calls.filter(
+    (c) => isProfilesCall(c) && c.init.method === 'PATCH');
+  assert.strictEqual(patches.length, 1);
+  assert.strictEqual(patches[0].body.nickname, '只改昵称');
+  assert.strictEqual(
+    Object.prototype.hasOwnProperty.call(patches[0].body, 'avatar'),
+    false,
+    '未改头像时必须省略 avatar 字段，避免覆盖已知未知 id'
+  );
+  assert.strictEqual(game.profile.avatarRaw, 'muse-9', '保存后仍保留云端原始头像');
+
+  // 主动选新头像后：未知头像提示消失，保存会回写所选头像
+  elt('settings-nickname').value = '再改一次';
+  game._ui.avatarBtns['muse-6'].click();
+  assert.strictEqual(/muse-9/.test(text('settings-cloud-note')), false,
+    '玩家主动选头像后不再提示「不改动云端头像」');
+  elt('btn-settings-save').click();
+  await game._accountPromise;
+  await settle(game);
+  const patches2 = fetchStub.calls.filter(
+    (c) => isProfilesCall(c) && c.init.method === 'PATCH');
+  assert.strictEqual(patches2.length, 2);
+  assert.strictEqual(patches2[1].body.avatar, 'muse-6', '主动选头像时回写所选值');
+  game.destroy();
+});
+
+testAsync('#44 登出时设置页自动关闭，不残留旧资料', async () => {
+  localStorageStub.clear();
+  seedAccount();
+  const fetchStub = authFetch((call) => {
+    if (call.url.indexOf('/logout') >= 0) return authResponse(204, null);
+    if (isProfilesCall(call)) return profileResponse(call, { nickname: '残留检查' });
+    throw new Error('意外请求：' + call.url);
+  });
+  const game = makeAccountGame(fetchStub, { keepStorage: true });
+  await game._authReady;
+  await settle(game);
+  game._openLoginScreen();
+  elt('btn-settings').click();
+  assert.ok(shown('settings-screen'));
+  await game.auth.signOut();
+  await settle(game);
+  assert.ok(hidden('settings-screen'), '登出后设置页必须关闭');
+  assert.ok(shown('title-screen') && shown('login-form'));
+  assert.strictEqual(game.profile, null);
+  assert.strictEqual(text('btn-account'), '☁ 登录 / 注册');
+  game.destroy();
+});
+
+testAsync('#44 切号：已加载 A 后切 B，立即清空旧资料且旧保存回包不落到 B', async () => {
+  localStorageStub.clear();
+  const loads = [];
+  const saves = [];
+  const fakeProfile = {
+    load() { return new Promise((resolve) => { loads.push(resolve); }); },
+    save(input) {
+      return new Promise((resolve) => { saves.push({ input: input, resolve: resolve }); });
+    },
+  };
+  const authState = { session: { user: { id: 'u-a', email: 'a@example.com' } } };
+  const fakeAuth = {
+    available: true,
+    lastError: null,
+    onChange() { return function () {}; },
+    getSession() { return authState.session; },
+    ensureFresh() { return Promise.resolve(authState.session); },
+    refresh() { return Promise.resolve(authState.session); },
+    restore() { return Promise.resolve(authState.session); },
+  };
+  const game = new main.Game(registry.get('game'), {
+    storage: localStorageStub,
+    auth: fakeAuth,
+    profile: fakeProfile,
+  });
+  await game._authReady;
+  await flushMicrotasks();
+  loads[0]({ nickname: '账号A', avatar: 'muse-1', avatarRaw: 'muse-1', prefs: { sound: true, touch: 'auto' } });
+  await flushMicrotasks();
+  assert.strictEqual(game.profile.nickname, '账号A');
+  assert.strictEqual(text('btn-account'), '☁ 账户 · 账号A');
+
+  // A 的保存请求在途
+  game._openLoginScreen();
+  elt('btn-settings').click();
+  elt('settings-nickname').value = 'A新名';
+  elt('btn-settings-save').click();
+  await flushMicrotasks();
+  assert.strictEqual(saves.length, 1, 'A 的保存请求已发出');
+  assert.strictEqual(game._accountBusy, true);
+
+  // 直接切到 B（B 资料挂起）
+  authState.session = { user: { id: 'u-b', email: 'b@example.com' } };
+  game._syncProfile();
+  await flushMicrotasks();
+  assert.strictEqual(game.profile, null, '切号后立即清空 A 的资料');
+  assert.strictEqual(text('btn-account'), '☁ 账户 · b@example.com', '标题不得残留 A 的昵称');
+  assert.strictEqual(elt('btn-settings-save').disabled, true, 'B 资料就绪前禁止保存');
+  assert.strictEqual(loads.length, 2, 'B 的资料加载已开始');
+
+  // A 的保存回包迟到：必须丢弃，不能写到 B
+  saves[0].resolve({ nickname: 'A新名', avatar: 'muse-1', avatarRaw: 'muse-1', prefs: { sound: true, touch: 'auto' } });
+  await flushMicrotasks();
+  assert.strictEqual(game.profile, null, '旧账号保存回包必须丢弃');
+  assert.strictEqual(text('btn-account'), '☁ 账户 · b@example.com');
+
+  loads[1]({ nickname: '账号B', avatar: 'muse-2', avatarRaw: 'muse-2', prefs: { sound: true, touch: 'auto' } });
+  await flushMicrotasks();
+  assert.strictEqual(game.profile.nickname, '账号B');
+  assert.strictEqual(text('btn-account'), '☁ 账户 · 账号B');
+  assert.strictEqual(elt('btn-settings-save').disabled, false);
+  game.destroy();
+});
+
+testAsync('#44 本机写盘失败：保存/切换偏好提示「已生效但刷新后会丢失」', async () => {
+  localStorageStub.clear();
+  const base = createLocalStorage();
+  const brokenStorage = {
+    getItem(key) { return base.getItem(key); },
+    setItem() { throw new Error('quota exceeded'); },
+    removeItem(key) { base.removeItem(key); },
+    clear() { base.clear(); },
+  };
+  const fakeProfile = {
+    load() { return Promise.resolve({ nickname: '云端小星', avatar: 'muse-2', avatarRaw: 'muse-2', prefs: { sound: true, touch: 'auto' } }); },
+    save(input) {
+      return Promise.resolve({
+        nickname: input.nickname,
+        avatar: input.avatar || 'muse-2',
+        avatarRaw: input.avatar || 'muse-2',
+        prefs: input.prefs,
+      });
+    },
+  };
+  const fakeAuth = {
+    available: true,
+    lastError: null,
+    onChange() { return function () {}; },
+    getSession() { return { user: { id: 'u-a', email: 'a@example.com' } }; },
+    ensureFresh() { return Promise.resolve(this.getSession()); },
+    refresh() { return Promise.resolve(this.getSession()); },
+    restore() { return Promise.resolve(this.getSession()); },
+  };
+  const game = new main.Game(registry.get('game'), {
+    storage: brokenStorage,
+    auth: fakeAuth,
+    profile: fakeProfile,
+  });
+  await game._authReady;
+  await flushMicrotasks();
+  game._openLoginScreen();
+  elt('btn-settings').click();
+
+  elt('btn-pref-touch').click(); // 偏好即时切换，本地写盘失败
+  assert.match(text('settings-msg'), /本机存储不可用/);
+  assert.ok(elt('settings-msg').classList.contains('settings-msg-error'));
+
+  elt('settings-nickname').value = '写盘失败';
+  elt('btn-settings-save').click();
+  await game._accountPromise;
+  await flushMicrotasks();
+  assert.match(text('settings-msg'), /本机存储不可用/);
+  assert.ok(elt('settings-msg').classList.contains('settings-msg-error'));
+  assert.strictEqual(game.profile.nickname, '写盘失败', '云端保存仍成功');
+  game.destroy();
+});
+
+testAsync('#44 保存期间冻结声音/触屏偏好按钮', async () => {
+  localStorageStub.clear();
+  const saves = [];
+  const fakeProfile = {
+    load() { return Promise.resolve({ nickname: '小星', avatar: 'muse-2', avatarRaw: 'muse-2', prefs: { sound: true, touch: 'auto' } }); },
+    save(input) {
+      return new Promise((resolve) => { saves.push({ input: input, resolve: resolve }); });
+    },
+  };
+  const fakeAuth = {
+    available: true,
+    lastError: null,
+    onChange() { return function () {}; },
+    getSession() { return { user: { id: 'u-a', email: 'a@example.com' } }; },
+    ensureFresh() { return Promise.resolve(this.getSession()); },
+    refresh() { return Promise.resolve(this.getSession()); },
+    restore() { return Promise.resolve(this.getSession()); },
+  };
+  const game = new main.Game(registry.get('game'), {
+    storage: localStorageStub,
+    auth: fakeAuth,
+    profile: fakeProfile,
+  });
+  await game._authReady;
+  await flushMicrotasks();
+  game._openLoginScreen();
+  elt('btn-settings').click();
+  elt('settings-nickname').value = '保存中';
+  elt('btn-settings-save').click();
+  await flushMicrotasks();
+  assert.strictEqual(elt('btn-pref-sound').disabled, true, '保存期间冻结声音按钮');
+  assert.strictEqual(elt('btn-pref-touch').disabled, true, '保存期间冻结触屏偏好按钮');
+  saves[0].resolve({ nickname: '保存中', avatar: 'muse-2', avatarRaw: 'muse-2', prefs: { sound: true, touch: 'auto' } });
+  await flushMicrotasks();
+  assert.strictEqual(elt('btn-pref-sound').disabled, false);
+  assert.strictEqual(elt('btn-pref-touch').disabled, false);
+  assert.strictEqual(text('settings-msg'), '设置已保存。');
+  game.destroy();
+});
+
+testAsync('#44 资料模块缺失：显示「资料功能未启用」，设置入口隐藏', async () => {
+  localStorageStub.clear();
+  const fakeAuth = {
+    available: true,
+    lastError: null,
+    onChange() { return function () {}; },
+    getSession() { return { user: { id: 'u-a', email: 'a@example.com' } }; },
+    ensureFresh() { return Promise.resolve(this.getSession()); },
+    refresh() { return Promise.resolve(this.getSession()); },
+    restore() { return Promise.resolve(this.getSession()); },
+  };
+  const game = new main.Game(registry.get('game'), {
+    storage: localStorageStub,
+    auth: fakeAuth,
+    profile: null,
+  });
+  await game._authReady;
+  await flushMicrotasks();
+  elt('btn-account').click();
+  assert.ok(shown('login-account'));
+  assert.strictEqual(text('login-nickname-label'), '资料功能未启用');
+  assert.match(text('login-account-note'), /资料功能未启用/);
+  assert.ok(hidden('btn-settings'), '资料模块缺失时隐藏设置入口');
+  game.destroy();
+});
+
+testAsync('#44 往返：保存设置后重新登录，昵称/头像/偏好与云端一致', async () => {
+  localStorageStub.clear();
+  const server = {
+    row: { nickname: '原始昵称', avatar: 'muse-1', prefs: { sound: true, touch: 'auto' } },
+  };
+  const fetchStub = authFetch((call) => {
+    if (call.url.indexOf('grant_type=password') >= 0) return authResponse(200, accountPayload());
+    if (call.url.indexOf('/logout') >= 0) return authResponse(204, null);
+    if (isProfilesCall(call)) {
+      if (call.init.method === 'PATCH') {
+        server.row = Object.assign({}, server.row, call.body);
+        return authResponse(200, [server.row]);
+      }
+      return authResponse(200, [server.row]);
+    }
+    throw new Error('意外请求：' + call.url);
+  });
+
+  // 第一次：游客登录 → 改昵称/头像/偏好 → 保存
+  const game1 = makeAccountGame(fetchStub);
+  await game1._authReady;
+  elt('btn-account').click();
+  elt('login-email').value = ACCOUNT_USER.email;
+  elt('login-password').value = 'secret123';
+  elt('btn-login').click();
+  await game1._authPromise;
+  await settle(game1);
+  elt('btn-settings').click();
+  assert.strictEqual(elt('settings-nickname').value, '原始昵称');
+  elt('settings-nickname').value = '存档昵称';
+  game1._ui.avatarBtns['muse-4'].click();
+  elt('btn-pref-touch').click(); // auto → on
+  elt('btn-settings-save').click();
+  await game1._accountPromise;
+  await settle(game1);
+  assert.strictEqual(server.row.nickname, '存档昵称');
+  assert.strictEqual(server.row.avatar, 'muse-4');
+  assert.deepStrictEqual(server.row.prefs, { sound: true, touch: 'on' });
+  game1.destroy();
+
+  // 第二次：重新载入页面（保留会话）→ 自动 GET，资料与云端一致
+  const game2 = makeAccountGame(fetchStub, { keepStorage: true });
+  await game2._authReady;
+  await settle(game2);
+  assert.strictEqual(game2.profile.nickname, '存档昵称', '重登后昵称一致');
+  assert.strictEqual(game2.profile.avatar, 'muse-4', '重登后头像一致');
+  assert.strictEqual(text('btn-account'), '☁ 账户 · 存档昵称');
+  game2._openLoginScreen();
+  elt('btn-settings').click();
+  assert.strictEqual(elt('settings-nickname').value, '存档昵称');
+  assert.ok(game2._ui.avatarBtns['muse-4'].classList.contains('is-selected'));
+  assert.strictEqual(text('btn-pref-touch'), '📱 触屏按键：常开');
+  game2.destroy();
 });
 
 /* ─────────────────── 汇总 ─────────────────── */

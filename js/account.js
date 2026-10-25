@@ -19,6 +19,8 @@
  *   - `profiles.nickname` 允许 NULL（注册触发器默认 'NSWER'）；读取时空值回退默认昵称。
  *   - `profiles.avatar` 只校验格式；前端白名单外的值视为默认头像。
  *   - `profiles.prefs` 是 jsonb；本文件只读写已知字段，不透传未知键。
+ *   - `profile.avatarRaw` 保留云端原始 id；未知/未来版本头像渲染回退默认，但保存时
+ *     可由调用方省略 avatar 字段（PATCH 是部分更新），避免把云端原值覆盖成默认。
  *   - 写资料用 `PATCH /rest/v1/profiles?id=eq.<uid>` + `Prefer: return=representation`，
  *     返回数组长度 1 才认为成功；0 行视为资料行缺失/无权限。
  *
@@ -200,9 +202,11 @@
 
   /**
    * 服务端 profiles 行 → 前端资料对象（容错：NULL/非法值回退默认）。
+   * `avatarRaw` 保留云端原始 id：若它不在当前前端白名单（未知 / 未来版本头像），
+   * UI 展示回退默认头像，但保存时不得把原始值覆盖成默认（见 main.js 保存逻辑）。
    * @param {object} row
    * @param {object} [host]
-   * @returns {{nickname: string, avatar: string, prefs: {sound: boolean, touch: string}}}
+   * @returns {{nickname: string, avatar: string, avatarRaw: string, prefs: {sound: boolean, touch: string}}}
    */
   function normalizeProfileRow(row, host) {
     const src = row && typeof row === 'object' ? row : {};
@@ -210,24 +214,32 @@
     if (nickname && (charLength(nickname) > NICKNAME_MAX || CONTROL_CHARS_RE.test(nickname))) {
       nickname = '';
     }
+    const rawAvatar = typeof src.avatar === 'string' && AVATAR_ID_RE.test(src.avatar)
+      ? src.avatar
+      : '';
     return {
       nickname: nickname || DEFAULT_NICKNAME,
-      avatar: normalizeAvatar(src.avatar, host),
+      avatar: normalizeAvatar(rawAvatar, host),
+      avatarRaw: rawAvatar,
       prefs: normalizePrefs(src.prefs),
     };
   }
 
   /**
    * 校验待保存资料；不合法直接抛 AccountError（调用方无需再判空）。
-   * @param {object} input { nickname, avatar, prefs }
+   * avatar 可省略（undefined）：PATCH 只更新昵称/偏好，保留云端已有头像——
+   * 用于「云端头像不在当前版本白名单」时避免把未来/未知 id 覆盖成默认值。
+   * @param {object} input { nickname, avatar?, prefs }
    * @param {object} [host]
-   * @returns {{nickname: string, avatar: string, prefs: {sound: boolean, touch: string}}}
+   * @returns {{nickname: string, avatar: string|undefined, prefs: {sound: boolean, touch: string}}}
    */
   function validateProfileInput(input, host) {
     const src = input && typeof input === 'object' ? input : {};
     const nick = normalizeNickname(src.nickname);
     if (!nick.ok) throw new AccountError(nick.code);
-    if (!isAvatarAllowed(src.avatar, host)) throw new AccountError('bad_avatar');
+    if (src.avatar !== undefined && !isAvatarAllowed(src.avatar, host)) {
+      throw new AccountError('bad_avatar');
+    }
     return {
       nickname: nick.value,
       avatar: src.avatar,
@@ -434,9 +446,11 @@
     }
 
     /**
-     * 保存本人资料（昵称 / 头像 / 偏好）。校验失败不发起请求。
-     * @param {{nickname: string, avatar: string, prefs: object}} input
-     * @returns {Promise<{nickname: string, avatar: string, prefs: object}>}
+     * 保存本人资料（昵称 / 偏好，头像可选）。校验失败不发起请求。
+     * avatar 省略时 PATCH 只更新 nickname/prefs，保留云端已有头像——
+     * 调用方在「云端头像未知/未来版本、玩家未主动改头像」时应省略该字段。
+     * @param {{nickname: string, avatar?: string, prefs: object}} input
+     * @returns {Promise<{nickname: string, avatar: string, avatarRaw: string, prefs: object}>}
      */
     async save(input) {
       const profile = validateProfileInput(input, this.root); // 客户端校验先于网络
@@ -447,14 +461,12 @@
         const headers = this._headers(session.accessToken);
         headers['Content-Type'] = 'application/json';
         headers.Prefer = 'return=representation';
+        const body = { nickname: profile.nickname, prefs: profile.prefs };
+        if (profile.avatar !== undefined) body.avatar = profile.avatar;
         const res = await this._request(this._profileUrl(session.user.id), {
           method: 'PATCH',
           headers,
-          body: {
-            nickname: profile.nickname,
-            avatar: profile.avatar,
-            prefs: profile.prefs,
-          },
+          body: body,
         });
         return this._rowsToProfile(res.data);
       });
