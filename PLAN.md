@@ -50,11 +50,12 @@ NSWER 在生日夜被一道星光带入梦境世界 **MIXXTOPIA**。六位缪斯
 - 对话为线性文本 + 打字机效果；部分节点有选项。
 - 进度通过 localStorage 存档（3 个存档位；ESC「保存并退出」手动存档 + 通关自动存档；见 GAME_DESIGN.md §10）；账户与云存档已立项（见 §2.5）。
 
-### 2.4 战斗系统（已立项，设计后置）
+### 2.4 战斗系统（#18 v1 已实现）
 
-- 轻量战斗元素：玩家武器为 **NMIXX 二代应援棒**（挥击 / 蓄力 / 兼作光源），敌人为梦境侵蚀生物，终章一个 Boss。
-- 需求已立项 [Issue #18](https://github.com/ideer0126/MIXXTOPIA/issues/18)；详细设计（机制 / 数值 / 敌人表 / 升级线）后续单独成文，评审后并入 GAME_DESIGN.md。
-- 定位：剧情与解谜为主、战斗为点缀，粉丝向休闲难度。
+- 轻量战斗元素：玩家武器为 **NMIXX 二代应援棒**——**F 轻击 / G 重击**，轻击与重击射程相同（24px）；攻击只锁定正面 180° 扇形内、视线可达的最近敌人，无敌人时朝移动方向；被动能量条自动充能，攒满后按 **F 或 G** 释放**能量炮**，射程为普攻的 **2.2 倍**（52.8px）。
+- 玩家 10 HP、受击无敌帧与击退；倒下无惩罚复位；敌人为梦境侵蚀生物（`dreamling` / `wisp`），终章 Boss 后续设计。
+- 规格、数值、敌人表与数据格式见 `docs/GAME_DESIGN.md` §12；实现位于 `js/engine.js` 的 `Combat` / `COMBAT_TUNING` 与 `js/main.js` 接线。
+- 定位：剧情与解谜为主、战斗为点缀，粉丝向休闲难度；不写入存档，换关/重玩重置。
 
 ### 2.5 账户与云存档（已立项，技术选型已定）
 
@@ -80,8 +81,8 @@ MIXXTOPIA/
 │   ├── sprites.js        # 像素素材：瓦片/角色/道具（调色板换色）
 │   ├── audio.js          # WebAudio 芯片音效 + 每关 BGM 循环
 │   ├── data.js           # 关卡数据：6 关地图 + 对话 + 谜题（数据驱动；含 GAME.avatarPresets）
-│   ├── engine.js         # 引擎：渲染、输入、碰撞、摄像机、粒子
-│   └── main.js           # 状态机：标题/游玩/对话/暂停/结算/结局 + 存档 + 账户设置接线
+│   ├── engine.js         # 引擎：渲染、输入、碰撞、摄像机、粒子、战斗（Combat）
+│   └── main.js           # 状态机：标题/游玩/对话/暂停/结算/结局 + 存档 + 账户设置 + 战斗接线
 ├── tools/validate.js     # 地图/数据校验脚本（node 运行）
 ├── tools/test-auth.js    # 账户 Auth 单测（fetch 桩，不连真实后端）
 ├── tools/test-account.js # 账户资料（profiles）单测（fetch 桩，不连真实后端）（#44）
@@ -152,7 +153,7 @@ MIXXTOPIA/
 | 15 | 表现打磨：粒子、过场演出、结算动画 | 程序 | js/engine.js 粒子 | M4 | #9 #13 | ⚪ 未开始 |
 | 16 | QA：地图校验、浏览器冒烟测试、移动端适配 | QA | 测试报告 | M5 | #11–15 | ⚪ 未开始 |
 | 17 | 发布：Pages 上线验证、README 图文 | 发布 | 线上可玩 + README | M5 | #16 | ⚪ 未开始 |
-| 18 | 战斗系统立项：二代应援棒武器（设计后置，详见 Issue #18） | 策划+程序 | 战斗设计文档（并入 GAME_DESIGN.md） | M2 | #3 #9 | 📋 已立项 |
+| 18 | 战斗系统：二代应援棒（F 轻击 / G 重击 / 被动能量条 / 2.2 倍射程能量炮 / 敌人 HP 与倒下复位） | 策划+程序 | `engine.Combat` + main 接线 + GAME_DESIGN §12 + 测试 | M2 | #3 #9 | ✅ 已合并（PR #54） |
 | 19 | 账户与云存档：注册/登录、账户设置、云同步、统计（**选型已定 A2：Supabase + 手写 REST，2026-10-24**；立项稿 `docs/ACCOUNT_SYSTEM.md`，Issue #22，子任务 #42–#47） | 策划+程序 | 设计文档（已并入 GAME_DESIGN.md §10） | M2（立项） | #6 #8 | 🔵 #42 建表+RLS、#43 Auth、#44 账户设置已实现（分支 feat/43-auth、feat/44-account-settings）；下一步 #45 云存档同步 |
 
 ---
@@ -180,13 +181,13 @@ MIXXTOPIA/
 - [x] 关 1 剧情重制（2026-10-24，Issue #34）：GAME_DESIGN v0.4 —— 区域改为「梦核幼儿园生日派对」，18 岁 NSWER 梦回童年，六位缪斯幼儿园文艺汇演妆造（成人身体、仅换妆造）；`l1.*` 对话稿细化并同步 js/data.js；新增关 1 40×28 地图布局草案（供 #11；美术见 #13）
 - [x] #8 存档系统（2026-10-24，Issue #8）：3 存档位 + 手动存档（ESC「保存并退出」）+ 通关自动存档；标题改为「继续冒险 / 新游戏 / 选择存档」（**不做选关**）；读档恢复关卡/已收集星/once/黑羊；选择存档支持二次确认删除；损坏存档容错与存储不可用提示；声音设置独立持久化；test-main 52 项 + 无头浏览器冒烟通过（分支 feat/8-save-system）
 - [x] #9 收集与解谜机制（2026-10-24，Issue #9）：`engine.Mechanics`（墙/水/门/箱碰撞、推箱一格、压力开关→门、踩门防夹）+ `engine.Particles`（星星拾取/开门/传送门粒子）+ `js/audio.js` 最小芯片音效（星/箱/开关/门/传送门，无 WebAudio 安静降级）；`main.js` 接线碰撞、推箱、开关门事件、星星拾取、传送门激活与 `portal.to` 跳关；占位关 1 增加「礼物盒 → 地垫 → 屏风门」闭环；test-engine 36 项 + test-main 59 项 + 无头浏览器冒烟 50 项检查通过（分支 feat/9-collect-puzzle-mechanics）
+- [x] #18 战斗系统 v1（2026-10-25，Issue #18）：`engine.Combat` 实现 F 轻击 / G 重击 / 正面 180° 自动锁敌 + 墙体视线遮挡（无敌人时跟随移动方向）/ 被动能量条（7/s、命中 +5/+10）/ 能量炮（52.8px = 24px 的 2.2 倍、消耗 100）/ 10 HP + 0.9s 无敌帧 + 倒下满血复位；敌人 `dreamling`/`wisp` 追击与接触伤害；HUD 显示 HP 与能量条、触屏 B/C；占位关 3+2 只敌人；test-engine 47 项 + test-main 75 项通过（分支 feat/18-combat-system）
 - [x] #43 Auth（2026-10-25，Issue #43）：新增 `js/auth.js` 手写 GoTrue 封装（注册 / 登录 / 登出 / refresh_token 续期 / 会话恢复，会话键 `mixxtopia.account.v1`，错误码中文映射）；标题加「登录 / 注册」入口与登录 screen（复用 `_show`/`_hide`，不新增游戏状态）；游客态零网络、游戏逻辑不变；`tools/test-auth.js` 19 项 fetch 桩单测 + test-main 账户 UI 9 项 + 无头冒烟通过（分支 feat/43-auth）
 - [x] #44 账户设置（2026-10-25，Issue #44）：新增 `js/account.js` 手写 PostgREST `profiles` 读写（`GET/PATCH /rest/v1/profiles?id=eq.<uid>`，`Prefer: return=representation`；昵称 1–16 字按码点校验、超长/空白/控制字符客户端拒绝；固定头像白名单来自 `GAME.avatarPresets`（6 位缪斯 `muse-1…muse-6`，新增头像只改 data.js、无需迁移；未知 id 回退默认）；偏好 `sound`/`touch` 归一化并丢弃未知键）；登录面板新增「账户设置」入口，设置 screen 支持昵称/头像/声音/触屏按键偏好与删除账户申请（GitHub issue 人工处理，前端不碰 `auth.users`）；云端偏好采用规则：本机无设置记录（新设备）才采用云端，已有记录本地优先并提示差异；profile 未加载成功前禁用保存并用重试按钮兜底（防默认值覆盖云端）、未知/未来版本头像只改昵称时通过省略 avatar 保留原值；`tools/test-account.js` 21 项 + test-main 93 项 + 无头冒烟 81 项检查通过（分支 feat/44-account-settings）
 
 **下一步**
 - [ ] M2：#11 先拆出「关 1 地图」子任务落地，让 `validate.js` 转绿并跑通真正的一关闭环
 - [ ] M2：#10 已取消（不做选关；选存档并入 #8；GitHub Issue #10 文案待人工同步/关闭）
-- [ ] #18 战斗系统：已立项，设计评审后另立子任务
 - [ ] #19 账户系统：**选型已定（A2：Supabase + 手写 REST）**，子任务 #42–#47 已建；#42 建表 + RLS、#43 Auth、#44 账户设置已完成，下一步 #45 云存档同步（依赖 #43 的会话与 `ensureFresh()`、#44 的 `mixxtopia.settings.v1` 偏好同步规则）
 
 **节奏**：每个任务一条分支、一个 PR、一次冒烟测试；里程碑完成即向用户演示。

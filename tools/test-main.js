@@ -9,7 +9,7 @@
  *   1. 六态常量与公开 API
  *   2. 标题 → 游玩 → 对话 → 游玩 → 暂停 → 游玩 → 结算 → 下一关 → 结算 → 结局 → 标题
  *      全链路往返，逐状态断言 UI 显隐 / 输入开关 / 虚拟按键显隐
- *   3. HUD：关名与星数「★ x/y」随收集与换关刷新
+ *   3. HUD：关名、星数「★ x/y」、HP「♥ 10/10」与被动能量条随战斗/换关刷新
  *   4. 无泄漏：单输入实例、单游戏循环、离开状态清空 DOM、重开新局零残留、
  *      关卡数据只读（重玩不残留收集标记）
  *   5. 状态守卫：错误状态下的按钮/按键不生效；destroy 后全部解绑
@@ -23,6 +23,8 @@
  *      传送门激活、单关完整闭环（开门 → 取星 → 传送门 → 下一关）
  *  10. 账户（#43/#44）：登录/登出/会话恢复、登录后拉取 profile、账户设置界面
  *      （昵称/固定头像/声音/触屏偏好/删除申请）、昵称校验与云端偏好采用规则
+ *  11. 战斗（Issue #18）：F 轻击 / G 重击、正面 180° 锁敌与墙体视线遮挡、能量炮 2.2 倍射程、
+ *      HP/无敌帧/倒下复位、对话期间冻结、触屏 B/C 键与帮助文案
  */
 'use strict';
 
@@ -36,7 +38,8 @@ const { FakeCanvas } = require('./stub-canvas.js');
 
 /** main.js _cacheUI 需要的全部 id（与 index.html 一致） */
 const UI_IDS = [
-  'hud', 'hud-level', 'hud-shards',
+  'hud', 'hud-level', 'hud-shards', 'hud-hp',
+  'hud-energy', 'hud-energy-fill', 'hud-energy-label',
   'title-screen', 'btn-start', 'btn-continue', 'btn-saves', 'btn-help', 'btn-sound',
   'save-screen', 'save-note',
   'btn-slot-1', 'btn-slot-2', 'btn-slot-3',
@@ -428,6 +431,7 @@ test('占位关卡：2 关、实体齐全（spawn/star/npc/portal）+ 关 1 机�
     assert.strictEqual(lv.entities.filter((e) => e.type === 'portal').length, 1);
     assert.ok(lv.entities.filter((e) => e.type === 'star').length >= 1);
     assert.ok(lv.entities.filter((e) => e.type === 'npc').length >= 1);
+    assert.ok(lv.entities.filter((e) => e.type === 'enemy').length >= 1, '占位关带战斗敌人（#18）');
   }
   const l1 = levels[0];
   assert.strictEqual(l1.entities.filter((e) => e.type === 'box').length, 1, '关 1 礼物盒');
@@ -2903,6 +2907,127 @@ testAsync('#44 往返：保存设置后重新登录，昵称/头像/偏好与云
   assert.ok(game2._ui.avatarBtns['muse-4'].classList.contains('is-selected'));
   assert.strictEqual(text('btn-pref-touch'), '📱 触屏按键：常开');
   game2.destroy();
+});
+
+/* ─────────────────── 10.5 战斗（Issue #18） ─────────────────── */
+
+test('#18 战斗：占位关带敌人、HUD 显示 HP 与能量条、F 轻击命中', () => {
+  withSfx((calls) => {
+    const game = makeGame();
+    elt('btn-start').click();
+    assert.ok(game.combat, '进入关卡后创建 Combat');
+    assert.strictEqual(game.combat.enemies.length, 3, '占位关 1 配置 3 只敌人');
+    assert.strictEqual(text('hud-hp'), '♥ 10/10');
+    assert.strictEqual(text('hud-energy-label'), '0%');
+    assert.strictEqual(elt('hud-energy-fill').style.width, '0%');
+
+    const enemy = game.combat.enemies[0];
+    game.player.x = enemy.x - 16;
+    game.player.y = enemy.y;
+    game.combat.facing = { x: 0, y: 1 }; // 朝下，但敌人在右侧：应自动锁定
+    press('f');
+    tick(game);
+    assert.strictEqual(enemy.hp, 2, '轻击造成 1 点伤害');
+    assert.ok(game.combat.swing && game.combat.swing.dir.x > 0.9, '攻击方向锁定右侧敌人');
+    assert.ok(Math.abs(game.combat.energy - 5) < 0.2, '命中 +5 能量（同帧含少量被动回复）');
+    assert.strictEqual(text('hud-energy-label'), '5%');
+    assert.strictEqual(elt('hud-energy-fill').style.width, '5%');
+    assert.ok(calls.indexOf('light') >= 0, '轻击音效');
+    assert.ok(calls.indexOf('hit') >= 0, '命中音效');
+    assert.strictEqual(text('hud-hp'), '♥ 10/10');
+    game.destroy();
+  });
+});
+
+test('#18 能量炮：能量满 F/G 均可释放、射程 2.2 倍、清空能量并刷新 HUD', () => {
+  withSfx((calls) => {
+    const game = makeGame();
+    elt('btn-start').click();
+    const enemy = game.combat.enemies[0];
+    game.player.x = enemy.x - 2 * engine.TILE; // 32px 外：普攻够不到，能量炮够得到
+    game.player.y = enemy.y;
+    game.combat.facing = { x: 0, y: 1 }; // 朝下，能量炮应锁定右侧敌人
+    game.combat.energy = 100;
+    game._refreshCombatHud(true);
+    assert.strictEqual(text('hud-energy-label'), 'F/G');
+    assert.ok(elt('hud-energy').classList.contains('ready'));
+    assert.strictEqual(elt('hud-energy-fill').style.width, '100%');
+
+    press('g');
+    tick(game);
+    assert.strictEqual(game.combat.swing ? game.combat.swing.kind : '', 'cannon', '按 G 释放能量炮');
+    assert.ok(game.combat.swing && game.combat.swing.dir.x > 0.9, '能量炮方向锁定右侧敌人');
+    assert.strictEqual(enemy.dead, true, '能量炮伤害可击败梦蚀团');
+    assert.strictEqual(game.combat.energy, 0, '释放后能量清空');
+    assert.strictEqual(text('hud-energy-label'), '0%');
+    assert.ok(!elt('hud-energy').classList.contains('ready'));
+    assert.ok(calls.indexOf('cannon') >= 0, '能量炮音效');
+    assert.ok(calls.indexOf('enemy-down') >= 0, '击败音效');
+    game.destroy();
+  });
+});
+
+test('#18 受击与倒下：HP 扣减、无敌帧、倒下无惩罚复位、敌人重置', () => {
+  const events = [];
+  withSfx((calls) => {
+    const game = makeGame({ onEvent: (name, data) => events.push([name, data]) });
+    elt('btn-start').click();
+    const enemy = game.combat.enemies[0];
+    game.player.x = enemy.x;
+    game.player.y = enemy.y;
+    game.combat.invuln = 0;
+    tick(game);
+    assert.strictEqual(game.combat.hp, 9, '接触伤害 1 点');
+    assert.strictEqual(text('hud-hp'), '♥ 9/10');
+    assert.ok(game.combat.invuln > 0, '进入无敌帧');
+    assert.ok(calls.indexOf('hurt') >= 0, '受击音效');
+    const xAfterHit = game.player.x;
+
+    game.combat.hp = 1;
+    game.combat.invuln = 0;
+    game.player.x = enemy.x;
+    game.player.y = enemy.y;
+    tick(game);
+    assert.strictEqual(game.state, STATE.PLAYING, '倒下不进入结算/结局');
+    assert.strictEqual(game.combat.hp, 10, '满血复活');
+    assert.deepStrictEqual([game.player.x, game.player.y], [2 * 16, 26 * 16], '回到出生点');
+    assert.strictEqual(game.combat.invuln, 1.2, '复活无敌帧');
+    assert.strictEqual(enemy.x, enemy.spawnX, '敌人回出生点');
+    assert.ok(calls.indexOf('player-down') >= 0, '倒下音效');
+    const names = events.map((e) => e[0]);
+    assert.ok(names.indexOf('player-hit') >= 0);
+    assert.ok(names.indexOf('player-down') >= 0);
+    assert.notStrictEqual(xAfterHit, game.player.x);
+    game.destroy();
+  });
+});
+
+test('#18 对话期间战斗冻结：能量不回复、敌人不追击、攻击键无效', () => {
+  const game = makeGame();
+  elt('btn-start').click();
+  teleport(game, 10, 15); // NPC 旁
+  tick(game);
+  press('e');
+  tick(game);
+  assert.strictEqual(game.state, STATE.DIALOGUE);
+  game.combat.energy = 40;
+  const enemy = game.combat.enemies[0];
+  const ex = enemy.x;
+  press('f');
+  for (let i = 0; i < 10; i++) tick(game, 50);
+  assert.strictEqual(game.combat.energy, 40, '对话中能量不回复');
+  assert.strictEqual(enemy.x, ex, '对话中敌人不移动');
+  assert.strictEqual(game.combat.swing, null, '对话中 F 不触发攻击');
+  game.destroy();
+});
+
+test('#18 index.html：HUD/能量条/触屏 B·C 与操作说明齐全', () => {
+  const html = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  assert.ok(/id="hud-hp"/.test(html) && /id="hud-energy"/.test(html)
+    && /id="hud-energy-fill"/.test(html) && /id="hud-energy-label"/.test(html), '战斗 HUD');
+  assert.ok(/data-key="light"/.test(html) && /data-key="heavy"/.test(html), '触屏 B/C 键');
+  assert.ok(/F 轻击/.test(html) && /G 重击/.test(html), '帮助说明 F/G');
+  assert.ok(/2\.2 倍/.test(html), '帮助说明能量炮 2.2 倍射程');
 });
 
 /* ─────────────────── 汇总 ─────────────────── */

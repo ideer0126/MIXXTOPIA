@@ -1,5 +1,6 @@
 /**
  * js/main.js —— 游戏状态机与 UI 接线（Issue #6）+ 对话系统（Issue #7）
+ *   + 收集解谜（#9）+ 战斗接线（#18）
  *
  * 六态状态机：
  *   TITLE(标题) ⇄ PLAYING(游玩) ⇄ DIALOGUE(对话) ⇄ PLAYING
@@ -20,6 +21,14 @@
  *   - 星星：接触收集 + 金色粒子 + 音效，触发 star:<星id> 台词（#12）；
  *   - 传送门：集齐本关星星后激活（粒子/音效/onEvent），踩上触发过关台词 → 结算；
  *   - 所有反馈走 engine.Particles 与 MIXX.audio，音频不可用时安静降级。
+ *
+ * 战斗（Issue #18，规格 GAME_DESIGN.md §12）：
+ *   - engine.Combat 负责 HP / 被动能量 / 朝向 / 攻击判定 / 敌人 AI；
+ *   - F 轻击、G 重击（手机 B/C），轻击与重击射程同为 24px；
+ *     攻击只锁定正面 180° 内、视线可达的最近敌人，无敌人时沿移动方向；
+ *   - 能量满时 F/G 释放能量炮（52.8px = 24 × 2.2），消耗 100 并清空；
+ *   - 接触受伤 → 0.9s 无敌帧 + 击退；倒下满血回出生点、敌人复位，不扣星星；
+ *   - HUD 显示 HP 与能量条；对话/暂停期间战斗与充能冻结。
  *
  * 对话节点语义（Issue #12，规格 GAME_DESIGN.md §7）：
  *   - 节点字段 type / trigger / once / entry / scopeId / lines / options / next；
@@ -171,6 +180,10 @@
           { type: 'star', id: 's2', x: 25, y: 14 },
           { type: 'star', id: 's3', x: 33, y: 7 },
           { type: 'npc', id: 'byeori', x: 10, y: 15, dialogue: 'boot.hi' },
+          // #18 战斗占位敌人：路径上 2 只梦蚀团 + 门后 1 只梦蚀灵（不影响原有星星/机关布局）
+          { type: 'enemy', id: 'e1', kind: 'dreamling', x: 14, y: 19 },
+          { type: 'enemy', id: 'e2', kind: 'dreamling', x: 23, y: 13 },
+          { type: 'enemy', id: 'e3', kind: 'wisp', x: 34, y: 8 },
           // #9 机关闭环：把礼物盒推上彩色地垫 → 折叠屏风门打开 → 进入小屋取 ★3
           { type: 'box', id: 'box1', x: 32, y: 12 },
           { type: 'switch', id: 'sw1', x: 33, y: 12, target: 'gate1' },
@@ -189,6 +202,8 @@
           { type: 'star', id: 't1', x: 8, y: 20 },
           { type: 'star', id: 't2', x: 33, y: 7 },
           { type: 'npc', id: 'byeori', x: 21, y: 14, dialogue: 'boot.hi' },
+          { type: 'enemy', id: 'e4', kind: 'dreamling', x: 14, y: 19 },
+          { type: 'enemy', id: 'e5', kind: 'wisp', x: 24, y: 13 },
           { type: 'portal', x: 38, y: 10 },
         ],
       },
@@ -512,6 +527,7 @@
      *   onEvent(name, data)：测试/冒烟钩子，'state' | 'collect' | 'clear' | 'restart' | 'save'
      *     | 'push' | 'switch' | 'gate' | 'portal' | 'portal-enter'（#9 机制事件）
      *     | 'profile'（#44 账户资料 load/save 成功与失败）
+     *     | 'attack' | 'enemy-hit' | 'enemy-down' | 'player-hit' | 'player-down' | 'energy-full'（#18 战斗）
      *   storage：可注入的 localStorage 兼容对象（测试用）；传 null 模拟存储不可用
      *   auth：可注入的账户客户端（测试用）；传 null 关闭登录入口
      *   profile：可注入的 profiles 客户端（测试用）；传 null 关闭账户设置（登录入口仍在）
@@ -584,6 +600,10 @@
       this._dialog = null;     // 对话进行态 { lines, idx, shown, t, typing, holdTyping, holdTime }，离开对话态即清空
       this.particles = engine.createParticles(); // #9 拾取/传送门粒子
       this.mechanics = null;   // #9 每关机制辅助（碰撞/推箱/开关门）
+      this.combat = null;      // #18 每关战斗辅助（HP/能量/敌人 AI/攻击判定）
+      this._hudEnergyPct = -1; // HUD 缓存：避免每帧重复写 DOM
+      this._hudHp = -1;
+      this._hudEnergyReady = false;
       this._portalWasActive = false; // 传送门激活演出只在「从未激活 → 激活」时播一次
       this._playedNodes = new Set(); // 已播放过的 once 节点（随存档 slot.played 持久化）
       this._npcTarget = {};   // <关卡id>:<实体id> → 开场 intro 结束后指向的后续节点（hint）
@@ -786,11 +806,22 @@
 
     _updatePlaying(dt) {
       if (this.input.wasPressed('pause')) { this._setState(STATE.PAUSED); return; }
-      if (this.input.wasPressed('confirm') && this._interact()) return; // 进入对话
       const axis = this.input.getAxis();
+      if (this.combat && (axis.x || axis.y)) this.combat.face(axis.x, axis.y);
+      // #18 攻击：F 轻击 / G 重击；能量满时两者都由 Combat 升级为能量炮
+      const light = this.input.wasPressed('light');
+      const heavy = this.input.wasPressed('heavy');
+      if (light || heavy) this._playerAttack(heavy ? 'heavy' : 'light');
+      if (this.input.wasPressed('confirm') && this._interact()) return; // 进入对话
       if (axis.x) this._moveAxis(axis.x * MOVE_SPEED * dt, 0);
       if (axis.y) this._moveAxis(0, axis.y * MOVE_SPEED * dt);
       this._syncSwitches();
+      // 战斗推进：能量回复 / 敌人追击 / 接触伤害（对话与暂停期间冻结）
+      if (this.combat) {
+        const events = this.combat.update(dt, this.player, this.mechanics);
+        if (events.length) this._handleCombatEvents(events);
+        this._refreshCombatHud();
+      }
       this.camera.follow(
         this.player.x + PLAYER_SIZE / 2,
         this.player.y + PLAYER_SIZE / 2,
@@ -802,6 +833,147 @@
       this._checkPortal();
       if (this.state !== STATE.PLAYING) return; // 过关台词进入对话，本帧不再计时
       this.runTime += dt;
+    }
+
+    /* ── 战斗（Issue #18） ── */
+
+    /**
+     * 玩家攻击入口：Combat 统一判定轻击/重击/能量炮，main 只负责反馈与事件。
+     * @param {'light'|'heavy'} kind
+     */
+    _playerAttack(kind) {
+      if (!this.combat || !this.player) return null;
+      const result = this.combat.attack(kind, this.player, this.mechanics);
+      if (!result) return null;
+      const sfx = result.cannon ? 'cannon' : (result.kind === 'heavy' ? 'heavy' : 'light');
+      this._sfx(sfx);
+      if (result.cannon || result.kind === 'heavy') {
+        this.particles.burst(
+          this.player.x + PLAYER_SIZE / 2 + result.dir.x * 10,
+          this.player.y + PLAYER_SIZE / 2 + result.dir.y * 10,
+          result.cannon
+            ? { count: 14, colors: [[255, 200, 87], [255, 143, 163], [255, 255, 255]], speed: 80, life: 0.4, gravity: 0, size: 2 }
+            : { count: 5, colors: [[255, 143, 163], [255, 200, 87]], speed: 44, life: 0.25, gravity: 30, size: 1 }
+        );
+      }
+      for (let i = 0; i < result.hits.length; i++) {
+        const hit = result.hits[i];
+        const enemy = hit.enemy;
+        const cx = enemy.x + enemy.size / 2;
+        const cy = enemy.y + enemy.size / 2;
+        if (hit.dead) {
+          this.particles.burst(cx, cy, {
+            count: 18,
+            colors: [[180, 155, 255], [255, 143, 163], [94, 230, 184]],
+            speed: 70, life: 0.65, gravity: 80, size: 2,
+          });
+          this._sfx('enemy-down');
+          this._emit('enemy-down', {
+            level: this.level.id, id: enemy.id, kind: enemy.kind,
+            energy: result.energy,
+          });
+        } else {
+          this.particles.burst(cx, cy, {
+            count: 6,
+            colors: [[255, 255, 255], [255, 200, 87]],
+            speed: 46, life: 0.3, gravity: 40, size: 1,
+          });
+          this._sfx('hit');
+          this._emit('enemy-hit', {
+            level: this.level.id, id: enemy.id, kind: enemy.kind,
+            hp: enemy.hp, damage: hit.damage,
+          });
+        }
+      }
+      if (result.energyFull) this._onEnergyFull();
+      this._refreshCombatHud();
+      this._emit('attack', {
+        level: this.level.id,
+        kind: result.kind,
+        cannon: result.cannon,
+        hits: result.hits.length,
+        target: result.target,
+        range: result.range,
+        energy: result.energy,
+      });
+      return result;
+    }
+
+    /** 被动能量第一次攒满：音效 + 角色周围金色粒子 + HUD 脉冲 */
+    _onEnergyFull() {
+      if (!this.combat || !this.player) return;
+      this._sfx('energy-full');
+      this.particles.burst(
+        this.player.x + PLAYER_SIZE / 2,
+        this.player.y + PLAYER_SIZE / 2,
+        { count: 12, colors: [[255, 200, 87], [255, 255, 255]], speed: 40, life: 0.5, gravity: 0, size: 2 }
+      );
+      this._emit('energy-full', { level: this.level.id });
+    }
+
+    /** 处理 Combat.update 返回的受击/倒下事件（击退、粒子、音效、复活） */
+    _handleCombatEvents(events) {
+      for (let i = 0; i < events.length; i++) {
+        const ev = events[i];
+        if (ev.type === 'energy-full') {
+          this._onEnergyFull();
+        } else if (ev.type === 'player-hit') {
+          this._sfx('hurt');
+          this.particles.burst(
+            this.player.x + PLAYER_SIZE / 2,
+            this.player.y + PLAYER_SIZE / 2,
+            { count: 8, colors: [[255, 77, 109], [255, 143, 163]], speed: 52, life: 0.35, gravity: 70, size: 2 }
+          );
+          // 沿「敌人 → 玩家」方向击退；只做碰撞位移，不推箱/不改朝向
+          const kb = ev.knockback || 0;
+          if (kb) {
+            this._knockPlayer(ev.dir.x * kb, 0);
+            this._knockPlayer(0, ev.dir.y * kb);
+          }
+          this._refreshHud();
+          this._refreshCombatHud();
+          this._emit('player-hit', {
+            level: this.level.id, hp: ev.hp, damage: ev.damage,
+            enemy: ev.enemy && ev.enemy.id,
+          });
+          if (ev.hp <= 0) this._onPlayerDown(); // 同一帧的 player-down 事件不再重复处理
+        }
+      }
+    }
+
+    /** 受击击退：分轴检查地形，不触发推箱与朝向变化 */
+    _knockPlayer(dx, dy) {
+      if (!this.player || !this.mechanics) return;
+      if (!dx && !dy) return;
+      const p = this.player;
+      if (!this.mechanics.blockedAt(p.x + dx, p.y, PLAYER_SIZE)) p.x += dx;
+      if (!this.mechanics.blockedAt(p.x, p.y + dy, PLAYER_SIZE)) p.y += dy;
+    }
+
+    /**
+     * 倒下：无惩罚复位到出生点，满血 + 无敌帧，敌人回出生点；
+     * 已收集星星、用时与能量条保留（GAME_DESIGN §12「休闲难度、死亡无惩罚」）。
+     */
+    _onPlayerDown() {
+      if (!this.combat || !this.player) return;
+      const spawn = this._entitiesOf('spawn')[0] || { x: 2, y: 2 };
+      this.player.x = spawn.x * TILE;
+      this.player.y = spawn.y * TILE;
+      this.combat.revive();
+      this._sfx('player-down');
+      this.particles.burst(
+        this.player.x + PLAYER_SIZE / 2,
+        this.player.y + PLAYER_SIZE / 2,
+        { count: 16, colors: [[180, 155, 255], [255, 255, 255]], speed: 60, life: 0.6, gravity: 20, size: 2 }
+      );
+      this.camera.follow(
+        this.player.x + PLAYER_SIZE / 2,
+        this.player.y + PLAYER_SIZE / 2,
+        this.level.map.w * TILE,
+        this.level.map.h * TILE
+      );
+      this._refreshHud();
+      this._emit('player-down', { level: this.level.id });
     }
 
     /* ── 碰撞、推箱与开关门（Issue #9） ── */
@@ -2148,6 +2320,10 @@
         entities: (lv.entities || []).map((e) => Object.assign({}, e)),
       });
       this.mechanics = engine.createMechanics(this.level); // #9 碰撞/推箱/开关门
+      this.combat = engine.createCombat(this.level);       // #18 HP/能量/敌人
+      this._hudEnergyPct = -1;
+      this._hudHp = -1;
+      this._hudEnergyReady = false;
       this.particles.clear();
       this._pendingNextIndex = -1;
       const spawn = this._entitiesOf('spawn')[0] || { x: 2, y: 2 };
@@ -2201,6 +2377,7 @@
       this.runTime = 0;
       this._dialog = null;
       this.mechanics = null;
+      this.combat = null;
       this.particles.clear();
       this._portalWasActive = false;
       this._pendingNextIndex = -1;
@@ -2677,7 +2854,43 @@
       if (!this.level) return;
       this._text(this._ui.hudLevel, this.level.title);
       this._text(this._ui.hudShards, '★ ' + this.stars + '/' + this._starCount());
+      this._refreshCombatHud(true);
       // 注：关 6 总进度「★ x/25」等 HUD 扩展随 #11 接入
+    }
+
+    /**
+     * 战斗 HUD（#18）：HP「♥ x/10」+ 被动能量条。
+     * 每帧调用时只在整数百分比/血量/就绪态变化时写 DOM。
+     * @param {boolean} [force] 换关/读档时强制刷新
+     */
+    _refreshCombatHud(force) {
+      const c = this.combat;
+      if (!c) return;
+      const pct = Math.round((c.energy / c.maxEnergy) * 100);
+      const ready = c.energy >= c.maxEnergy;
+      if (force || pct !== this._hudEnergyPct) {
+        this._hudEnergyPct = pct;
+        if (this._ui.hudEnergyFill && this._ui.hudEnergyFill.style) {
+          this._ui.hudEnergyFill.style.width = pct + '%';
+        }
+        this._text(this._ui.hudEnergyLabel, ready ? 'F/G' : pct + '%');
+      }
+      if (force || ready !== this._hudEnergyReady) {
+        this._hudEnergyReady = ready;
+        if (this._ui.hudEnergy && this._ui.hudEnergy.classList) {
+          this._ui.hudEnergy.classList.toggle('ready', ready);
+        }
+        if (this._ui.hudEnergy && typeof this._ui.hudEnergy.setAttribute === 'function') {
+          this._ui.hudEnergy.setAttribute('aria-label', ready ? '能量炮就绪，按 F 或 G 释放' : '能量炮能量 ' + pct + '%');
+        }
+      }
+      if (force || c.hp !== this._hudHp) {
+        this._hudHp = c.hp;
+        this._text(this._ui.hudHp, '♥ ' + c.hp + '/' + c.maxHp);
+        if (this._ui.hudHp && this._ui.hudHp.classList) {
+          this._ui.hudHp.classList.toggle('low', c.hp <= Math.max(1, Math.ceil(c.maxHp * 0.3)));
+        }
+      }
     }
 
     /* ── 工具 ── */
@@ -2749,6 +2962,10 @@
         'hud': 'hud',
         'hud-level': 'hudLevel',
         'hud-shards': 'hudShards',
+        'hud-hp': 'hudHp',
+        'hud-energy': 'hudEnergy',
+        'hud-energy-fill': 'hudEnergyFill',
+        'hud-energy-label': 'hudEnergyLabel',
         'title-screen': 'titleScreen',
         'btn-start': 'btnStart',
         'btn-continue': 'btnContinue',
@@ -2897,7 +3114,9 @@
       }
       this.renderer.renderLevel(this.level, this.camera);
       this._drawEntities();
+      this._drawCombat();  // #18 敌人（在玩家/攻击特效之下）
       this._drawPlayer();
+      this._drawAttack();  // #18 挥击/能量炮（覆盖在角色之上）
       this.particles.draw(ctx, this.camera); // #9 拾取/开门/传送门粒子（画在角色之上）
     }
 
@@ -2996,20 +3215,131 @@
       }
     }
 
+    /**
+     * 敌人绘制（#18）：梦蚀团=紫粉方块、梦蚀灵=薄荷绿漂浮方块；
+     * 受击白闪、受伤后显示血条。运行时坐标来自 combat.enemies（非实体出生点）。
+     */
+    _drawCombat() {
+      const c = this.combat;
+      if (!c) return;
+      const ctx = this.renderer.ctx;
+      const camX = this.camera.x;
+      const camY = this.camera.y;
+      for (let i = 0; i < c.enemies.length; i++) {
+        const e = c.enemies[i];
+        if (e.dead) continue;
+        const bob = e.kind === 'wisp' ? Math.round(Math.sin(c.time * 5 + e.spawnX * 0.1)) : 0;
+        const sx = Math.round(e.x - camX);
+        const sy = Math.round(e.y - camY) + bob;
+        if (sx < -TILE || sy < -TILE || sx > VIEW_W || sy > VIEW_H) continue;
+        // 影子
+        ctx.fillStyle = 'rgb(26,16,51)';
+        ctx.fillRect(sx + 1, sy + e.size - 2, e.size - 2, 2);
+        // 身体 + 描边
+        const flash = e.hurt > 0;
+        ctx.fillStyle = flash ? 'rgb(255,255,255)' : (e.kind === 'wisp' ? 'rgb(94,230,184)' : 'rgb(180,155,255)');
+        ctx.fillRect(sx, sy, e.size, e.size);
+        ctx.fillStyle = 'rgb(40,24,70)';
+        ctx.fillRect(sx, sy, e.size, 1);
+        ctx.fillRect(sx, sy + e.size - 1, e.size, 1);
+        ctx.fillRect(sx, sy, 1, e.size);
+        ctx.fillRect(sx + e.size - 1, sy, 1, e.size);
+        // 眼睛
+        ctx.fillStyle = flash ? 'rgb(255,143,163)' : 'rgb(26,16,51)';
+        ctx.fillRect(sx + 3, sy + 4, 2, 2);
+        ctx.fillRect(sx + 7, sy + 4, 2, 2);
+        // 血条（满血不显示，减少视觉噪音）
+        if (e.hp < e.maxHp) {
+          ctx.fillStyle = 'rgb(26,16,51)';
+          ctx.fillRect(sx, sy - 4, e.size, 3);
+          ctx.fillStyle = 'rgb(255,143,163)';
+          ctx.fillRect(sx, sy - 4, Math.max(1, Math.round(e.size * (e.hp / e.maxHp))), 2);
+        }
+      }
+    }
+
+    /**
+     * 攻击特效（#18）：轻/重击为前方短促棒击轨迹，能量炮为 2.2 倍射程的
+     * 像素光束。只用 fillRect，保持零素材与测试桩兼容。
+     */
+    _drawAttack() {
+      const c = this.combat;
+      const s = c && c.swing;
+      if (!s) return;
+      const ctx = this.renderer.ctx;
+      const camX = this.camera.x;
+      const camY = this.camera.y;
+      const ox = Math.round(s.origin.x - camX);
+      const oy = Math.round(s.origin.y - camY);
+      const t = s.duration > 0 ? Math.min(1, s.t / s.duration) : 0;
+      const dir = s.dir || { x: 0, y: 1 };
+
+      if (s.kind === 'cannon') {
+        // 像素光束：沿锁定方向逐点铺方块，支持斜向；外层粉 → 金 → 白核心
+        const steps = Math.max(1, Math.ceil(s.range / 2));
+        const pass = (color, half) => {
+          ctx.fillStyle = color;
+          for (let i = 0; i <= steps; i++) {
+            const d = (i / steps) * s.range;
+            const x = Math.round(ox + dir.x * d);
+            const y = Math.round(oy + dir.y * d);
+            ctx.fillRect(x - half, y - half, half * 2, half * 2);
+          }
+        };
+        const outerHalf = Math.max(1, Math.floor(s.width / 2));
+        pass('rgb(255,143,163)', outerHalf);
+        if (t < 0.72) pass('rgb(255,200,87)', Math.max(1, outerHalf - 3));
+        if (t < 0.45) pass('rgb(255,255,255)', 1);
+        // 炮口闪光
+        ctx.fillStyle = 'rgb(255,255,255)';
+        ctx.fillRect(ox - 3, oy - 3, 6, 6);
+        ctx.fillStyle = 'rgb(255,200,87)';
+        ctx.fillRect(ox - 2, oy - 2, 4, 4);
+        return;
+      }
+
+      // 普攻棒击轨迹：轻击白、重击粉；沿当前朝向（可斜向）铺短条
+      const heavy = s.kind === 'heavy';
+      const half = heavy ? 7 : 4;
+      const near = 8;
+      const far = s.range;
+      const steps = 8;
+      const pass = (color, h) => {
+        ctx.fillStyle = color;
+        for (let i = 0; i <= steps; i++) {
+          const d = near + (far - near) * (i / steps);
+          const x = Math.round(ox + dir.x * d);
+          const y = Math.round(oy + dir.y * d);
+          ctx.fillRect(x - h, y - h, h * 2, h * 2);
+        }
+      };
+      pass(heavy ? 'rgb(255,143,163)' : 'rgb(255,255,255)', half);
+      pass('rgb(255,200,87)', heavy ? 4 : 2);
+    }
+
     _drawPlayer() {
       if (!this.player) return;
       const ctx = this.renderer.ctx;
       const px = Math.round(this.player.x - this.camera.x);
       const py = Math.round(this.player.y - this.camera.y);
-      ctx.fillStyle = 'rgb(0,0,0)';
+      const c = this.combat;
+      const flash = !!(c && c.hurtFlash > 0);
+      const blink = !!(c && c.invuln > 0 && Math.floor(c.time * 20) % 2 === 0);
+      ctx.fillStyle = flash ? 'rgb(255,255,255)' : 'rgb(0,0,0)';
       ctx.fillRect(px - 1, py - 1, 18, 18);
-      ctx.fillStyle = 'rgb(255,255,255)';
+      ctx.fillStyle = flash ? 'rgb(255,143,163)' : (blink ? 'rgb(255,200,87)' : 'rgb(255,255,255)');
       ctx.fillRect(px, py, 16, 16);
       ctx.fillStyle = 'rgb(26,16,51)';
       ctx.fillRect(px + 3, py + 3, 10, 10);
       ctx.fillStyle = 'rgb(255,255,255)';
       ctx.fillRect(px + 5, py + 5, 3, 3);
       ctx.fillRect(px + 10, py + 5, 3, 3);
+      // 能量满：头顶一颗闪烁金星，提示可放能量炮
+      if (c && c.energy >= c.maxEnergy) {
+        ctx.fillStyle = Math.floor(c.time * 6) % 2 === 0 ? 'rgb(255,200,87)' : 'rgb(255,255,255)';
+        ctx.fillRect(px + 7, py - 4, 2, 3);
+        ctx.fillRect(px + 6, py - 3, 4, 1);
+      }
     }
   }
 
