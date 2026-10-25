@@ -11,7 +11,7 @@
  *   省略某个 --*-ref 时生成对应占位页：
  *   - stable 缺省：稳定版尚未发布（测试期）
  *   - preview 缺省：预览版将在首个稳定版发布后开放
- *   - beta 缺省：测试版暂未开放
+ *   - beta 缺省：测试期为「测试版暂未开放」；首个稳定版后为「测试版已停用」
  *
  *   --worktree  从当前工作区复制（本地预览/测试），否则用 git archive <ref>
  *
@@ -53,17 +53,17 @@ function usage() {
     [--preview-ref <ref>] [--preview-label <label>] [--worktree]
 
   --worktree  从当前工作区复制（本地预览/测试），否则用 git archive <ref>
-  省略某个 --*-ref 时，该通道生成占位页（stable/preview 在首个稳定版前后有不同文案）。
+  省略某个 --*-ref 时，该通道生成占位页：stable/preview 在首个稳定版前后有不同文案；
+  beta 在首个稳定版后停用，且不能再与 --stable-ref 同时提供。
 
 示例：
   # 测试期：只有 beta 游戏
   node tools/build-channels.js --worktree --out _site \\
     --beta-ref worktree --beta-label main
 
-  # 首个稳定版之后：三通道各自构建
+  # 首个稳定版之后：stable + preview，beta 停用
   node tools/build-channels.js --worktree --out _site \\
     --stable-ref v1.0.0 --stable-label v1.0.0 \\
-    --beta-ref v1.1.0-beta.1 --beta-label v1.1.0-beta.1 \\
     --preview-ref worktree --preview-label main`);
 }
 
@@ -377,7 +377,7 @@ function verifySite(outDir, expected) {
     },
     beta: {
       html: fs.readFileSync(path.join(outDir, 'beta', 'index.html'), 'utf8'),
-      placeholder: '测试版暂未开放',
+      placeholder: expected.stable ? '测试版已停用' : '测试版暂未开放',
     },
     preview: {
       html: fs.readFileSync(path.join(outDir, 'preview', 'index.html'), 'utf8'),
@@ -452,6 +452,9 @@ function main() {
   const stableRef = opts['stable-ref'];
   const previewRef = opts['preview-ref'];
   const betaRef = opts['beta-ref'];
+  if (stableRef && betaRef) {
+    fail('第一个稳定版发布后 beta 通道已停用，不能再同时提供 --beta-ref');
+  }
   if (previewRef && !stableRef) fail('--preview-ref 需要同时提供 --stable-ref');
 
   fs.rmSync(outDir, { recursive: true, force: true });
@@ -491,14 +494,22 @@ function main() {
 
   if (betaRef) {
     buildGame(path.join(outDir, 'beta'), betaRef, opts['beta-label'] || betaRef, 'beta', opts.worktree);
+  } else if (stableRef) {
+    writePlaceholder(path.join(outDir, 'beta'), {
+      channel: 'beta',
+      title: '测试版已停用',
+      message: '首个稳定版发布后，测试版通道已停用。',
+      note: '后续测试请使用预览版。',
+      href: '../preview/',
+      link: '前往预览版 →',
+    });
   } else {
     writePlaceholder(path.join(outDir, 'beta'), {
       channel: 'beta',
       title: '测试版暂未开放',
-      message: '等待下一个 vX.Y.Z-beta.N / -rc.N tag。',
-      note: '稳定版请前往首页。',
+      message: '等待测试版构建。',
       href: '../',
-      link: '← 返回稳定版',
+      link: '← 返回首页',
     });
   }
 

@@ -6,6 +6,7 @@ name: Release
 #   validate.js 因 #11 空关卡是已知红门禁（PLAN.md §4），待 #11 落地后再加回
 #   `node tools/validate.js --require-data`。
 # - 产物：mixxtopia-<version>.zip（解压即玩）+ SHA-256。
+# - beta/rc tag：仅首个稳定版之前可用；稳定版存在时直接失败（测试版通道已停用）。
 # - Pages 部署仍由 pages.yml 负责（push main 触发），本流程只产出可下载快照。
 on:
   push:
@@ -64,6 +65,7 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Ensure tag is on main
         env:
@@ -75,6 +77,25 @@ jobs:
             echo "::error::tag $TAG 不在 main 历史上；main 是唯一长期分支，请先合并再发布"
             exit 1
           fi
+
+      - name: Reject retired beta tag
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # beta/rc tag 只在首个稳定版之前可用；稳定版之后禁止再发布测试版。
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(beta|rc)(\.[0-9]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "非 beta/rc tag，跳过测试版停用检查"
+            exit 0
+          fi
+          git fetch --tags --force origin
+          STABLE_TAG="$(git tag --merged origin/main --list 'v*' --sort=-v:refname \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9A-Za-z.-]+)?$' | head -n1 || true)"
+          if [[ -n "$STABLE_TAG" ]]; then
+            echo "::error::beta/rc tag $TAG 不可用：稳定版 $STABLE_TAG 已发布，测试版通道已停用"
+            exit 1
+          fi
+          echo "测试期 beta/rc tag $TAG，允许发布"
 
       - name: Setup Node
         uses: actions/setup-node@v7

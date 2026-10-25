@@ -13,14 +13,14 @@
 | 通道 | 地址 | 当前阶段 |
 |---|---|---|
 | 稳定版 | <https://ideer0126.github.io/MIXXTOPIA/> | 尚未发布；首个 `vX.Y.Z` tag 后启用 |
-| 测试版 | <https://ideer0126.github.io/MIXXTOPIA/beta/> | 当前可玩；测试期用最新 beta/rc tag，没有 tag 时用 `main` |
+| 测试版 | <https://ideer0126.github.io/MIXXTOPIA/beta/> | 仅测试期可用；首个稳定版发布后停用 |
 | 预览版 | <https://ideer0126.github.io/MIXXTOPIA/preview/> | 首个稳定版发布后开放；来源 `main` |
 
 > 测试期 `/` 与 `/preview/` 只显示占位页，游戏入口是 `/beta/`。
 >
-> 首个 `vX.Y.Z` 发布后：`/` 切到稳定 tag，`/preview/` 开放 `main` 最新提交，`/beta/` 只显示高于当前稳定版的 beta/rc tag。
+> 首个 `vX.Y.Z` 发布后：`/` 切到稳定 tag，`/preview/` 开放 `main` 最新提交，**`/beta/` 停用并显示“测试版已停用”**；之后 beta/rc tag 会被发布流程直接拒绝。
 >
-> beta / preview 使用独立的 localStorage 键（`.beta` / `.preview`），不会覆盖稳定版存档；两个通道都带 `noindex`，请直接把链接发给测试者，不要放到公开入口。最新 beta tag 不高于 stable 时，`/beta/` 会显示“测试版暂未开放”占位页。
+> beta / preview 使用独立的 localStorage 键（`.beta` / `.preview`），不会覆盖稳定版存档；beta/preview 及占位页都带 `noindex`，请直接把链接发给测试者，不要放到公开入口。测试期 beta 进度不会自动并入稳定版。
 
 ## 开发状态
 
