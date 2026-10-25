@@ -690,7 +690,7 @@ dialogue: {
 ## 10. 存档规范（Issue #8，v1：3 存档位 + 手动存档）
 
 - **键**：`mixxtopia.save.v1`（存档位）、`mixxtopia.settings.v1`（声音设置，独立于存档位）、`mixxtopia.cloud.v1`（逐档同步基线，仅登录后使用）；均为 localStorage。
-- **发布通道（Issue #17）**：stable 使用上述键；beta/preview 与 stable 在同一个 Pages 域名下运行，localStorage 共享，因此由构建注入的通道名派生独立键：`mixxtopia.save.beta.v1` / `mixxtopia.save.preview.v1`（settings 同理）。stable 保持原键，老玩家存档不受影响；未来 `mixxtopia.cloud.v1` 也应沿用通道后缀，并避免测试环境写入正式 Supabase 项目。
+- **发布通道（Issue #17）**：stable 使用上述键；beta/preview 与 stable 在同一个 Pages 域名下运行，localStorage 共享，因此由构建注入的通道名派生独立键：`mixxtopia.save.beta.v1` / `mixxtopia.save.preview.v1`（settings 同理）。stable 保持原键，老玩家存档不受影响；未来 `mixxtopia.cloud.v1` 也应沿用通道后缀，并避免测试环境写入正式 Supabase 项目。测试期只开放 beta 游戏（stable/preview 是占位页，不写存档）；首个稳定版发布后 preview 才开放。
 - **结构**：
 
 ```js

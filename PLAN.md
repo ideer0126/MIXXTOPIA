@@ -105,8 +105,9 @@ MIXXTOPIA/
   `node tools/validate.js` 必然报错（91 项，全部由空关卡/对话引用触发），**不视为回归**；
   期间以 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` + `node tools/test-channels.js` + 浏览器冒烟为准，
   #11 落地后恢复 validate 门禁。
-- **发布**：push `main` 更新 `/preview/`；`vX.Y.Z` tag 更新 `/`（stable）；
-  `vX.Y.Z-beta.N` / `-rc.N` tag 更新 `/beta/`。三份产物一次构建、一次 Pages 部署。
+- **发布**：测试期（无稳定 tag）`/` 与 `/preview/` 占位，`/beta/` 用 beta/rc tag 或 `main`；
+  首个 `vX.Y.Z` 后 `/` 用 stable tag、`/preview/` 用 `main`、`/beta/` 用高于 stable 的 beta/rc tag。
+  三份产物一次构建、一次 Pages 部署。
 
 ---
 
@@ -214,18 +215,19 @@ MIXXTOPIA/
 
 ```
 玩家 ──→ GitHub Pages（https://ideer0126.github.io/MIXXTOPIA/）
-             ├── /           稳定版：最新 vX.Y.Z tag（无 tag 时回退 main）
-             ├── /beta/      测试版：最新 vX.Y.Z-beta.N / -rc.N tag
-             └── /preview/   预览版：main 最新提交
-             │  三份产物一次构建、一次原子部署；beta 无 tag 或落后于 stable 时显示占位页
+             ├── /           稳定版：首个 vX.Y.Z tag 后启用；测试期为占位页
+             ├── /beta/      测试版：测试期用最新 beta/rc tag 或 main；稳定后只看高于 stable 的 tag
+             └── /preview/   预览版：首个稳定版发布后开放，来源 main
+             │  三份产物一次构建、一次原子部署；占位页带 noindex
              └── 可选：自定义域名 / Cloudflare 镜像（大陆加速）
 ```
 
+- **生命周期**：无稳定 tag = 测试期，只开放 `/beta/`；首个 `vX.Y.Z` 之后 stable 与 preview 才出现。
 - **通道来源**：tag 驱动，不新增长期分支；`main` 始终是开发主线，稳定入口只在打正式 tag 时更新。
 - **一次部署**：`pages.yml` 同时构建三份产物，避免三个 workflow 各自部署同一 Pages 站点互相覆盖。
 - **存档隔离**：三个通道同源，`localStorage` 共享；`js/main.js` 按构建注入的通道名派生
   `mixxtopia.save.<channel>.v1` / `mixxtopia.settings.<channel>.v1`，stable 保持旧键不变。
-- **索引**：beta/preview 带 `noindex`；稳定版页面不放入口，测试链接直接发给测试者。
+- **索引**：beta/preview 带 `noindex`；稳定版游戏页面可索引，stable/preview 占位页带 `noindex`。
 
 ### 10.3 自定义域名（可选，约 ¥50–80/年）
 

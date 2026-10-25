@@ -174,7 +174,7 @@ match /users/{uid} {
 
 - **写时机**：沿用 #8 手动存档制——仅「保存并退出」与通关自动存档触发；本地先写，再标 `dirty`，随后尝试云端 upsert。云端失败不阻塞回标题。
 - **本地同步基线**：逐档记录单独存 `mixxtopia.cloud.v1`，不写进 `mixxtopia.save.v1` 的存档位（`normalizeSlot()` 只保留已知字段，额外字段会被丢弃）。结构为 `{ v: 1, slots: [ { version, localUpdatedAt, cloudUpdatedAt } | null, ... ] }`，索引 0–2 对应 1–3 档；`version` / `cloudUpdatedAt` 取成功同步时云端行的 `version` / `updated_at`（转 ms），`localUpdatedAt` 取当时本地档的 `updatedAt`。只在成功上传 / 下载后更新；本地删档时清空该档；存储缺失、损坏或版本不符时视为「从未同步」，不自动覆盖。基线持久化在 localStorage，刷新 / 重开页面后仍可用，不依赖内存中的 `dirty` 标记。
-- **发布通道（Issue #17）**：beta/preview 的本地基线键追加 `.<channel>`（如 `mixxtopia.cloud.beta.v1`），并使用独立 Supabase 项目/schema；禁止测试环境写入正式库。
+- **发布通道（Issue #17）**：beta/preview 的本地基线键追加 `.<channel>`（如 `mixxtopia.cloud.beta.v1`），并使用独立 Supabase 项目/schema；禁止测试环境写入正式库。测试期只有 beta 通道可用，preview 在首个稳定版发布后开放。
 - **版本号（仅服务端）**：`version` 只存在于云端，用于上传乐观锁与云端变更检测；本地存档位不保存该字段。PATCH 以基线 `version` 为期望值（无基线时先 GET 当前值），带 `version=eq.<期望值>` 与 `Prefer: return=representation`；返回数组长度 1 = 成功、0 = 冲突，不能只看 HTTP 状态码。冲突后重新拉取云端元数据，让玩家逐档选择；玩家明确选「上传本机」后，用最新云端 `version` 重新 PATCH（云端行不存在则 POST），属于显式覆盖，不自动重试。
 - **登录时**：拉云端 3 档的 `{ version, updated_at }`（转 ms），与基线逐档比较 →
   - 本机 `updatedAt` ≠ 基线 `localUpdatedAt`：本机改过；云端 `version` / `updated_at` ≠ 基线：云端改过

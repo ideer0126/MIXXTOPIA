@@ -6,12 +6,13 @@
  * 运行：node tools/test-channels.js
  *
  * 覆盖：
- *   1. 一次构建产出 stable / beta / preview 三份可玩站点
- *   2. stable 不带 noindex，beta/preview 带 noindex
+ *   1. 一次完整构建产出 stable / beta / preview 三份可玩站点
+ *   2. stable 游戏不带 noindex；beta/preview 游戏与所有占位页带 noindex
  *   3. channel.js 注入顺序、channel.json 标识与通道名
- *   4. beta 无 tag 时生成占位页，不拿 stable 冒充
- *   5. 产物不含 docs/tools/supabase/.github/.coderabbit.yaml/.gitkeep
- *   6. 新增的 js/cloud-config.js 会进入每个游戏构建
+ *   4. 测试期：stable/preview 占位，beta 用 main 也可玩
+ *   5. beta 无 tag 时生成占位页，不拿 stable 冒充
+ *   6. 产物不含 docs/tools/supabase/.github/.coderabbit.yaml/.gitkeep
+ *   7. 新增的 js/cloud-config.js 会进入每个游戏构建
  */
 'use strict';
 
@@ -32,13 +33,18 @@ function test(name, fn) {
   console.log('  ✓ ' + name);
 }
 
-function runBuild(out, extra = []) {
+function runRaw(out, args) {
   return execFileSync(process.execPath, [
-    BUILD, '--worktree', '--out', out,
+    BUILD, '--worktree', '--out', out, ...args,
+  ], { encoding: 'utf8' });
+}
+
+function runBuild(out, extra = []) {
+  return runRaw(out, [
     '--stable-ref', 'worktree', '--stable-label', 'v0.1.0-test',
     '--preview-ref', 'worktree', '--preview-label', 'main',
     ...extra,
-  ], { encoding: 'utf8' });
+  ]);
 }
 
 function read(file) {
@@ -148,6 +154,36 @@ try {
     for (const rel of ['js/cloud-config.js', 'beta/js/cloud-config.js', 'preview/js/cloud-config.js']) {
       assert.ok(fs.existsSync(path.join(withBeta, rel)), '缺少 ' + rel);
     }
+  });
+
+  /* ─────────────── 测试期：无 stable/preview ─────────────── */
+  const testing = path.join(tmp, 'testing');
+  const testingLog = runRaw(testing, [
+    '--beta-ref', 'worktree', '--beta-label', 'main@test',
+  ]);
+
+  test('测试期：stable/preview 占位，beta 可玩', () => {
+    const stableHtml = read(path.join(testing, 'index.html'));
+    const previewHtml = read(path.join(testing, 'preview/index.html'));
+    const betaHtml = read(path.join(testing, 'beta/index.html'));
+
+    assert.ok(/稳定版尚未发布/.test(stableHtml));
+    assert.ok(stableHtml.indexOf('js/main.js') < 0, '测试期稳定版不应加载游戏');
+    assert.ok(/name="robots"/.test(stableHtml));
+
+    assert.ok(/预览版尚未开放/.test(previewHtml));
+    assert.ok(previewHtml.indexOf('js/main.js') < 0, '首个稳定版前预览版不应加载游戏');
+    assert.ok(/name="robots"/.test(previewHtml));
+
+    assertGameIndex(betaHtml, 'beta');
+    assert.ok(/name="robots"/.test(betaHtml));
+
+    assert.strictEqual(readJson(path.join(testing, 'channel.json')).label, null);
+    assert.strictEqual(readJson(path.join(testing, 'preview/channel.json')).label, null);
+    assert.strictEqual(readJson(path.join(testing, 'beta/channel.json')).label, 'main@test');
+    assert.ok(/stable: placeholder/.test(testingLog));
+    assert.ok(/beta: game/.test(testingLog));
+    assert.ok(/preview: placeholder/.test(testingLog));
   });
 
   /* ─────────────── 无 beta tag ─────────────── */

@@ -6,19 +6,21 @@
 
 - 🕹️ **玩法**：俯视角探索 + NPC 对话 + 解谜收集，6 关对应 6 首曲目
 - 🧱 **技术**：纯 HTML/CSS/JavaScript（Canvas），零依赖
-- 🚀 **在线试玩**：<https://ideer0126.github.io/MIXXTOPIA/>（开发中）
+- 🚀 **当前测试版**：<https://ideer0126.github.io/MIXXTOPIA/beta/>（稳定版尚未发布）
 
 ## 版本通道
 
-| 通道 | 地址 | 来源 |
+| 通道 | 地址 | 当前阶段 |
 |---|---|---|
-| 稳定版 | <https://ideer0126.github.io/MIXXTOPIA/> | 最新 `vX.Y.Z` tag（还没有正式 tag 时回退 `main`） |
-| 测试版 | <https://ideer0126.github.io/MIXXTOPIA/beta/> | 最新 `vX.Y.Z-beta.N` / `-rc.N` tag |
-| 预览版 | <https://ideer0126.github.io/MIXXTOPIA/preview/> | `main` 最新提交 |
+| 稳定版 | <https://ideer0126.github.io/MIXXTOPIA/> | 尚未发布；首个 `vX.Y.Z` tag 后启用 |
+| 测试版 | <https://ideer0126.github.io/MIXXTOPIA/beta/> | 当前可玩；测试期用最新 beta/rc tag，没有 tag 时用 `main` |
+| 预览版 | <https://ideer0126.github.io/MIXXTOPIA/preview/> | 首个稳定版发布后开放；来源 `main` |
 
-> beta / preview 使用独立的 localStorage 键（`.beta` / `.preview`），不会覆盖稳定版存档；两个通道都带 `noindex`，请直接把链接发给测试者，不要放到公开入口。
+> 测试期 `/` 与 `/preview/` 只显示占位页，游戏入口是 `/beta/`。
 >
-> 如果最新 beta tag 的版本不高于当前 stable，`/beta/` 会显示“测试版暂未开放”占位页，避免测试者误以为在测新版本。
+> 首个 `vX.Y.Z` 发布后：`/` 切到稳定 tag，`/preview/` 开放 `main` 最新提交，`/beta/` 只显示高于当前稳定版的 beta/rc tag。
+>
+> beta / preview 使用独立的 localStorage 键（`.beta` / `.preview`），不会覆盖稳定版存档；两个通道都带 `noindex`，请直接把链接发给测试者，不要放到公开入口。最新 beta tag 不高于 stable 时，`/beta/` 会显示“测试版暂未开放”占位页。
 
 ## 开发状态
 
