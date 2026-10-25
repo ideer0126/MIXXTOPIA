@@ -2942,6 +2942,7 @@
     _hide(el) { if (el && el.classList) el.classList.add('hidden'); }
     _text(el, v) { if (el) el.textContent = v; }
 
+    /** 切换状态或销毁实例时隐藏全部界面，包含账户设置及存储提示。 */
     _hideAllScreens() {
       this._hide(this._ui.titleScreen);
       this._hide(this._ui.helpScreen);
@@ -3051,6 +3052,7 @@
       this._ui.avatarBtns = {}; // #44：按 GAME.avatarPresets 在 _renderAvatarOptions 中填充
     }
 
+    /** 统一绑定菜单、账户设置与对话事件；通过 _on 登记，供销毁时解绑。 */
     _bindUI() {
       const ui = this._ui;
       this._on(ui.btnStart, 'click', () => this._startNewGame());
