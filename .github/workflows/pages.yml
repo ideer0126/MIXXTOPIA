@@ -156,7 +156,10 @@ jobs:
 
           if grep -q 'js/main.js' _site/index.html; then
             grep -q 'js/channel.js' _site/index.html
-            ! grep -q 'name="robots"' _site/index.html
+            if grep -q 'name="robots"' _site/index.html; then
+              echo "::error::stable 游戏页不应带 noindex"
+              exit 1
+            fi
           else
             grep -q '稳定版尚未发布' _site/index.html
             grep -q 'name="robots"' _site/index.html

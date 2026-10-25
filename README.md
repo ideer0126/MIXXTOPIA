@@ -20,7 +20,7 @@
 >
 > 首个 `vX.Y.Z` 发布后：`/` 切到稳定 tag，`/preview/` 开放 `main` 最新提交，**`/beta/` 停用并显示“测试版已停用”**；之后 beta/rc tag 会被发布流程直接拒绝。
 >
-> beta / preview 使用独立的 localStorage 键（`.beta` / `.preview`），不会覆盖稳定版存档；beta/preview 及占位页都带 `noindex`，请直接把链接发给测试者，不要放到公开入口。测试期 beta 进度不会自动并入稳定版。
+> beta / preview 使用独立的 localStorage 键（`.beta` / `.preview`），不会覆盖稳定版存档；beta/preview 及占位页都带 `noindex`，用于请求搜索引擎不要收录这些页面。测试期 beta 进度不会自动并入稳定版。
 
 ## 开发状态
 
