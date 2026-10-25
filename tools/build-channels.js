@@ -364,12 +364,23 @@ function readChannelInfo(file) {
   }
 }
 
+// 去掉 HTML 注释。重复替换直到结果稳定，避免一次替换后重新出现 `<!--`。
+function stripHtmlComments(input) {
+  let previous;
+  let current = input;
+  do {
+    previous = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, '');
+  } while (current !== previous);
+  return current;
+}
+
 // 取页面里所有 robots meta 的 content 值。
 // - 先去掉 HTML 注释：被注释掉的 meta 不会生效，不能让它蒙混过关
 // - 属性名要完整匹配（`data-content` 不是 `content`）
 // - 属性顺序、单双引号、大小写都不敏感
 function robotsContents(html) {
-  const visible = html.replace(/<!--[\s\S]*?-->/g, '');
+  const visible = stripHtmlComments(html);
   return (visible.match(/<meta\b[^>]*>/gi) || [])
     .filter((tag) => /\sname\s*=\s*["']robots["']/i.test(tag))
     .map((tag) => {
