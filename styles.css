@@ -145,7 +145,8 @@ body {
   pointer-events: none;
 }
 
-#touch-actions .tbtn {
+#touch-actions #tbtn-b,
+#touch-actions #tbtn-c {
   width: 46px;
   height: 46px;
   border-radius: 50%;
