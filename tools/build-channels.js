@@ -364,6 +364,39 @@ function readChannelInfo(file) {
   }
 }
 
+// 去掉 HTML 注释。重复替换直到结果稳定，避免一次替换后重新出现 `<!--`。
+function stripHtmlComments(input) {
+  let previous;
+  let current = input;
+  do {
+    previous = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, '');
+  } while (current !== previous);
+  return current;
+}
+
+// 取页面里所有 robots meta 的 content 值。
+// - 先去掉 HTML 注释：被注释掉的 meta 不会生效，不能让它蒙混过关
+// - 属性名要完整匹配（`data-content` 不是 `content`）
+// - 属性顺序、单双引号、大小写都不敏感
+function robotsContents(html) {
+  const visible = stripHtmlComments(html);
+  return (visible.match(/<meta\b[^>]*>/gi) || [])
+    .filter((tag) => /\sname\s*=\s*["']robots["']/i.test(tag))
+    .map((tag) => {
+      const content = /\scontent\s*=\s*["']([^"']*)["']/i.exec(tag);
+      return content ? content[1] : '';
+    });
+}
+
+// robots 指令用逗号分隔：只有整条指令等于 noindex 才算，
+// `not-noindex` / `noindex-disabled` 都不算。
+function hasNoindex(html) {
+  return robotsContents(html).some((content) => content
+    .split(',')
+    .some((directive) => directive.trim().toLowerCase() === 'noindex'));
+}
+
 function verifySite(outDir, expected) {
   const infos = {
     stable: readChannelInfo(path.join(outDir, 'channel.json')),
@@ -402,7 +435,7 @@ function verifySite(outDir, expected) {
 
     if (!isGame) {
       if (info.label !== null || info.ref !== null) fail(channel + ' 占位页不应带 label/ref');
-      if (!/name="robots"/.test(page.html)) fail(channel + ' 占位页缺少 noindex');
+      if (!hasNoindex(page.html)) fail(channel + ' 占位页缺少 noindex');
       if (page.html.indexOf(page.placeholder) < 0) {
         fail(channel + ' 占位页缺少文案：' + page.placeholder);
       }
@@ -416,8 +449,8 @@ function verifySite(outDir, expected) {
       fail(channel + ' 的 channel.js/main.js 注入顺序错误');
     }
     if (channel === 'stable') {
-      if (/name="robots"/.test(page.html)) fail('stable 游戏不应带 noindex');
-    } else if (!/name="robots"/.test(page.html)) {
+      if (robotsContents(page.html).length) fail('stable 游戏不应带 robots meta');
+    } else if (!hasNoindex(page.html)) {
       fail(channel + ' 游戏缺少 noindex');
     }
   }
