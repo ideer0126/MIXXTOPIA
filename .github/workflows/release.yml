@@ -5,7 +5,7 @@ name: Release
 # - 质量门禁：node --check + test-engine + test-main。
 #   validate.js 因 #11 空关卡是已知红门禁（PLAN.md §4），待 #11 落地后再加回
 #   `node tools/validate.js --require-data`。
-# - 产物：mixxtopia-<version>.zip（解压即玩）+ SHA-256。
+# - 产物：MIXXTOPIA-<version>.zip（解压即玩）+ SHA-256。
 # - beta/rc tag：仅首个稳定版之前可用；稳定版存在时直接失败（测试版通道已停用）。
 # - Pages 部署仍由 pages.yml 负责（push main 触发），本流程只产出可下载快照。
 on:
@@ -121,7 +121,7 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          NAME="mixxtopia-${VERSION}"
+          NAME="MIXXTOPIA-${VERSION}"
           STAGE="dist/${NAME}"
           mkdir -p "$STAGE"
           rsync -a \
