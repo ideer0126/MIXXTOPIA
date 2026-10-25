@@ -68,6 +68,12 @@ function response(status, body) {
   };
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 /** fetch 桩：记录每次调用的 URL/init/JSON body，由 handler 决定响应或抛错 */
 function fetchRecorder(handler) {
   const calls = [];
@@ -428,6 +434,76 @@ async function test(name, fn) {
     assert.strictEqual(a.accessToken, 'access-2');
     assert.strictEqual(b.accessToken, 'access-2');
   });
+
+  for (const flow of ['restore', 'refresh']) {
+    for (const action of ['signOut', 'signIn', 'signUp']) {
+      for (const result of ['success', 'invalid_refresh_token', 'network']) {
+        await test(flow + ' 过期响应：' + action + ' 后忽略 ' + result, async () => {
+          const { auth, storage } = setup();
+          seedSession(storage, { expiresAt: NOW - 1000 });
+          const pending = deferred();
+          const fetch = fetchRecorder((call) => {
+            if (call.url.includes('grant_type=refresh_token')) return pending.promise;
+            return response(200, sessionPayload({
+              user: { id: 'u-2', email: 'new@example.com' },
+            }));
+          });
+          const client = auth.createClient({ fetch, storage, now: () => NOW });
+          const events = [];
+          client.onChange((event) => events.push(event.type));
+          const first = client[flow]();
+          const second = client[flow]();
+          await client[action]('new@example.com', 'secret123');
+          const current = client.getSession();
+          const saved = storage.getItem(auth.AUTH_KEY);
+          const expectedEvents = events.slice();
+
+          if (result === 'network') pending.resolve(Promise.reject(new TypeError('offline')));
+          else if (result === 'invalid_refresh_token') {
+            pending.resolve(response(400, { error_code: 'invalid_refresh_token' }));
+          } else pending.resolve(response(200, sessionPayload({ access_token: 'obsolete' })));
+
+          assert.strictEqual(await first, current, '返回当前会话');
+          assert.strictEqual(await second, current, '共享请求的调用方也返回当前会话');
+          assert.strictEqual(client.getSession(), current, '不得覆盖或清空当前会话');
+          assert.strictEqual(storage.getItem(auth.AUTH_KEY), saved, '不得改动当前持久化会话');
+          assert.strictEqual(client.lastError, null, '不得记录过期错误');
+          assert.deepStrictEqual(events, expectedEvents, '不得发送过期事件');
+          assert.strictEqual(fetch.calls.filter((call) => call.url.includes('grant_type=refresh_token')).length, 1);
+        });
+      }
+    }
+  }
+
+  for (const status of [200, 400]) {
+    await test('新登录独立续期，旧请求结束不影响新请求去重（' + status + '）', async () => {
+      const { auth, storage } = setup();
+      seedSession(storage, { expiresAt: NOW - 1000 });
+      const old = deferred();
+      const fresh = deferred();
+      const fetch = fetchRecorder((call) => {
+        if (!call.url.includes('grant_type=refresh_token')) {
+          return response(200, sessionPayload({ refresh_token: 'new-refresh' }));
+        }
+        return call.body.refresh_token === 'stored-refresh' ? old.promise : fresh.promise;
+      });
+      const client = auth.createClient({ fetch, storage, now: () => NOW });
+      const obsolete = client.refresh();
+      await client.signIn(USER.email, 'secret123');
+      const current = client.getSession();
+      const next = client.refresh();
+      old.resolve(response(status, status === 200
+        ? sessionPayload({ access_token: 'obsolete' })
+        : { error_code: 'invalid_refresh_token' }));
+      assert.strictEqual(await obsolete, current);
+      const duplicate = client.refresh();
+      fresh.resolve(response(200, sessionPayload({ access_token: 'fresh' })));
+      assert.strictEqual((await next).accessToken, 'fresh');
+      assert.strictEqual(await duplicate, client.getSession());
+      assert.strictEqual(fetch.calls.length, 3, '两代各自续期，同代共享请求');
+      assert.strictEqual(JSON.parse(storage.getItem(auth.AUTH_KEY)).accessToken, 'fresh');
+    });
+  }
 
   await test('ensureFresh：快过期时自动续期，未过期不发请求', async () => {
     const { auth, storage } = setup();

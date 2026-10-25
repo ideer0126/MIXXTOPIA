@@ -215,6 +215,7 @@
       this.session = null;
       this.lastError = null;   // 最近一次 restore 失败（网络/服务端），供标题页提示
       this._listeners = [];
+      this._generation = 0;   // 登录/登出后，旧的恢复与续期结果失效
       this._refreshing = null; // 并发续期去重
     }
 
@@ -303,6 +304,10 @@
     }
 
     _applySession(session, type) {
+      if (type === 'signin') {
+        this._generation++;
+        this._refreshing = null;
+      }
       this.session = session;
       this.writeFailed = !this._writeSession(session);
       this._emit(type);
@@ -408,6 +413,7 @@
      * @returns {Promise<object|null>}
      */
     async restore() {
+      const generation = this._generation;
       this.lastError = null;
       const stored = this._readSession();
       if (!stored) {
@@ -429,9 +435,11 @@
       this.session = stored;
       try {
         const fresh = await this.refresh();
+        if (generation !== this._generation) return this.session;
         this._emit('restore');
         return fresh;
       } catch (err) {
+        if (generation !== this._generation) return this.session;
         this.lastError = err;
         this.session = null;
         if (err && err.code === 'invalid_refresh_token') this._clearStoredSession();
@@ -485,7 +493,8 @@
 
     /**
      * 用 refresh_token 续期。并发调用共享同一请求；refresh token 失效时清空本地会话。
-     * @returns {Promise<object>}
+     * 登录/登出使旧请求失效，旧请求返回当前会话（登出后为 null）。
+     * @returns {Promise<object|null>}
      */
     refresh() {
       if (this._refreshing) return this._refreshing;
@@ -493,23 +502,26 @@
       if (!stored || !stored.refreshToken) return Promise.reject(new AuthError('not_signed_in'));
 
       const self = this;
-      this._refreshing = (async function () {
+      const generation = this._generation;
+      const pending = (async function () {
         const data = await self._request('/token?grant_type=refresh_token', {
           body: { refresh_token: stored.refreshToken },
         });
+        if (generation !== self._generation) return self.session;
         const next = self._sessionFromResponse(data, stored.user);
         if (!next) throw new AuthError('invalid_response');
         self._applySession(next, 'refresh');
         return next;
       })();
 
-      return this._refreshing.then(
+      const refreshing = pending.then(
         function (session) {
-          self._refreshing = null;
+          if (self._refreshing === refreshing) self._refreshing = null;
           return session;
         },
         function (err) {
-          self._refreshing = null;
+          if (self._refreshing === refreshing) self._refreshing = null;
+          if (generation !== self._generation) return self.session;
           if (err && (err.code === 'invalid_refresh_token' || err.code === 'not_signed_in')) {
             self.session = null;
             self._clearStoredSession();
@@ -518,12 +530,14 @@
           throw err;
         }
       );
+      this._refreshing = refreshing;
+      return refreshing;
     }
 
     /**
      * 取一个可用的 access token：未过期直接返回；快过期/已过期自动续期。
      * 云存档、统计在发请求前调用。
-     * @returns {Promise<object>} 会话
+     * @returns {Promise<object|null>} 会话（续期期间登出时为 null）
      */
     async ensureFresh() {
       const stored = this.session || this._readSession();
@@ -546,6 +560,8 @@
      */
     async signOut() {
       const stored = this.session || this._readSession();
+      this._generation++;
+      this._refreshing = null;
       this.session = null;
       this._clearStoredSession();
       this._emit('signout');
