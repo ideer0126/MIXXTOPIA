@@ -3093,6 +3093,7 @@ test('#18 index.html：HUD/能量条/触屏 B·C 与操作说明齐全', () => {
 
 
 /* #45 integration: real Auth/Cloud/SaveStore and UI, fetch stubs only. */
+/** Create a game with isolated local storage and a stubbed save service. */
 function cloudFixture() {
   localStorageStub.clear();
   seedAccount();
@@ -3119,13 +3120,15 @@ function cloudFixture() {
   const game = makeAccountGame(fetch, { enableCloud: true, keepStorage: true });
   return { game, rows, fetch, setOffline: value => { offline = value; } };
 }
+/** Wait for authentication, profile loading and initial cloud reconciliation. */
 async function cloudReady(game) {
   await game._authReady; await settle(game);
   if (game._cloudTask) await game._cloudTask;
 }
+/** Start a game, finish its intro through real input handling and save locally. */
 function saveOne(game) {
   game._startNewGame();
-  if (game.state === STATE.DIALOGUE) { while (game.state === STATE.DIALOGUE) game._advanceDialogue(); }
+  while (game.state === STATE.DIALOGUE) advanceDialog(game);
   game._setState(STATE.PAUSED);
   assert.equal(game._saveAndQuit(), true);
 }
@@ -3215,6 +3218,35 @@ testAsync('#45 删除仅清本地和基线，云备份仍可手动恢复', async
   assert.equal(game.cloud.record.slots[0], null);
   elt('btn-cloud-download-1').click(); elt('btn-cloud-download-1').click(); await game._cloudTask;
   assert.ok(game.store.readSlot(0)); game.destroy();
+});
+
+
+testAsync('#45 读取云档失败时禁止并入/跳过，重试仍可用且本地游玩不阻塞', async () => {
+  const f = cloudFixture(), game = f.game;
+  await cloudReady(game); saveOne(game); await game._cloudTask;
+  f.setOffline(true); await game.cloud.refresh(); game._openSaveScreen('load');
+  assert.equal(game.cloud.loaded, false);
+  assert.ok(shown('cloud-merge'));
+  assert.equal(elt('btn-cloud-merge').disabled, true);
+  assert.equal(elt('btn-cloud-skip').disabled, true);
+  assert.equal(elt('btn-cloud-retry').disabled, false);
+  assert.equal(elt('btn-start').disabled, false);
+  assert.equal(game.cloud.record.decision, '');
+  f.setOffline(false); elt('btn-cloud-retry').click(); await game._cloudTask;
+  assert.equal(elt('btn-cloud-merge').disabled, false);
+  elt('btn-cloud-merge').click(); await game._cloudTask;
+  assert.ok(f.rows[0]); game.destroy();
+});
+testAsync('#45 保存助手处理开场对话，直到打字机和翻页结束', async () => {
+  const f = cloudFixture(), game = f.game;
+  await cloudReady(game);
+  game.dialogue['test.cloud-intro'] = { type: 'cutscene', trigger: 'load:1', scopeId: 1,
+    entry: true, once: true, lines: [{ s: 'nar', t: '进入梦境。' }, { s: 'byeori', t: '开始冒险。' }] };
+  saveOne(game);
+  await game._cloudTask;
+  assert.equal(game.state, STATE.TITLE); assert.ok(game.store.readSlot(0));
+  assert.ok(game.store.readSlot(0).played.includes('test.cloud-intro'));
+  delete game.dialogue['test.cloud-intro']; game.destroy();
 });
 
 /* ─────────────────── 汇总 ─────────────────── */

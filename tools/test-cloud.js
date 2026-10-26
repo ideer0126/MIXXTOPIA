@@ -11,15 +11,18 @@ const row = (n = 1, version = 1, time = 20, data = slot()) => ({ slot: n, versio
   updated_at: new Date(time).toISOString(), data });
 const meta = (n = 1, version = 1, time = 20) => ({ slot: n, version, updatedAt: time });
 const response = (status, data) => ({ status, ok: status >= 200 && status < 300, json: async () => clone(data) });
+/** Create a controllable promise for account-switch and in-flight request regressions. */
 function deferred() {
   let resolve, reject;
   const promise = new Promise((a, b) => { resolve = a; reject = b; });
   return { promise, resolve, reject };
 }
+/** Provide shared in-memory storage, usable by multiple simulated tabs. */
 function storage() {
   const map = new Map();
   return { getItem: k => map.get(k) || null, setItem: (k, v) => map.set(k, v) };
 }
+/** Build the real transport around injectable auth and a recording fetch stub. */
 function client(handler, extra) {
   const calls = [];
   const auth = { session: { user: { id: 'A' }, accessToken: 'old' },
@@ -35,6 +38,7 @@ function client(handler, extra) {
   }, ...extra });
   return { c, auth, calls };
 }
+/** Build a sync coordinator with isolated local slots and a controllable cloud service. */
 function sync(opts = {}) {
   const local = [slot(), null, null];
   const store = { readSlot: i => clone(local[i]), readAll: () => clone(local),
@@ -186,7 +190,7 @@ test('已同步档离线保存：本地不丢，重开登录补传 pending', asy
   const s = sync(); await s.manager.connect('A'); await s.manager.decide('merge');
   const upload = s.stub.upload;
   s.stub.upload = async () => { throw new CloudError('network'); };
-  s.local[0].updatedAt = 30; await s.manager.save(0);
+  s.local[0].updatedAt = 30; await s.manager.save(0, s.store.readSlot(0));
   assert.equal(s.manager.error.code, 'network'); assert.equal(s.local[0].updatedAt, 30);
   s.stub.upload = upload;
   const again = new SaveSync({ store: s.store, storage: s.memory, client: s.stub });
@@ -275,6 +279,91 @@ test('通道使用独立基线键', async () => {
   const memory = storage(), a = sync({ storage: memory }), b = sync({ storage: memory, key: 'mixxtopia.cloud.beta.v1' });
   await a.manager.connect('A'); await a.manager.decide('merge');
   await b.manager.connect('A'); assert.equal(b.manager.record.slots[0], null);
+});
+
+test('非 JSON 401 仍续期重试；403/5xx 保留 HTTP 错误语义', async () => {
+  const html = status => ({ status, ok: false, json: async () => { throw new SyntaxError('HTML'); } });
+  const a = client((_, n) => n === 1 ? html(401) : response(200, []));
+  await a.c.list('A'); assert.equal(a.auth.refreshCalls, 1); assert.equal(a.calls.length, 2);
+  for (const [status, expected] of [[403, 'unauthorized'], [503, 'unavailable'], [409, 'conflict']]) {
+    const b = client(() => html(status));
+    await assert.rejects(b.c.list('A'), code(expected));
+    assert.equal(b.auth.refreshCalls, 0);
+  }
+});
+test('响应体读取超时仍为 timeout，不被 JSON 容错吞掉', async () => {
+  const a = client(call => ({ status: 200, ok: true, json: () => new Promise((_, reject) => {
+    call.signal.addEventListener('abort', () => reject(Error('body aborted')));
+  }) }));
+  a.c.config.timeoutMs = 5;
+  await assert.rejects(a.c.list('A'), code('timeout'));
+});
+test('列表读取失败不能持久化并入选择；重试后可正常并入', async () => {
+  const s = sync(), list = s.stub.list;
+  s.stub.list = async () => { throw new CloudError('network'); };
+  await s.manager.connect('A');
+  for (const mode of ['merge', 'cloud']) {
+    await s.manager.decide(mode);
+    assert.equal(s.manager.record.decision, ''); assert.equal(s.manager.needsMerge, true);
+  }
+  s.stub.list = list; await s.manager.refresh(true); await s.manager.decide('merge');
+  assert.equal(s.manager.state(0), 'synced');
+});
+test('共享存储中 B 覆盖本机档后，旧 A 标签页不能用 pending 补传 B 的进度', async () => {
+  const a = sync(); await a.manager.connect('A'); await a.manager.decide('merge');
+  const upload = a.stub.upload;
+  a.stub.upload = async () => { throw new CloudError('network'); };
+  a.local[0].updatedAt = 30; await a.manager.save(0, a.store.readSlot(0));
+  const b = new SaveSync({ client: a.stub, store: a.store, storage: a.memory });
+  await b.connect('B'); a.local[0].sheep = 6;
+  const recordB = a.memory.getItem('mixxtopia.cloud.v1'), before = a.calls.length;
+  a.stub.upload = upload;
+  await a.manager.refresh(true);
+  await a.manager.save(0, a.store.readSlot(0));
+  await a.manager.transfer(0, 'upload');
+  assert.equal(a.manager.error.code, 'account_changed');
+  assert.equal(a.calls.length, before); assert.equal(a.memory.getItem('mixxtopia.cloud.v1'), recordB);
+});
+test('A→B→新 A 标签页：旧 A 不能在账号名相同后复用旧授权', async () => {
+  const a = sync(); await a.manager.connect('A'); await a.manager.decide('merge');
+  const b = new SaveSync({ client: a.stub, store: a.store, storage: a.memory }); await b.connect('B');
+  const again = new SaveSync({ client: a.stub, store: a.store, storage: a.memory }); await again.connect('A');
+  const before = a.calls.length;
+  await a.manager.refresh(true);
+  assert.equal(a.manager.invalidated, true); assert.equal(a.calls.length, before);
+  assert.equal(again.needsMerge, true);
+});
+test('在途下载期间另一标签页切号：不落本机也不覆盖新账号记录', async () => {
+  const d = deferred(); const a = sync({ remote: [meta(), null, null], client: { download: () => d.promise } });
+  await a.manager.connect('A'); const task = a.manager.transfer(0, 'download');
+  const b = new SaveSync({ client: a.stub, store: a.store, storage: a.memory }); await b.connect('B');
+  const recordB = a.memory.getItem('mixxtopia.cloud.v1');
+  d.resolve({ meta: meta(), data: slot(20) }); await task;
+  assert.equal(a.local[0].updatedAt, 10); assert.equal(a.manager.error.code, 'account_changed');
+  assert.equal(a.memory.getItem('mixxtopia.cloud.v1'), recordB);
+});
+test('pending 重试只接受已授权快照，其他页面修改后须重新确认', async () => {
+  const a = sync(); await a.manager.connect('A'); await a.manager.decide('merge');
+  const upload = a.stub.upload;
+  a.stub.upload = async () => { throw new CloudError('network'); };
+  a.local[0].updatedAt = 30; await a.manager.save(0, a.store.readSlot(0));
+  a.stub.upload = upload;
+  // Simulate a guest/older build changing data without touching the ownership record.
+  a.local[0].sheep = 6;
+  const before = a.calls.length;
+  await a.manager.refresh(true);
+  assert.equal(a.calls.length, before + 1); // metadata GET only
+  assert.equal(a.manager.error.code, 'local_changed'); assert.equal(a.manager.needsMerge, true);
+  assert.equal(a.manager.record.pending[0], false);
+  assert.equal(a.manager.record.slots[0], null);
+});
+test('本地保存提供的快照与共享槽位不同：不授权自动上传', async () => {
+  const a = sync(); await a.manager.connect('A'); await a.manager.decide('merge');
+  const own = { ...a.store.readSlot(0), updatedAt: 50 };
+  a.local[0] = { ...own, sheep: 6 };
+  const before = a.calls.length;
+  await a.manager.save(0, own);
+  assert.equal(a.calls.length, before); assert.equal(a.manager.error.code, 'local_changed');
 });
 (async () => {
   let failed = 0;

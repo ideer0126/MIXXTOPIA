@@ -1207,6 +1207,7 @@
         key: CHANNEL_KEYS.cloudKey, onChange: () => this._refreshCloudUI() });
     }
 
+    /** 当前登录账号变化时重建云同步归属，令牌续期不重复连接。 */
     _syncCloud() {
       if (!this.cloud || this._destroyed) return;
       const uid = this._currentUserId();
@@ -1216,10 +1217,12 @@
       }
     }
 
+    /** 将存档时间显示为本地中文时间；没有存档时显示「无」。 */
     _cloudTime(value) {
       return value ? new Date(value).toLocaleString('zh-CN') : '无';
     }
 
+    /** 同步账号、元数据与传输状态到提示和按钮；加载失败仍保留重试入口。 */
     _refreshCloudUI() {
       if (this._destroyed || !this._ui) return;
       const cloud = this.cloud;
@@ -1237,9 +1240,10 @@
       else this._hide(this._ui.btnLoginCloud);
       if (signedIn && cloud.needsMerge) this._show(this._ui.cloudMerge);
       else this._hide(this._ui.cloudMerge);
-      for (const el of [this._ui.btnCloudMerge, this._ui.btnCloudSkip, this._ui.btnCloudRetry]) {
-        if (el) el.disabled = busy || !signedIn;
+      for (const el of [this._ui.btnCloudMerge, this._ui.btnCloudSkip]) {
+        if (el) el.disabled = busy || !signedIn || !cloud.loaded;
       }
+      if (this._ui.btnCloudRetry) this._ui.btnCloudRetry.disabled = busy || !signedIn;
       const labels = { unsynced: '未同步', empty: '无云档', upload: '本机待上传',
         download: '☁ 云端可载入', newer: '☁ 云端较新', conflict: '本机 / 云端待选择', synced: '☁ 已同步' };
       for (let i = 0; i < SLOT_COUNT; i++) {
@@ -1270,6 +1274,7 @@
       }
     }
 
+    /** 要求两次点击确认同一本机快照与云端版本，再执行指定档位的传输。 */
     _onCloudChoice(index, direction) {
       if (this.state !== STATE.TITLE || !this.cloud || !this.cloud.uid
         || !this._ui.saveScreen || this._ui.saveScreen.classList.contains('hidden')) return;
@@ -2266,6 +2271,7 @@
     }
 
     /** 渲染 3 个存档位（关卡 / 星数 / 已通关数）与底部提示 */
+    /** 实际上传/下载期间阻止档位切换；读取元数据不阻塞本地游玩。 */
     _cloudBusy() {
       return !!(this.cloud && this.cloud.busy.some(Boolean));
     }
@@ -2332,7 +2338,7 @@
       s.updatedAt = Math.max(Date.now(), ((this.store.readSlot(this.saveSlotIndex) || {}).updatedAt || 0) + 1);
       const ok = this.store.writeSlot(this.saveSlotIndex, s);
       if (ok) {
-        if (this.cloud) this._cloudTask = this.cloud.save(this.saveSlotIndex);
+        if (this.cloud) this._cloudTask = this.cloud.save(this.saveSlotIndex, cloneSlot(s));
         if (this.onEvent) {
           try {
             this.onEvent('save', { slot: this.saveSlotIndex, level: s.current, cleared: s.cleared.length });

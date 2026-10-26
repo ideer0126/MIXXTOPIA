@@ -14,6 +14,7 @@
     conflict: '云端进度已变化，请重新逐档选择',
     invalid_response: '云端存档格式无法识别，未覆盖本机进度',
     local_changed: '本机进度已变化，请重新选择',
+    account_changed: '账户已在另一页面变化，请重新登录并确认同步进度',
     storage: '浏览器存储不可用，未同步；本机进度已保留',
     busy: '该存档正在同步，请稍后再试',
   };
@@ -47,6 +48,7 @@
       if (!uid || !session || !session.user || session.user.id !== uid
         || !current || !current.user || current.user.id !== uid) throw new CloudError('unauthorized');
     }
+    /** Issue one owner-bound request, retrying a 401 once while preserving timeout handling. */
     async _request(uid, path, method, body) {
       if (!this.available) throw new CloudError('unavailable');
       let session;
@@ -73,10 +75,14 @@
         let response, data;
         try {
           response = await fetchFn(this.config.restUrl('/saves') + path, init);
-          data = await response.json(); // Keep timeout active through body consumption.
+          // Error responses can contain HTML (proxy/CDN); status still determines
+          // refresh, authorization and availability handling. Keep the timeout
+          // active through body consumption, including JSON parse failures.
+          try { data = await response.json(); }
+          catch (err) { if (timedOut) throw err; data = undefined; }
         } catch (err) {
           if (timedOut) throw new CloudError('timeout');
-          throw new CloudError(response ? 'invalid_response' : 'network');
+          throw new CloudError('network');
         } finally {
           if (timer !== null) clearTimeout(timer);
         }
@@ -97,6 +103,7 @@
     _filter(uid, slot) {
       return '?user_id=eq.' + encodeURIComponent(uid) + (slot ? '&slot=eq.' + slot : '');
     }
+    /** Fetch the signed-in owner's three metadata rows without downloading save payloads. */
     async list(uid) {
       const rows = await this._request(uid, this._filter(uid) + '&select=slot,version,updated_at', 'GET');
       const result = [null, null, null];
@@ -107,6 +114,7 @@
       }
       return result;
     }
+    /** Validate one cloud save and convert its server timestamp to the local format. */
     async download(uid, slot) {
       if (!validSlot(slot)) throw new CloudError('invalid_response');
       const rows = await this._request(uid, this._filter(uid, slot) + '&select=slot,version,updated_at,data', 'GET');
@@ -125,6 +133,7 @@
       }
       return { meta, data: Object.assign(copy(raw), { slot, updatedAt: meta.updatedAt }) };
     }
+    /** Insert a new slot or conditionally update exactly the confirmed cloud version. */
     async upload(uid, slot, data, expectedVersion) {
       if (!validSlot(slot) || (expectedVersion !== null && (!Number.isInteger(expectedVersion) || expectedVersion < 1))) {
         throw new CloudError('invalid_response');
@@ -165,29 +174,57 @@
       this.error = null;
       this.busy = [false, false, false];
       this.revisions = [0, 0, 0];
+      this.invalidated = false;
       this.record = this._blank('');
     }
-    _blank(uid) { return { v: 1, userId: uid, decision: '', slots: [null, null, null], pending: [false, false, false] }; }
+    /** Allocate an ownership generation; switching away and back revokes older tabs. */
+    _blank(uid) {
+      return { v: 1, userId: uid, binding: Date.now().toString(36) + Math.random().toString(36).slice(2),
+        decision: '', slots: [null, null, null], pending: [false, false, false], snapshots: [null, null, null] };
+    }
+    /** Restore records for this owner and generation; legacy/invalid records require new consent. */
     _read(uid) {
       try {
         const r = JSON.parse(this.storage.getItem(this.key));
-        if (!r || r.v !== 1 || r.userId !== uid || !Array.isArray(r.slots) || r.slots.length !== 3) return this._blank(uid);
+        if (!r || r.v !== 1 || r.userId !== uid || typeof r.binding !== 'string' || !r.binding
+          || !Array.isArray(r.slots) || r.slots.length !== 3) return this._blank(uid);
         const result = this._blank(uid);
+        result.binding = r.binding;
         result.decision = ['merge', 'cloud'].includes(r.decision) ? r.decision : '';
         result.slots = r.slots.map(b => b && Number.isInteger(b.version) && b.version > 0
           && Number.isFinite(b.localUpdatedAt) && Number.isFinite(b.cloudUpdatedAt) ? b : null);
         result.pending = result.pending.map((_, i) => !!(r.pending && r.pending[i] === true));
+        result.snapshots = result.snapshots.map((_, i) => r.snapshots && r.snapshots[i] || null);
         return result;
       } catch (err) { return this._blank(uid); }
     }
-    _persist() {
+    /** Reject stale tabs before they can reuse consent or replace another account's record. */
+    _guard() {
+      if (this.invalidated) return false;
+      let current;
+      try { current = JSON.parse(this.storage.getItem(this.key)); }
+      catch (err) { current = null; }
+      if (current && current.userId === this.uid && current.binding === this.record.binding) return true;
+      this.invalidated = true;
+      this.epoch++;
+      this.loaded = false;
+      this.loading = false;
+      this.busy = [false, false, false];
+      this.record = this._blank(this.uid);
+      this.error = new CloudError('account_changed');
+      this.notify();
+      return false;
+    }
+    /** Persist only while this tab still owns the shared record; connect claims a new owner. */
+    _persist(claim) {
+      if (!claim && this.uid && !this._guard()) return false;
       try {
         if (!this.storage) throw new Error();
         this.storage.setItem(this.key, JSON.stringify(this.record));
         return true;
       } catch (err) { this.error = new CloudError('storage'); return false; }
     }
-    _active(uid, epoch) { return !!uid && this.uid === uid && this.epoch === epoch; }
+    _active(uid, epoch) { return !!uid && this.uid === uid && this.epoch === epoch && this._guard(); }
     notify() { this.onChange(); }
     get needsMerge() { return !!this.uid && !this.record.decision && this.store.readAll().some((slot, i) => slot && !this.record.slots[i]); }
     state(i) {
@@ -201,25 +238,32 @@
       const remoteChanged = remote.version !== base.version || remote.updatedAt !== base.cloudUpdatedAt;
       return remoteChanged ? (localChanged ? 'conflict' : 'newer') : (localChanged ? 'upload' : 'synced');
     }
+    /** Claim the shared ownership generation and reconcile pending saves after login. */
     async connect(uid) {
       if (this.uid === uid) return;
       this.uid = uid || '';
       this.epoch++;
+      this.invalidated = false;
       this.record = this._read(this.uid);
       // Persist ownership immediately, even when the player declines merging.
       // Switching A → B → A must not reuse A's consent for B's local progress.
-      if (this.uid) this._persist();
       this.remote = [null, null, null];
       this.loaded = false;
       this.loading = false;
       this.error = null;
       this.busy = [false, false, false];
+      if (this.uid && !this._persist(true)) {
+        this.invalidated = true;
+        this.notify();
+        return;
+      }
       this.notify();
       if (this.uid) await this.refresh(true);
     }
+    /** Refresh metadata, then optionally retry only previously authorized local snapshots. */
     async refresh(retryPending) {
       const uid = this.uid, epoch = this.epoch;
-      if (!uid || this.loading) return;
+      if (!uid || this.loading || !this._guard()) return;
       this.loading = true;
       this.error = null;
       this.notify();
@@ -240,9 +284,10 @@
         }
       }
     }
+    /** Record the player's merge choice only after cloud metadata has loaded. */
     async decide(mode) {
-      if (this.loading || this.busy.some(Boolean)) return;
-      if (!this.uid || !['merge', 'cloud'].includes(mode)) return;
+      if (!this.loaded || this.loading || this.busy.some(Boolean)) return;
+      if (!this.uid || !['merge', 'cloud'].includes(mode) || !this._guard()) return;
       this.record.decision = mode;
       if (!this._persist()) { this.record.decision = ''; this.notify(); return; }
       this.notify();
@@ -256,10 +301,12 @@
         else if (!local && remote) await this.transfer(i, 'download');
       }
     }
+    /** Invalidate a deleted local slot's baseline, retry authorization and snapshot. */
     forget(i) {
       this.revisions[i]++;
       this.record.slots[i] = null;
       this.record.pending[i] = false;
+      this.record.snapshots[i] = null;
       if (this.uid) this._persist();
       else {
         // Logout keeps the previous account's record for offline retry. A guest
@@ -269,17 +316,35 @@
           if (previous && previous.v === 1 && Array.isArray(previous.slots)) {
             previous.slots[i] = null;
             if (Array.isArray(previous.pending)) previous.pending[i] = false;
+            if (Array.isArray(previous.snapshots)) previous.snapshots[i] = null;
             this.storage.setItem(this.key, JSON.stringify(previous));
           }
         } catch (err) { /* Local deletion already succeeded; no cloud write. */ }
       }
       this.notify(); // Local delete does not delete a cloud backup.
     }
-    async save(i) {
-      if (!this.uid || !this.store.readSlot(i)) { this.notify(); return; }
+    /** Authorize only the snapshot just saved by this game, or an exact pending retry.
+     * @param {number} i Zero-based slot.
+     * @param {object} [writtenSlot] Normalized local save freshly written by the caller.
+     */
+    async save(i, writtenSlot) {
+      if (!this.uid || !this._guard() || !this.store.readSlot(i)) { this.notify(); return; }
       const base = this.record.slots[i];
       // Never bind a guest/other account's save implicitly.
       if (!base && !this.record.pending[i] && this.record.decision !== 'merge') { this.notify(); return; }
+      const local = this.store.readSlot(i);
+      if (writtenSlot && same(writtenSlot, local)) this.record.snapshots[i] = copy(writtenSlot);
+      else if (!same(this.record.snapshots[i], local)) {
+        // Unknown edits (including another tab or an older build) need new consent.
+        this.record.pending[i] = false;
+        this.record.slots[i] = null;
+        this.record.snapshots[i] = null;
+        this.record.decision = '';
+        this._persist();
+        this.error = new CloudError('local_changed');
+        this.notify();
+        return;
+      }
       this.record.pending[i] = true;
       if (!this._persist()) { this.notify(); return; }
       if (!this.loaded || this.busy[i]) { this.notify(); return; }
@@ -288,15 +353,17 @@
         || (!base && remote)) { this.notify(); return; }
       await this.transfer(i, 'upload');
     }
+    /** Transfer one explicitly chosen slot, discarding results after ownership or local changes. */
     async transfer(i, direction) {
       const uid = this.uid, epoch = this.epoch, revision = this.revisions[i];
-      if (!uid || !this.loaded || this.busy[i] || !['upload', 'download'].includes(direction)) return false;
+      if (!uid || !this.loaded || this.busy[i] || !['upload', 'download'].includes(direction) || !this._guard()) return false;
       const local = this.store.readSlot(i), remote = this.remote[i];
       if (direction === 'upload' ? !local : !remote) return false;
       const active = () => this._active(uid, epoch) && this.revisions[i] === revision;
       this.busy[i] = true;
       this.error = null;
       if (direction === 'upload') {
+        this.record.snapshots[i] = copy(local);
         this.record.pending[i] = true;
         if (!this._persist()) { this.busy[i] = false; this.notify(); return false; }
       }
@@ -320,6 +387,7 @@
         this.remote[i] = meta;
         this.record.slots[i] = { version: meta.version, localUpdatedAt: saved.updatedAt, cloudUpdatedAt: meta.updatedAt };
         this.record.pending[i] = !same(saved, this.store.readSlot(i));
+        if (!this.record.pending[i]) this.record.snapshots[i] = copy(saved);
         this._persist();
         return true;
       } catch (err) {
@@ -332,6 +400,7 @@
         if (this._active(uid, epoch)) { this.busy[i] = false; this.notify(); }
       }
     }
+    /** Revoke outstanding operations and detach the UI callback. */
     destroy() { this.uid = ''; this.epoch++; this.onChange = () => {}; }
   }
   root.MIXX = root.MIXX || {};
