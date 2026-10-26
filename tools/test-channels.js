@@ -217,7 +217,7 @@ try {
   });
 
   test('每个游戏构建都包含 cloud-config.js / account.js / data.js', () => {
-    for (const name of ['js/cloud-config.js', 'js/account.js', 'js/data.js']) {
+    for (const name of ['js/cloud-config.js', 'js/account.js', 'js/cloud.js', 'js/data.js']) {
       for (const rel of ['beta/' + name, name, 'preview/' + name]) {
         const site = rel.startsWith('beta/') ? testing : stable;
         assert.ok(fs.existsSync(path.join(site, rel)), '缺少 ' + rel);

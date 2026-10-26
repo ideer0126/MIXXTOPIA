@@ -1015,3 +1015,17 @@ body {
     }
   }
 }
+
+/* #45: per-slot cloud choices, including touch layouts. */
+#save-screen { overflow-y: auto; justify-content: flex-start; padding-top: 24px; }
+.cloud-status, .cloud-meta, .cloud-merge { font-size: 12px; line-height: 1.6; }
+.cloud-status { max-width: 460px; color: var(--gold, #FFC857); text-align: center; }
+.cloud-meta { margin: 4px 0; overflow-wrap: anywhere; }
+.cloud-slot { margin: 0 0 12px; padding: 0 8px 8px; border-bottom: 1px solid #ffffff30; }
+.cloud-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.cloud-actions .menu-btn { flex: 1; min-height: 44px; }
+.cloud-merge { max-width: 460px; padding: 10px; border: 1px solid #FFC857; }
+@media (pointer: coarse) {
+  #save-screen { padding: 12px 12px 32px; }
+  .cloud-actions { flex-direction: column; }
+}
