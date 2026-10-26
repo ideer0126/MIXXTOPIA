@@ -77,6 +77,7 @@ MIXXTOPIA/
 ├── js/
 │   ├── cloud-config.js  # Supabase 公开配置（url / publishable key，无 SDK）
 │   ├── auth.js           # 账户：GoTrue 手写 fetch 封装（注册/登录/登出/续期/会话恢复）
+│   ├── cloud.js         # 云存档：PostgREST 乐观锁 + 逐档同步基线（#45）
 │   ├── account.js        # 账户资料：profiles 读写/校验（昵称、固定头像、偏好）（#44）
 │   ├── sprites.js        # 像素素材：瓦片/角色/道具（调色板换色）
 │   ├── audio.js          # WebAudio 芯片音效 + 每关 BGM 循环
@@ -109,7 +110,7 @@ MIXXTOPIA/
   3. 本地静态服务器冒烟测试（页面可加载、无控制台报错）。
 - **已知红门禁（2026-10-24）**：`js/data.js` 的 `levels` 仍为空（#11 未开始），
   `node tools/validate.js` 必然报错（91 项，全部由空关卡/对话引用触发），**不视为回归**；
-  期间以 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` + `node tools/test-auth.js` + `node tools/test-account.js` + `node tools/test-channels.js` + 浏览器冒烟为准，
+  期间以 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` + `node tools/test-auth.js` + `node tools/test-account.js` + `node tools/test-cloud.js` + `node tools/test-channels.js` + 浏览器冒烟为准，
   #11 落地后恢复 validate 门禁。
 - **发布**：测试期（无稳定 tag）`/` 与 `/preview/` 占位，`/beta/` 用 beta/rc tag 或 `main`；
   首个 `vX.Y.Z` 后 `/` 用 stable tag、`/preview/` 用 `main`、`/beta/` 停用（占位页，不再看 beta tag）。
@@ -154,7 +155,7 @@ MIXXTOPIA/
 | 16 | QA：地图校验、浏览器冒烟测试、移动端适配 | QA | 测试报告 | M5 | #11–15 | ⚪ 未开始 |
 | 17 | 发布：Pages 上线验证、README 图文 | 发布 | 线上可玩 + README | M5 | #16 | ⚪ 未开始 |
 | 18 | 战斗系统：二代应援棒（F 轻击 / G 重击 / 被动能量条 / 2.2 倍射程能量炮 / 敌人 HP 与倒下复位） | 策划+程序 | `engine.Combat` + main 接线 + GAME_DESIGN §12 + 测试 | M2 | #3 #9 | ✅ 已合并（PR #54） |
-| 19 | 账户与云存档：注册/登录、账户设置、云同步、统计（**选型已定 A2：Supabase + 手写 REST，2026-10-24**；立项稿 `docs/ACCOUNT_SYSTEM.md`，Issue #22，子任务 #42–#47） | 策划+程序 | 设计文档（已并入 GAME_DESIGN.md §10） | M2（立项） | #6 #8 | 🔵 #42 建表+RLS、#43 Auth、#44 账户设置已实现（分支 feat/43-auth、feat/44-account-settings）；下一步 #45 云存档同步 |
+| 19 | 账户与云存档：注册/登录、账户设置、云同步、统计（**选型已定 A2：Supabase + 手写 REST，2026-10-24**；立项稿 `docs/ACCOUNT_SYSTEM.md`，Issue #22，子任务 #42–#47） | 策划+程序 | 设计文档（已并入 GAME_DESIGN.md §10） | M2（立项） | #6 #8 | 🔵 #42 建表+RLS、#43 Auth、#44 账户设置已实现（分支 feat/43-auth、feat/44-account-settings）；#45 云存档同步已本地实现；下一步 #46 统计 |
 
 ---
 
@@ -169,7 +170,7 @@ MIXXTOPIA/
 
 ## 8. 当前进度与后续节奏
 
-**已完成（截至 2026-10-25）**
+**已完成（截至 2026-10-26）**
 - [x] M0 项目基建：仓库、CI（pages.yml）、README/LICENSE/.gitignore、Milestones/Labels/Issues 落地
 - [x] #3 游戏设计文档 docs/GAME_DESIGN.md（PR #19）
 - [x] #4 Canvas 渲染引擎：瓦片图集、调色板、摄像机、整数缩放（PR #20）
@@ -185,10 +186,14 @@ MIXXTOPIA/
 - [x] #43 Auth（2026-10-25，Issue #43）：新增 `js/auth.js` 手写 GoTrue 封装（注册 / 登录 / 登出 / refresh_token 续期 / 会话恢复，会话键 `mixxtopia.account.v1`，错误码中文映射）；标题加「登录 / 注册」入口与登录 screen（复用 `_show`/`_hide`，不新增游戏状态）；游客态零网络、游戏逻辑不变；`tools/test-auth.js` 19 项 fetch 桩单测 + test-main 账户 UI 9 项 + 无头冒烟通过（分支 feat/43-auth）
 - [x] #44 账户设置（2026-10-25，Issue #44）：新增 `js/account.js` 手写 PostgREST `profiles` 读写（`GET/PATCH /rest/v1/profiles?id=eq.<uid>`，`Prefer: return=representation`；昵称 1–16 字按码点校验、超长/空白/控制字符客户端拒绝；固定头像白名单来自 `GAME.avatarPresets`（6 位缪斯 `muse-1…muse-6`，新增头像只改 data.js、无需迁移；未知 id 回退默认）；偏好 `sound`/`touch` 归一化并丢弃未知键）；登录面板新增「账户设置」入口，设置 screen 支持昵称/头像/声音/触屏按键偏好与删除账户申请（GitHub issue 人工处理，前端不碰 `auth.users`）；云端偏好采用规则：本机无设置记录（新设备）才采用云端，已有记录本地优先并提示差异；profile 未加载成功前禁用保存并用重试按钮兜底（防默认值覆盖云端）、未知/未来版本头像只改昵称时通过省略 avatar 保留原值；`tools/test-account.js` 21 项 + test-main 98 项 + 无头冒烟 `smoke-main.html` 84 项 / `smoke-input.html` 22 项检查通过（合入 #18 后的当前计数）（分支 feat/44-account-settings）
 
+- [x] #45 云存档同步（2026-10-26，PR #56）：新增 `js/cloud.js` 手写 PostgREST 上传/下载；首次写入 POST，已有档 PATCH + `version` 过滤，409 / HTTP 200 空数组均作为冲突；本地先存、异步同步失败不阻塞回标题。选择存档界面显示本机/云端时间、「☁ 云端较新」与逐档上传/载入按钮，覆盖须二次确认；登录后提供并入本机进度提示，双方有档不自动覆盖。`mixxtopia.cloud[.<channel>].v1` 持久化账号归属、逐档基线和 pending；同账号重开补传，切号重新确认，登出/切号/destroy 后丢弃旧回包。本地删档只清本地与同步基线，云端备份保留、可手动恢复。`test-cloud` 38 项、`test-main` 106 项；桌面/触屏浏览器冒烟及两个隔离浏览器上下文的上传→下载→继续流程使用 fetch 桩验证；真实 Supabase / Pages 跨设备验收留 #47。
+
+- [x] #45 评审修复（2026-10-26，PR #56）：修正非 JSON 错误响应的状态处理、离线时并入按钮/同步器守卫、开场对话测试助手；补跨标签页归属 binding 与已授权快照校验，阻止旧页面把另一账号或未知来源的本机进度自动补传。新增 10 项回归用例；六组 Node 测试共 261 项通过。独立通道后端与真实 RLS 仍属 #17/#47 上线验收前置条件。
+
 **下一步**
 - [ ] M2：#11 先拆出「关 1 地图」子任务落地，让 `validate.js` 转绿并跑通真正的一关闭环
 - [ ] M2：#10 已取消（不做选关；选存档并入 #8；GitHub Issue #10 文案待人工同步/关闭）
-- [ ] #19 账户系统：**选型已定（A2：Supabase + 手写 REST）**，子任务 #42–#47 已建；#42 建表 + RLS、#43 Auth、#44 账户设置已完成，下一步 #45 云存档同步（依赖 #43 的会话与 `ensureFresh()`、#44 的 `mixxtopia.settings.v1` 偏好同步规则）
+- [ ] #19 账户系统：**选型已定（A2：Supabase + 手写 REST）**，子任务 #42–#47 已建；#42 建表 + RLS、#43 Auth、#44 账户设置已完成，#45 云存档同步已本地实现；下一步 #46 统计（依赖 #45 的同步时机与离线补传）
 
 **节奏**：每个任务一条分支、一个 PR、一次冒烟测试；里程碑完成即向用户演示。
 

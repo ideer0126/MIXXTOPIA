@@ -41,7 +41,11 @@ const UI_IDS = [
   'hud', 'hud-level', 'hud-shards', 'hud-hp',
   'hud-energy', 'hud-energy-fill', 'hud-energy-label',
   'title-screen', 'btn-start', 'btn-continue', 'btn-saves', 'btn-help', 'btn-sound',
-  'save-screen', 'save-note',
+  'save-screen', 'save-note', 'cloud-status', 'title-cloud-status', 'cloud-merge',
+  'btn-cloud-merge', 'btn-cloud-skip', 'btn-cloud-retry', 'btn-login-cloud',
+  'cloud-meta-1', 'cloud-meta-2', 'cloud-meta-3',
+  'btn-cloud-upload-1', 'btn-cloud-upload-2', 'btn-cloud-upload-3',
+  'btn-cloud-download-1', 'btn-cloud-download-2', 'btn-cloud-download-3',
   'btn-slot-1', 'btn-slot-2', 'btn-slot-3',
   'btn-slot-del-1', 'btn-slot-del-2', 'btn-slot-del-3',
   'slot-meta-1', 'slot-meta-2', 'slot-meta-3', 'btn-save-back',
@@ -185,7 +189,7 @@ const localStorageStub = createLocalStorage();
 let rafCount = 0;
 let rafSeq = 0;
 const sandbox = {
-  console,
+  console, setTimeout, clearTimeout, AbortController, URL,
   document: documentStub,
   localStorage: localStorageStub,
   MIXX_NO_DEMO: true, // 停用引擎演示
@@ -211,6 +215,7 @@ vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/audio.js'), 'utf8'), san
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/cloud-config.js'), 'utf8'), sandbox, { filename: 'js/cloud-config.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/auth.js'), 'utf8'), sandbox, { filename: 'js/auth.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/account.js'), 'utf8'), sandbox, { filename: 'js/account.js' });
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/cloud.js'), 'utf8'), sandbox, { filename: 'js/cloud.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/main.js'), 'utf8'), sandbox, { filename: 'js/main.js' });
 
 const main = sandbox.MIXX.main;
@@ -284,6 +289,7 @@ function makeGame(opts) {
   if (!Object.prototype.hasOwnProperty.call(opts, 'auth')) {
     opts = Object.assign({}, opts, { auth: null });
   }
+  if (!opts.enableCloud && !Object.prototype.hasOwnProperty.call(opts, 'cloud')) opts = Object.assign({}, opts, { cloud: null });
   return new main.Game(registry.get('game'), opts);
 }
 
@@ -1647,6 +1653,7 @@ test('发布通道：stable 保持旧键，beta/preview 独立键（#17）', () 
   assert.strictEqual(beta.saveKey, 'mixxtopia.save.beta.v1');
   assert.strictEqual(beta.settingsKey, 'mixxtopia.settings.beta.v1');
   assert.strictEqual(beta.accountKey, 'mixxtopia.account.beta.v1');
+  assert.strictEqual(beta.cloudKey, 'mixxtopia.cloud.beta.v1');
   const preview = main.channelKeys('preview');
   assert.strictEqual(preview.saveKey, 'mixxtopia.save.preview.v1');
   assert.strictEqual(preview.settingsKey, 'mixxtopia.settings.preview.v1');
@@ -1907,7 +1914,8 @@ test('读档恢复 once 已播节点与黑羊计数', () => {
 test('构建注入 beta 时 main 使用 beta 存档键（#17）', () => {
   const originalMain = sandbox.MIXX.main;
   sandbox.MIXXTOPIA_CHANNEL = 'beta';
-  vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/main.js'), 'utf8'), sandbox, {
+  vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/cloud.js'), 'utf8'), sandbox, { filename: 'js/cloud.js' });
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/main.js'), 'utf8'), sandbox, {
     filename: 'js/main.js?beta',
   });
   assert.strictEqual(sandbox.MIXX.main.CHANNEL, 'beta');
@@ -3081,6 +3089,164 @@ test('#18 index.html：HUD/能量条/触屏 B·C 与操作说明齐全', () => {
   assert.ok(/data-key="light"/.test(html) && /data-key="heavy"/.test(html), '触屏 B/C 键');
   assert.ok(/F 轻击/.test(html) && /G 重击/.test(html), '帮助说明 F/G');
   assert.ok(/2\.2 倍/.test(html), '帮助说明能量炮 2.2 倍射程');
+});
+
+
+/* #45 integration: real Auth/Cloud/SaveStore and UI, fetch stubs only. */
+/** Create a game with isolated local storage and a stubbed save service. */
+function cloudFixture() {
+  localStorageStub.clear();
+  seedAccount();
+  const rows = [null, null, null];
+  let offline = false;
+  const fetch = authFetch(call => {
+    if (isProfilesCall(call)) return profileResponse(call);
+    if (call.url.includes('/auth/v1/logout')) return authResponse(204, null);
+    if (!call.url.includes('/rest/v1/saves')) throw Error('Unexpected: ' + call.url);
+    if (offline) throw Error('offline');
+    const url = new URL(call.url);
+    const n = Number((url.searchParams.get('slot') || 'eq.1').slice(3));
+    if (call.init.method === 'GET') {
+      return authResponse(200, url.searchParams.get('select').includes('data') ? (rows[n - 1] ? [rows[n - 1]] : []) : rows.filter(Boolean));
+    }
+    const previous = rows[n - 1];
+    if (call.init.method === 'POST' && rows[(call.body.slot || 1) - 1]) return authResponse(409, {});
+    if (call.init.method === 'PATCH' && (!previous || url.searchParams.get('version') !== 'eq.' + previous.version)) return authResponse(200, []);
+    const index = call.init.method === 'POST' ? call.body.slot - 1 : n - 1;
+    rows[index] = { slot: index + 1, version: call.body.version,
+      updated_at: new Date(Date.now() + call.body.version).toISOString(), data: call.body.data };
+    return authResponse(200, [rows[index]]);
+  });
+  const game = makeAccountGame(fetch, { enableCloud: true, keepStorage: true });
+  return { game, rows, fetch, setOffline: value => { offline = value; } };
+}
+/** Wait for authentication, profile loading and initial cloud reconciliation. */
+async function cloudReady(game) {
+  await game._authReady; await settle(game);
+  if (game._cloudTask) await game._cloudTask;
+}
+/** Start a game, finish its intro through real input handling and save locally. */
+function saveOne(game) {
+  game._startNewGame();
+  while (game.state === STATE.DIALOGUE) advanceDialog(game);
+  game._setState(STATE.PAUSED);
+  assert.equal(game._saveAndQuit(), true);
+}
+
+testAsync('#45 游客零网络，登录后本机先保存；并入后成功上传', async () => {
+  const f = cloudFixture(), game = f.game;
+  await cloudReady(game);
+  saveOne(game);
+  await game._cloudTask;
+  assert.ok(game.store.readSlot(0)); assert.equal(f.rows[0], null);
+  assert.match(text('title-cloud-status'), /并入账户/);
+  game._openSaveScreen('load');
+  assert.ok(shown('cloud-merge'));
+  elt('btn-cloud-merge').click(); await game._cloudTask;
+  assert.ok(f.rows[0]); assert.equal(f.rows[0].data.updatedAt, undefined);
+  assert.match(text('cloud-meta-1'), /已同步/);
+  game.destroy();
+});
+testAsync('#45 云档不自动覆盖，逐档二次确认下载后可继续', async () => {
+  const f = cloudFixture(), game = f.game;
+  await cloudReady(game); saveOne(game); await game._cloudTask;
+  const local = game.store.readSlot(0);
+  f.rows[0] = { slot: 1, version: 4, updated_at: new Date(local.updatedAt + 1000).toISOString(),
+    data: { ...local, sheep: 5 } };
+  await game.cloud.refresh(); game._openSaveScreen('load');
+  assert.equal(game.store.readSlot(0).sheep, 0);
+  elt('btn-cloud-download-1').click();
+  assert.match(text('btn-cloud-download-1'), /确认/);
+  assert.equal(game.store.readSlot(0).sheep, 0);
+  elt('btn-cloud-download-1').click(); await game._cloudTask;
+  assert.equal(game.store.readSlot(0).sheep, 5);
+  assert.equal(game.store.readSlot(0).updatedAt, Date.parse(f.rows[0].updated_at));
+  elt('btn-slot-1').click(); assert.equal(game.sheepCount, 5);
+  game.destroy();
+});
+testAsync('#45 保存并退出在断网时立即成功；下次登录补传', async () => {
+  const f = cloudFixture(), game = f.game;
+  await cloudReady(game); saveOne(game); await game._cloudTask;
+  await game.cloud.decide('merge');
+  f.setOffline(true);
+  game._continueGame(); game.sheepCount = 3; game._setState(STATE.PAUSED);
+  assert.equal(game._saveAndQuit(), true);
+  assert.equal(game.state, STATE.TITLE);
+  assert.equal(game.store.readSlot(0).sheep, 3);
+  await game._cloudTask;
+  assert.match(text('title-cloud-status'), /未同步/);
+  game.destroy(); f.setOffline(false);
+  const again = makeAccountGame(f.fetch, { enableCloud: true, keepStorage: true });
+  await cloudReady(again);
+  assert.equal(f.rows[0].data.sheep, 3);
+  assert.equal(again.cloud.state(0), 'synced'); again.destroy();
+});
+testAsync('#45 显式上传也用版本锁：远端变更后冲突刷新、不覆盖', async () => {
+  const f = cloudFixture(), game = f.game;
+  await cloudReady(game); saveOne(game); await game._cloudTask;
+  await game.cloud.decide('merge'); game._openSaveScreen('load');
+  elt('btn-cloud-upload-1').click();
+  f.rows[0].version = 8; // changed on another device after metadata was displayed
+  elt('btn-cloud-upload-1').click(); await game._cloudTask;
+  assert.equal(f.rows[0].version, 8);
+  assert.match(text('cloud-status'), /云端进度已变化/);
+  assert.equal(game.cloud.remote[0].version, 8);
+  game.destroy();
+});
+testAsync('#45 上传确认绑定本机快照，刷新及退出取消确认', async () => {
+  const f = cloudFixture(), game = f.game;
+  await cloudReady(game); saveOne(game); await game._cloudTask;
+  game._openSaveScreen('load');
+  elt('btn-slot-del-1').click();
+  assert.equal(game._pendingDelete, 0);
+  elt('btn-cloud-upload-1').click();
+  assert.equal(game._pendingDelete, -1, '云同步操作取消之前的删除确认');
+  const local = game.store.readSlot(0); local.updatedAt++;
+  game.store.writeSlot(0, local);
+  elt('btn-cloud-upload-1').click();
+  assert.equal(f.rows[0], null); // changed snapshot needs a new confirmation
+  game._closeSaveScreen(); game._openSaveScreen('load');
+  assert.equal(game._cloudConfirm, null);
+  game.destroy();
+});
+testAsync('#45 删除仅清本地和基线，云备份仍可手动恢复', async () => {
+  const f = cloudFixture(), game = f.game;
+  await cloudReady(game); saveOne(game); await game._cloudTask;
+  await game.cloud.decide('merge'); game._openSaveScreen('load');
+  elt('btn-slot-del-1').click(); elt('btn-slot-del-1').click();
+  assert.equal(game.store.readSlot(0), null); assert.ok(f.rows[0]);
+  assert.equal(game.cloud.record.slots[0], null);
+  elt('btn-cloud-download-1').click(); elt('btn-cloud-download-1').click(); await game._cloudTask;
+  assert.ok(game.store.readSlot(0)); game.destroy();
+});
+
+
+testAsync('#45 读取云档失败时禁止并入/跳过，重试仍可用且本地游玩不阻塞', async () => {
+  const f = cloudFixture(), game = f.game;
+  await cloudReady(game); saveOne(game); await game._cloudTask;
+  f.setOffline(true); await game.cloud.refresh(); game._openSaveScreen('load');
+  assert.equal(game.cloud.loaded, false);
+  assert.ok(shown('cloud-merge'));
+  assert.equal(elt('btn-cloud-merge').disabled, true);
+  assert.equal(elt('btn-cloud-skip').disabled, true);
+  assert.equal(elt('btn-cloud-retry').disabled, false);
+  assert.equal(elt('btn-start').disabled, false);
+  assert.equal(game.cloud.record.decision, '');
+  f.setOffline(false); elt('btn-cloud-retry').click(); await game._cloudTask;
+  assert.equal(elt('btn-cloud-merge').disabled, false);
+  elt('btn-cloud-merge').click(); await game._cloudTask;
+  assert.ok(f.rows[0]); game.destroy();
+});
+testAsync('#45 保存助手处理开场对话，直到打字机和翻页结束', async () => {
+  const f = cloudFixture(), game = f.game;
+  await cloudReady(game);
+  game.dialogue['test.cloud-intro'] = { type: 'cutscene', trigger: 'load:1', scopeId: 1,
+    entry: true, once: true, lines: [{ s: 'nar', t: '进入梦境。' }, { s: 'byeori', t: '开始冒险。' }] };
+  saveOne(game);
+  await game._cloudTask;
+  assert.equal(game.state, STATE.TITLE); assert.ok(game.store.readSlot(0));
+  assert.ok(game.store.readSlot(0).played.includes('test.cloud-intro'));
+  delete game.dialogue['test.cloud-intro']; game.destroy();
 });
 
 /* ─────────────────── 汇总 ─────────────────── */

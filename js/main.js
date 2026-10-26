@@ -271,6 +271,7 @@
       saveKey: 'mixxtopia.save' + suffix + '.v1',
       settingsKey: 'mixxtopia.settings' + suffix + '.v1',
       accountKey: 'mixxtopia.account' + suffix + '.v1',
+      cloudKey: 'mixxtopia.cloud' + suffix + '.v1',
     };
   }
 
@@ -523,7 +524,7 @@
   class Game {
     /**
      * @param {HTMLCanvasElement} canvas  #game
-     * @param {object} [opts]  { doc, root, onEvent, storage, auth, profile, fetch }
+     * @param {object} [opts]  { doc, root, onEvent, storage, auth, profile, cloud, fetch }
      *   onEvent(name, data)：测试/冒烟钩子，'state' | 'collect' | 'clear' | 'restart' | 'save'
      *     | 'push' | 'switch' | 'gate' | 'portal' | 'portal-enter'（#9 机制事件）
      *     | 'profile'（#44 账户资料 load/save 成功与失败）
@@ -531,7 +532,8 @@
      *   storage：可注入的 localStorage 兼容对象（测试用）；传 null 模拟存储不可用
      *   auth：可注入的账户客户端（测试用）；传 null 关闭登录入口
      *   profile：可注入的 profiles 客户端（测试用）；传 null 关闭账户设置（登录入口仍在）
-     *   fetch：传给默认 auth/account 客户端的 fetch 桩（测试用）
+     *   cloud：可注入的 SaveSync；传 null 关闭云存档，不影响本地存档
+   *   fetch：传给默认 auth/account/cloud 客户端的 fetch 桩（测试用）
      */
     constructor(canvas, opts) {
       opts = opts || {};
@@ -578,6 +580,9 @@
       // 账户资料 / 设置（Issue #44）：profiles 表读写由 js/account.js 负责；
       // opts.profile 注入用于测试/冒烟，显式传 null 关闭账户设置（登录/存档不受影响）。
       this.account = this._createAccount(opts);
+      this.cloud = this._createCloud(opts);
+      this._cloudTask = null;
+      this._cloudConfirm = null;
       this.profile = null;          // { nickname, avatar, prefs }（云端资料；游客为 null）
       this.profileError = null;     // 最近一次资料加载/保存失败（错误对象）
       this._profileUserId = '';     // profile 对应的 user id；会话切换时重新加载
@@ -681,6 +686,7 @@
         try { this._authUnsubscribe(); } catch (e) { /* 忽略取消订阅异常 */ }
       }
       this._authUnsubscribe = null;
+      if (this.cloud) this.cloud.destroy();
       for (let i = 0; i < this._uiHandlers.length; i++) {
         const el = this._uiHandlers[i][0];
         const type = this._uiHandlers[i][1];
@@ -1144,6 +1150,7 @@
       if (this.store.hasAny()) this._show(this._ui.btnContinue);
       else this._hide(this._ui.btnContinue);
       this._refreshAccountButton();
+      this._refreshCloudUI();
       // 从游戏回到标题后，恢复「云端暂不可用」提示（文案还在时才重新显示）
       if (this._authOffline && this._ui.accountNote &&
           typeof this._ui.accountNote.textContent === 'string' && this._ui.accountNote.textContent) {
@@ -1189,6 +1196,109 @@
       }
     }
 
+    /** Cloud module is optional; missing configuration never disables local saves. */
+    _createCloud(opts) {
+      if (Object.prototype.hasOwnProperty.call(opts, 'cloud')) return opts.cloud || null;
+      const mod = this.root.MIXX && this.root.MIXX.cloud;
+      if (!this.auth || !mod) return null;
+      const client = mod.createClient({ auth: this.auth, fetch: opts.fetch,
+        config: this.root.MIXX.cloudConfig, root: this.root });
+      return new mod.SaveSync({ client, store: this.store, storage: this.storage,
+        key: CHANNEL_KEYS.cloudKey, onChange: () => this._refreshCloudUI() });
+    }
+
+    /** 当前登录账号变化时重建云同步归属，令牌续期不重复连接。 */
+    _syncCloud() {
+      if (!this.cloud || this._destroyed) return;
+      const uid = this._currentUserId();
+      if (uid !== this.cloud.uid) {
+        this._cloudConfirm = null;
+        this._cloudTask = this.cloud.connect(uid);
+      }
+    }
+
+    /** 将存档时间显示为本地中文时间；没有存档时显示「无」。 */
+    _cloudTime(value) {
+      return value ? new Date(value).toLocaleString('zh-CN') : '无';
+    }
+
+    /** 同步账号、元数据与传输状态到提示和按钮；加载失败仍保留重试入口。 */
+    _refreshCloudUI() {
+      if (this._destroyed || !this._ui) return;
+      const cloud = this.cloud;
+      const signedIn = !!(cloud && cloud.uid);
+      const busy = !!(cloud && (cloud.loading || cloud.busy.some(Boolean)));
+      const status = !signedIn ? '未同步 · 游客进度仅保存在本机'
+        : cloud.error ? cloud.error.message
+        : cloud.loading ? '正在读取云存档…'
+        : cloud.needsMerge ? '把本机进度并入账户？请选择存档，确认同步方式'
+        : cloud.record.pending.some(Boolean) ? '未同步 · 本机存档已保留，可逐档上传'
+        : '云存档就绪 · 选择存档查看同步状态';
+      this._text(this._ui.cloudStatus, status);
+      this._text(this._ui.titleCloudStatus, status);
+      if (signedIn) this._show(this._ui.btnLoginCloud);
+      else this._hide(this._ui.btnLoginCloud);
+      if (signedIn && cloud.needsMerge) this._show(this._ui.cloudMerge);
+      else this._hide(this._ui.cloudMerge);
+      for (const el of [this._ui.btnCloudMerge, this._ui.btnCloudSkip]) {
+        if (el) el.disabled = busy || !signedIn || !cloud.loaded;
+      }
+      if (this._ui.btnCloudRetry) this._ui.btnCloudRetry.disabled = busy || !signedIn;
+      const labels = { unsynced: '未同步', empty: '无云档', upload: '本机待上传',
+        download: '☁ 云端可载入', newer: '☁ 云端较新', conflict: '本机 / 云端待选择', synced: '☁ 已同步' };
+      for (let i = 0; i < SLOT_COUNT; i++) {
+        const local = this.store.readSlot(i);
+        const remote = signedIn ? cloud.remote[i] : null;
+        const state = signedIn ? cloud.state(i) : 'unsynced';
+        this._text(this._ui.cloudMetas[i], labels[state] +
+          ' · 本机：' + this._cloudTime(local && local.updatedAt) +
+          ' · 云端：' + this._cloudTime(remote && remote.updatedAt));
+        const up = this._ui.cloudUploadBtns[i], down = this._ui.cloudDownloadBtns[i];
+        for (const el of [up, down]) {
+          if (signedIn) this._show(el); else this._hide(el);
+          if (el) el.disabled = busy || !signedIn || !cloud.loaded;
+        }
+        if (up) up.disabled = up.disabled || !local;
+        if (down) down.disabled = down.disabled || !remote;
+        const confirming = this._cloudConfirm && this._cloudConfirm.index === i;
+        this._text(up, confirming && this._cloudConfirm.direction === 'upload'
+          ? '确认上传覆盖云端？' : '↑ 上传本机');
+        this._text(down, confirming && this._cloudConfirm.direction === 'download'
+          ? '确认载入覆盖本机？' : '↓ 载入云端');
+        // Prevent a download from replacing the slot after a player starts a game.
+        if (this._ui.slotBtns && this._ui.slotBtns[i]) this._ui.slotBtns[i].disabled = this._cloudBusy();
+        if (this._ui.slotDelBtns && this._ui.slotDelBtns[i]) this._ui.slotDelBtns[i].disabled = this._cloudBusy();
+      }
+      for (const el of [this._ui.btnStart, this._ui.btnContinue]) {
+        if (el) el.disabled = this._cloudBusy();
+      }
+    }
+
+    /** 要求两次点击确认同一本机快照与云端版本，再执行指定档位的传输。 */
+    _onCloudChoice(index, direction) {
+      if (this.state !== STATE.TITLE || !this.cloud || !this.cloud.uid
+        || !this._ui.saveScreen || this._ui.saveScreen.classList.contains('hidden')) return;
+      const cloud = this.cloud;
+      if (cloud.loading || cloud.busy.some(Boolean) || !cloud.loaded) return;
+      const local = this.store.readSlot(index), remote = cloud.remote[index];
+      if (direction === 'upload' ? !local : !remote) return;
+      // Confirmation binds the exact progress/version displayed on the first click.
+      this._pendingDelete = -1;
+      this._pendingOverwrite = -1;
+      const token = JSON.stringify({ local, remote });
+      const previous = this._cloudConfirm;
+      if (!previous || previous.index !== index || previous.direction !== direction || previous.token !== token) {
+        this._cloudConfirm = { index, direction, token };
+        this._refreshSaveScreen();
+        return;
+      }
+      this._cloudConfirm = null;
+      this._cloudTask = cloud.transfer(index, direction).then(result => {
+        if (!this._destroyed) { this._refreshTitle(); this._refreshSaveScreen(); }
+        return result;
+      });
+    }
+
     /**
      * 启动时恢复会话（异步，不阻塞标题）：token 未过期直接登录态，
      * 过期则 auth.js 自动 refresh；网络失败只提示，游戏照常本地运行。
@@ -1204,6 +1314,7 @@
           this._refreshAccountButton();
           this._refreshAuthUI();
           this._syncProfile();
+          this._syncCloud();
         });
       }
       if (typeof auth.restore !== 'function') return;
@@ -1215,6 +1326,7 @@
           this._refreshAccountButton();
           this._refreshAuthUI();
           this._syncProfile();
+          this._syncCloud();
           return session;
         })
         .catch((err) => {
@@ -1223,6 +1335,7 @@
           this._refreshAccountButton();
           this._refreshAuthUI();
           this._syncProfile();
+          this._syncCloud();
           return null;
         });
     }
@@ -1308,7 +1421,7 @@
           nickname = '资料功能未启用';
           accountNote = '账户资料功能未启用（js/account.js 未加载），登录与本地游玩不受影响。';
         } else {
-          accountNote = '账户设置可修改昵称、头像与音效/操作偏好；云存档同步见后续版本。';
+          accountNote = '账户设置可修改昵称、头像与音效/操作偏好；云存档可在选择存档界面管理。';
           if (this.profile) nickname = this.profile.nickname;
           else if (this.profileError) nickname = '云端资料暂不可用';
           else nickname = '加载中…';
@@ -1984,6 +2097,7 @@
       this._emit('profile', { action: 'save-error', code: err && err.code });
       if (err && (err.code === 'not_signed_in' || err.code === 'unauthorized')) {
         this._syncProfile();
+        this._syncCloud();
       }
     }
 
@@ -2034,7 +2148,7 @@
 
     /** 标题「新游戏」：优先占用第一个空档；三档全满则打开选择存档界面要求覆盖 */
     _startNewGame() {
-      if (this.state !== STATE.TITLE) return;
+      if (this.state !== STATE.TITLE || this._cloudBusy()) return;
       const slots = this.store.readAll();
       let empty = -1;
       for (let i = 0; i < slots.length; i++) {
@@ -2049,7 +2163,7 @@
      * 首次「保存并退出」或通关自动存档时才真正生成存档文件（手动存档制）。
      */
     _newGame(index) {
-      if (this.state !== STATE.TITLE) return false;
+      if (this.state !== STATE.TITLE || this._cloudBusy()) return false;
       const first = this.levels[0];
       if (!first || index < 0 || index >= SLOT_COUNT) return false;
       this.saveSlotIndex = index;
@@ -2073,7 +2187,7 @@
 
     /** 读档：恢复关卡、已收集星、once 节点、黑羊计数后进入游玩 */
     _loadSlot(index) {
-      if (this.state !== STATE.TITLE) return false;
+      if (this.state !== STATE.TITLE || this._cloudBusy()) return false;
       const slot = this.store.readSlot(index);
       if (!slot) return false;
       this.saveSlotIndex = index;
@@ -2094,6 +2208,9 @@
     /** 打开选择存档界面（mode='overwrite' 时已有档位需二次点击确认覆盖） */
     _openSaveScreen(mode) {
       if (this.state !== STATE.TITLE) return;
+      this._hide(this._ui.loginScreen);
+      this._hide(this._ui.settingsScreen);
+      this._cloudConfirm = null;
       this._saveMode = mode === 'overwrite' ? 'overwrite' : 'load';
       this._pendingOverwrite = -1;
       this._pendingDelete = -1;
@@ -2106,6 +2223,7 @@
       if (this.state !== STATE.TITLE) return;
       this._pendingOverwrite = -1;
       this._pendingDelete = -1;
+      this._cloudConfirm = null;
       this._hide(this._ui.saveScreen);
       this._show(this._ui.titleScreen);
       this._refreshTitle();
@@ -2113,7 +2231,8 @@
 
     /** 点击存档位：空档开新游戏；已有档默认载入；覆盖模式需连点两次 */
     _onSlotClick(index) {
-      if (this.state !== STATE.TITLE) return;
+      if (this.state !== STATE.TITLE || this._cloudBusy()) return;
+      this._cloudConfirm = null;
       const screen = this._ui.saveScreen;
       if (!screen || (screen.classList && screen.classList.contains('hidden'))) return;
       this._pendingDelete = -1; // 选择档位时取消待删除
@@ -2130,7 +2249,8 @@
 
     /** 删除存档位：首次点击进入确认态，再次点击才真正清空（不可恢复） */
     _onSlotDelete(index) {
-      if (this.state !== STATE.TITLE) return;
+      if (this.state !== STATE.TITLE || this._cloudBusy()) return;
+      this._cloudConfirm = null;
       const screen = this._ui.saveScreen;
       if (!screen || (screen.classList && screen.classList.contains('hidden'))) return;
       if (!this.store.readSlot(index)) return;
@@ -2142,6 +2262,7 @@
       }
       this._pendingDelete = -1;
       if (this.store.clearSlot(index)) {
+        if (this.cloud) this.cloud.forget(index);
         this._refreshTitle();
         this._refreshSaveScreen();
       } else {
@@ -2150,7 +2271,13 @@
     }
 
     /** 渲染 3 个存档位（关卡 / 星数 / 已通关数）与底部提示 */
+    /** 实际上传/下载期间阻止档位切换；读取元数据不阻塞本地游玩。 */
+    _cloudBusy() {
+      return !!(this.cloud && this.cloud.busy.some(Boolean));
+    }
+
     _refreshSaveScreen() {
+      this._refreshCloudUI();
       const slots = this.store.readAll();
       for (let i = 0; i < SLOT_COUNT; i++) {
         const btn = this._ui.slotBtns[i];
@@ -2208,9 +2335,10 @@
       s.unlocked = Math.max(1, Number(s.unlocked) || 1, s.current);
       if (patch) Object.assign(s, patch);
       s.unlocked = Math.max(1, Number(s.unlocked) || 1, Number(s.current) || 1);
-      s.updatedAt = Date.now();
+      s.updatedAt = Math.max(Date.now(), ((this.store.readSlot(this.saveSlotIndex) || {}).updatedAt || 0) + 1);
       const ok = this.store.writeSlot(this.saveSlotIndex, s);
       if (ok) {
+        if (this.cloud) this._cloudTask = this.cloud.save(this.saveSlotIndex, cloneSlot(s));
         if (this.onEvent) {
           try {
             this.onEvent('save', { slot: this.saveSlotIndex, level: s.current, cleared: s.cleared.length });
@@ -2972,6 +3100,13 @@
         'btn-sound': 'btnSound',
         'save-screen': 'saveScreen',
         'save-note': 'saveNote',
+        'cloud-status': 'cloudStatus',
+        'title-cloud-status': 'titleCloudStatus',
+        'cloud-merge': 'cloudMerge',
+        'btn-cloud-merge': 'btnCloudMerge',
+        'btn-cloud-skip': 'btnCloudSkip',
+        'btn-cloud-retry': 'btnCloudRetry',
+        'btn-login-cloud': 'btnLoginCloud',
         'btn-slot-1': 'btnSlot1',
         'btn-slot-2': 'btnSlot2',
         'btn-slot-3': 'btnSlot3',
@@ -3047,6 +3182,9 @@
       this._ui.slotBtns = [this._ui.btnSlot1, this._ui.btnSlot2, this._ui.btnSlot3];
       this._ui.slotMetas = [this._ui.slotMeta1, this._ui.slotMeta2, this._ui.slotMeta3];
       this._ui.slotDelBtns = [this._ui.btnSlotDel1, this._ui.btnSlotDel2, this._ui.btnSlotDel3];
+      this._ui.cloudMetas = [1, 2, 3].map(i => get ? get('cloud-meta-' + i) : null);
+      this._ui.cloudUploadBtns = [1, 2, 3].map(i => get ? get('btn-cloud-upload-' + i) : null);
+      this._ui.cloudDownloadBtns = [1, 2, 3].map(i => get ? get('btn-cloud-download-' + i) : null);
       this._ui.avatarBtns = {}; // #44：按 GAME.avatarPresets 在 _renderAvatarOptions 中填充
     }
 
@@ -3060,7 +3198,22 @@
       for (let i = 0; i < SLOT_COUNT; i++) {
         this._on(ui.slotBtns[i], 'click', () => this._onSlotClick(i));
         this._on(ui.slotDelBtns[i], 'click', () => this._onSlotDelete(i));
+        this._on(ui.cloudUploadBtns[i], 'click', () => this._onCloudChoice(i, 'upload'));
+        this._on(ui.cloudDownloadBtns[i], 'click', () => this._onCloudChoice(i, 'download'));
       }
+      this._on(ui.btnLoginCloud, 'click', () => this._openSaveScreen('load'));
+      this._on(ui.btnCloudMerge, 'click', () => {
+        if (this.state === STATE.TITLE && this.cloud && !this._cloudBusy()) this._cloudTask = this.cloud.decide('merge');
+      });
+      this._on(ui.btnCloudSkip, 'click', () => {
+        if (this.state === STATE.TITLE && this.cloud && !this._cloudBusy()) this._cloudTask = this.cloud.decide('cloud');
+      });
+      this._on(ui.btnCloudRetry, 'click', () => {
+        if (this.state === STATE.TITLE && this.cloud && !this._cloudBusy()) {
+          this._cloudConfirm = null;
+          this._cloudTask = this.cloud.refresh(true);
+        }
+      });
       this._on(ui.btnHelp, 'click', () => {
         if (this.state === STATE.TITLE) this._show(ui.helpScreen);
       });

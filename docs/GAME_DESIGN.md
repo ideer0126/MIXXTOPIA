@@ -736,7 +736,7 @@ dialogue: {
 - **损坏数据**：JSON 非法或结构不符时按空档处理，不抛错；选择存档界面提示「存档数据损坏」，下次保存覆盖。
 - **存储不可用**：localStorage 被禁用/写满时「保存并退出」失败，暂停界面提示并停留在暂停态，不丢当前进度；「继续冒险」不显示。
 - **无服务器（现状）**：纯本地；清缓存即重置（选择存档界面与帮助界面注明）。
-- **云存档（Issue #22，#19 立项；2026-10-24 选型已定）**：后端 **Supabase**（Postgres + Auth），前端**手写 `fetch` 封装**直连 GoTrue / PostgREST，**不引 SDK**，保持零依赖与 Pages 静态部署。正式规格：
+- **云存档（Issue #22，#45 已本地实现；2026-10-26）**：后端 **Supabase**（Postgres + Auth），前端**手写 `fetch` 封装**直连 GoTrue / PostgREST，**不引 SDK**，保持零依赖与 Pages 静态部署。正式规格：
   - **保留本地层**：本节 localStorage 存档与云同步互不替代，未登录 / 离线 / 请求失败时一切都按本节本地逻辑跑；
   - **账户（#43）**：`js/auth.js` 手写 GoTrue 封装（注册 / 登录 / 登出 / refresh_token 续期 / 会话恢复），会话存 `mixxtopia.account.v1`（beta/preview 追加通道后缀）；启动时恢复登录态、token 过期自动续期；登出只清该键，不碰存档与设置；未登录零上传；
   - **账户设置（#44）**：登录后从登录面板进入「账户设置」screen（复用 `_show`/`_hide`，不新增游戏状态）；昵称 1–16 字（按 Unicode 码点计，trim 后非空、不含控制字符），头像固定 6 选 1（`muse-1…muse-6`，白名单为 `GAME.avatarPresets`，数据库只校验 id 格式 `^[a-z0-9][a-z0-9-]{0,31}$`，新增头像只需改 data.js、无需数据库迁移；未知 id 渲染回退默认头像），保存走 `PATCH /rest/v1/profiles?id=eq.<uid>` + `Prefer: return=representation`（0 行视为资料缺失），错误统一中文提示；资料加载失败不阻塞本地游玩。
@@ -747,7 +747,8 @@ dialogue: {
   - **表结构**：`profiles`（昵称、头像 id〔固定集合、前端白名单、不支持上传〕、偏好）、`saves`（`user_id, slot, version, updated_at, data jsonb`，一账号 3 个存档位、一行一个存档位）、`stats`（时长 / 成就）；`data` 与本节存档位结构同构（去掉 `slot` 与 `updatedAt`）。`updatedAt` 由 `saves.updated_at` 列承担：上传时不写入 `data`；下载时必须在调用 `SaveStore.writeSlot()` 前把 `updated_at`（ISO 字符串）转成本地毫秒时间戳写入 `updatedAt`，因为 `normalizeSlot()` 不会从 `updated_at` 补齐该字段（缺失按 `0` 处理）。本地存档位不增加 `version` 字段；逐档同步基线（云端 `version`、本地与云端时间）单独存 `mixxtopia.cloud.v1`（结构见 `ACCOUNT_SYSTEM.md` §9），`normalizeSlot()` 不需要保留额外字段。除时间字段外双向直传、不做字段映射；
   - **安全**：三表全开 RLS，策略只授 `authenticated` 且限本人——`profiles` 用 `auth.uid() = id`，`saves` / `stats` 用 `auth.uid() = user_id`；`anon` 无表权限；anon key 公开，安全边界只在 RLS，必测「A 用户 token 读 B 用户存档 → 失败」；
   - **冲突**：`version` 仅存在于云端（上传乐观锁 + 变更检测），本地不存；登录时用 `mixxtopia.cloud.v1` 的逐档基线判断本机/云端是否改过：只有一边改过则提示对应方向，两边都改过或没有基线则标出本机/云端及各自时间，由玩家逐档手动选择，**默认不自动覆盖、不以时间戳自动判定胜负**；游客登录后提示一次「并入本机进度」，同档冲突同样进入逐档选择；
-  - **降级**：云端不可用时显示「未同步」，不阻塞存档与「保存并退出」；
+  - **降级**：云端不可用时显示「未同步」，不阻塞存档与「保存并退出」；同账号未上传进度以持久化 pending 在下次登录/手动重试时补传（版本冲突则停止）；
+  - **账号归属 / 操作确认（#45）**：基线额外记录 `userId`、并入选择与 pending，切号不复用旧授权；逐档上传/载入均二次确认，云端或本机在请求期间变化不静默覆盖。本地删除只清本地与基线，保留云端备份；真实通道后端隔离及 RLS 验收见 #17/#47；
   - **不做**：实时多端推送、后台轮询、自动覆盖式合并；
   - 数据模型 SQL、同步时序与隐私要求见 `docs/ACCOUNT_SYSTEM.md`。
 

@@ -58,6 +58,7 @@
         <button type="button" id="btn-title-settings" class="menu-btn">⚙ 设置</button>
         <button id="btn-account" class="menu-btn account-btn">☁ 登录 / 注册</button>
       </div>
+      <p id="title-cloud-status" class="cloud-status" role="status" aria-live="polite"></p>
       <p id="account-note" class="account-note hidden" role="status"></p>
       <p class="footer-note">粉丝自制同人小游戏 · 非官方 · 灵感来自 NMIXX《Strange Muse》</p>
     </div>
@@ -66,6 +67,13 @@
     <div id="save-screen" class="screen hidden">
       <h2 class="screen-title">选择存档</h2>
       <p id="save-note" class="save-note">存档保存在本机浏览器 · 仅「保存并退出」与通关自动存档会写入</p>
+      <p id="cloud-status" class="cloud-status" role="status" aria-live="polite"></p>
+      <div id="cloud-merge" class="cloud-merge hidden">
+        <p>把本机进度并入账户？双方都有进度时，仍需逐档选择；不会自动覆盖。</p>
+        <button type="button" id="btn-cloud-merge" class="menu-btn small">并入本机进度</button>
+        <button type="button" id="btn-cloud-skip" class="menu-btn small">仅使用云端（逐档选择）</button>
+      </div>
+      <button type="button" id="btn-cloud-retry" class="menu-btn small">↻ 刷新 / 重试同步</button>
       <div class="save-list">
         <div class="slot-row">
           <button type="button" id="btn-slot-1" class="menu-btn slot-btn">
@@ -74,6 +82,13 @@
           </button>
           <button type="button" id="btn-slot-del-1" class="menu-btn slot-del hidden" aria-label="删除存档 1" title="删除存档 1">✕</button>
         </div>
+        <div class="cloud-slot">
+          <p id="cloud-meta-1" class="cloud-meta"></p>
+          <div class="cloud-actions">
+            <button type="button" id="btn-cloud-upload-1" class="menu-btn small hidden">↑ 上传本机</button>
+            <button type="button" id="btn-cloud-download-1" class="menu-btn small hidden">↓ 载入云端</button>
+          </div>
+        </div>
         <div class="slot-row">
           <button type="button" id="btn-slot-2" class="menu-btn slot-btn">
             <span class="slot-name">存档 2</span>
@@ -81,12 +96,26 @@
           </button>
           <button type="button" id="btn-slot-del-2" class="menu-btn slot-del hidden" aria-label="删除存档 2" title="删除存档 2">✕</button>
         </div>
+        <div class="cloud-slot">
+          <p id="cloud-meta-2" class="cloud-meta"></p>
+          <div class="cloud-actions">
+            <button type="button" id="btn-cloud-upload-2" class="menu-btn small hidden">↑ 上传本机</button>
+            <button type="button" id="btn-cloud-download-2" class="menu-btn small hidden">↓ 载入云端</button>
+          </div>
+        </div>
         <div class="slot-row">
           <button type="button" id="btn-slot-3" class="menu-btn slot-btn">
             <span class="slot-name">存档 3</span>
             <span id="slot-meta-3" class="slot-meta">空档</span>
           </button>
           <button type="button" id="btn-slot-del-3" class="menu-btn slot-del hidden" aria-label="删除存档 3" title="删除存档 3">✕</button>
+        </div>
+        <div class="cloud-slot">
+          <p id="cloud-meta-3" class="cloud-meta"></p>
+          <div class="cloud-actions">
+            <button type="button" id="btn-cloud-upload-3" class="menu-btn small hidden">↑ 上传本机</button>
+            <button type="button" id="btn-cloud-download-3" class="menu-btn small hidden">↓ 载入云端</button>
+          </div>
         </div>
       </div>
       <button id="btn-save-back" class="menu-btn small">← 返回</button>
@@ -113,8 +142,9 @@
       <div id="login-account" class="login-account hidden">
         <p class="login-account-line">已登录：<span id="login-email-label"></span></p>
         <p class="login-account-line">昵称：<span id="login-nickname-label">NSWER</span></p>
-        <p id="login-account-note" class="login-note">账户设置可修改昵称、头像与音效/操作偏好；云存档同步见后续版本。</p>
+        <p id="login-account-note" class="login-note">账户设置可修改昵称、头像与音效/操作偏好；云存档可在选择存档界面管理。</p>
         <button type="button" id="btn-settings" class="menu-btn small">⚙ 账户设置</button>
+        <button type="button" id="btn-login-cloud" class="menu-btn small hidden">☁ 管理云存档 / 并入进度</button>
         <button type="button" id="btn-logout" class="menu-btn small">↩ 登出</button>
       </div>
       <p id="login-msg" class="login-msg" role="status" aria-live="polite"></p>
@@ -222,6 +252,7 @@
   <script src="js/sprites.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/account.js"></script>
+  <script src="js/cloud.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

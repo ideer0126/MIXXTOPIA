@@ -38,7 +38,8 @@
     <button type="button" id="btn-title-settings" class="menu-btn">⚙ 设置</button>
     <button id="btn-account" class="menu-btn account-btn">☁ 登录 / 注册</button>
   </div>
-  <p id="account-note" class="account-note hidden"></p>
+  <p id="title-cloud-status" role="status"></p>
+    <p id="account-note" class="account-note hidden"></p>
 
   <!-- 登录 / 账户（Issue #43）：游客态零请求；#44 追加资料与账户设置冒烟 -->
   <div id="login-screen" class="screen hidden">
@@ -54,6 +55,7 @@
       <p>昵称：<span id="login-nickname-label"></span></p>
       <p id="login-account-note" class="login-note"></p>
       <button type="button" id="btn-settings" class="menu-btn small">⚙ 账户设置</button>
+      <button type="button" id="btn-login-cloud" class="menu-btn small hidden">☁ 管理云存档</button>
       <button type="button" id="btn-logout" class="menu-btn small">↩ 登出</button>
     </div>
     <p id="login-msg" class="login-msg" role="status"></p>
@@ -91,28 +93,62 @@
     <button type="button" id="btn-settings-back" class="menu-btn small">← 返回</button>
   </div>
 
-  <div id="save-screen" class="screen hidden">
-    <p id="save-note" class="save-note">存档保存在本机浏览器</p>
-    <div class="slot-row">
-      <button type="button" id="btn-slot-1" class="menu-btn slot-btn">
-        <span class="slot-name">存档 1</span><span id="slot-meta-1" class="slot-meta">空档</span>
-      </button>
-      <button type="button" id="btn-slot-del-1" class="menu-btn slot-del hidden">✕</button>
+    <div id="save-screen" class="screen hidden">
+      <h2 class="screen-title">选择存档</h2>
+      <p id="save-note" class="save-note">存档保存在本机浏览器 · 仅「保存并退出」与通关自动存档会写入</p>
+      <p id="cloud-status" class="cloud-status" role="status" aria-live="polite"></p>
+      <div id="cloud-merge" class="cloud-merge hidden">
+        <p>把本机进度并入账户？双方都有进度时，仍需逐档选择；不会自动覆盖。</p>
+        <button type="button" id="btn-cloud-merge" class="menu-btn small">并入本机进度</button>
+        <button type="button" id="btn-cloud-skip" class="menu-btn small">仅使用云端（逐档选择）</button>
+      </div>
+      <button type="button" id="btn-cloud-retry" class="menu-btn small">↻ 刷新 / 重试同步</button>
+      <div class="save-list">
+        <div class="slot-row">
+          <button type="button" id="btn-slot-1" class="menu-btn slot-btn">
+            <span class="slot-name">存档 1</span>
+            <span id="slot-meta-1" class="slot-meta">空档</span>
+          </button>
+          <button type="button" id="btn-slot-del-1" class="menu-btn slot-del hidden" aria-label="删除存档 1" title="删除存档 1">✕</button>
+        </div>
+        <div class="cloud-slot">
+          <p id="cloud-meta-1" class="cloud-meta"></p>
+          <div class="cloud-actions">
+            <button type="button" id="btn-cloud-upload-1" class="menu-btn small hidden">↑ 上传本机</button>
+            <button type="button" id="btn-cloud-download-1" class="menu-btn small hidden">↓ 载入云端</button>
+          </div>
+        </div>
+        <div class="slot-row">
+          <button type="button" id="btn-slot-2" class="menu-btn slot-btn">
+            <span class="slot-name">存档 2</span>
+            <span id="slot-meta-2" class="slot-meta">空档</span>
+          </button>
+          <button type="button" id="btn-slot-del-2" class="menu-btn slot-del hidden" aria-label="删除存档 2" title="删除存档 2">✕</button>
+        </div>
+        <div class="cloud-slot">
+          <p id="cloud-meta-2" class="cloud-meta"></p>
+          <div class="cloud-actions">
+            <button type="button" id="btn-cloud-upload-2" class="menu-btn small hidden">↑ 上传本机</button>
+            <button type="button" id="btn-cloud-download-2" class="menu-btn small hidden">↓ 载入云端</button>
+          </div>
+        </div>
+        <div class="slot-row">
+          <button type="button" id="btn-slot-3" class="menu-btn slot-btn">
+            <span class="slot-name">存档 3</span>
+            <span id="slot-meta-3" class="slot-meta">空档</span>
+          </button>
+          <button type="button" id="btn-slot-del-3" class="menu-btn slot-del hidden" aria-label="删除存档 3" title="删除存档 3">✕</button>
+        </div>
+        <div class="cloud-slot">
+          <p id="cloud-meta-3" class="cloud-meta"></p>
+          <div class="cloud-actions">
+            <button type="button" id="btn-cloud-upload-3" class="menu-btn small hidden">↑ 上传本机</button>
+            <button type="button" id="btn-cloud-download-3" class="menu-btn small hidden">↓ 载入云端</button>
+          </div>
+        </div>
+      </div>
+      <button id="btn-save-back" class="menu-btn small">← 返回</button>
     </div>
-    <div class="slot-row">
-      <button type="button" id="btn-slot-2" class="menu-btn slot-btn">
-        <span class="slot-name">存档 2</span><span id="slot-meta-2" class="slot-meta">空档</span>
-      </button>
-      <button type="button" id="btn-slot-del-2" class="menu-btn slot-del hidden">✕</button>
-    </div>
-    <div class="slot-row">
-      <button type="button" id="btn-slot-3" class="menu-btn slot-btn">
-        <span class="slot-name">存档 3</span><span id="slot-meta-3" class="slot-meta">空档</span>
-      </button>
-      <button type="button" id="btn-slot-del-3" class="menu-btn slot-del hidden">✕</button>
-    </div>
-    <button id="btn-save-back" class="menu-btn small">← 返回</button>
-  </div>
 
   <div id="help-screen" class="screen hidden">
     <button id="btn-help-back" class="menu-btn small">← 返回</button>
@@ -165,6 +201,7 @@
     window.__authFetchCalls = 0;
     window.__smokeOnline = false;
     window.__fetchCalls = [];
+    window.__cloudRows = [null, null, null];
     window.__profileRow = { nickname: '小星', avatar: 'muse-3', prefs: { sound: true, touch: 'auto' } };
     function jsonResponse(status, body) {
       return {
@@ -192,6 +229,21 @@
           user: { id: 'u-smoke', email: 'smoke@example.com' }
         }));
       }
+      if (u.indexOf('/rest/v1/saves') >= 0) {
+        var params = new URL(u).searchParams;
+        var n = Number((params.get('slot') || 'eq.1').slice(3));
+        var rows = window.__cloudRows;
+        if (call.method === 'GET') return Promise.resolve(jsonResponse(200,
+          params.get('select').indexOf('data') >= 0 ? (rows[n - 1] ? [rows[n - 1]] : []) : rows.filter(Boolean)));
+        var i = call.method === 'POST' ? call.body.slot - 1 : n - 1;
+        if (call.method === 'POST' && rows[i]) return Promise.resolve(jsonResponse(409, {}));
+        if (call.method === 'PATCH' && (!rows[i] || params.get('version') !== 'eq.' + rows[i].version)) {
+          return Promise.resolve(jsonResponse(200, []));
+        }
+        rows[i] = { slot: i + 1, version: call.body.version,
+          updated_at: new Date(Date.now() + call.body.version).toISOString(), data: call.body.data };
+        return Promise.resolve(jsonResponse(200, [rows[i]]));
+      }
       if (u.indexOf('/rest/v1/profiles') >= 0) {
         if (call.method === 'PATCH') {
           window.__profileRow = Object.assign({}, window.__profileRow, call.body);
@@ -209,6 +261,7 @@
   <script src="../js/audio.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/account.js"></script>
+  <script src="../js/cloud.js"></script>
   <script src="../js/main.js"></script>
   <script>
     (async function () {
@@ -238,6 +291,7 @@
         localStorage.removeItem('mixxtopia.save.v1');
         localStorage.removeItem('mixxtopia.settings.v1');
         localStorage.removeItem('mixxtopia.account.v1');
+        localStorage.removeItem('mixxtopia.cloud.v1');
       } catch (e) { /* 存储不可用时仍可验证游戏流程 */ }
 
       var main = window.MIXX.main;
@@ -491,6 +545,34 @@
       ok('删除账户走 GitHub 申请',
         /github\.com\/ideer0126\/MIXXTOPIA\/issues\/new/.test(del.getAttribute('href'))
         && del.getAttribute('target') === '_blank');
+
+      // #45 real DOM + fetch stubs: merge, offline save, retry, cloud-newer choice.
+      await game._cloudTask;
+      game._openSaveScreen('load');
+      ok('云存档合并提示', shown('cloud-merge') && /并入账户/.test(text('cloud-status')));
+      document.getElementById('btn-cloud-merge').click(); await game._cloudTask;
+      ok('并入后上传成功', !!window.__cloudRows[0] && /已同步/.test(text('cloud-meta-1')));
+      game._closeSaveScreen();
+      game._continueGame();
+      game.sheepCount = 4;
+      game._setState('paused');
+      window.__smokeOnline = false;
+      ok('离线保存立即回标题', game._saveAndQuit() && game.state === 'title');
+      await game._cloudTask;
+      ok('离线进度保留及未同步提示', game.store.readSlot(0).sheep === 4 && /未同步/.test(text('title-cloud-status')));
+      window.__smokeOnline = true;
+      await game.cloud.refresh(true);
+      ok('重试补传', window.__cloudRows[0].data.sheep === 4 && game.cloud.state(0) === 'synced');
+      window.__cloudRows[0].version++;
+      window.__cloudRows[0].updated_at = new Date(Date.now() + 5000).toISOString();
+      window.__cloudRows[0].data.sheep = 6;
+      await game.cloud.refresh(); game._openSaveScreen('load');
+      ok('云端较新但未自动覆盖', /云端较新/.test(text('cloud-meta-1')) && game.store.readSlot(0).sheep === 4);
+      document.getElementById('btn-cloud-download-1').click();
+      ok('载入需再次确认', /确认/.test(text('btn-cloud-download-1')) && game.store.readSlot(0).sheep === 4);
+      document.getElementById('btn-cloud-download-1').click(); await game._cloudTask;
+      ok('确认后载入云端', game.store.readSlot(0).sheep === 6 && game.cloud.state(0) === 'synced');
+      game._closeSaveScreen(); game._openSettingsScreen();
 
       // 返回登录面板 → 登出回游客
       document.getElementById('btn-settings-back').click();
