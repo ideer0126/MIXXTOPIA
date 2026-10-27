@@ -20,6 +20,17 @@
 
   /* 音效表：at = 相对起播延迟（秒），d = 时长（秒），f = 频率（Hz），v = 音量，type = 波形 */
   const SFX = {
+    // 唱片机启动的原创音乐盒提示音；专辑原声尚未接入。
+    'record-start': [
+      { f: 523, d: 0.28, at: 0, v: 0.08, type: 'triangle' },
+      { f: 659, d: 0.28, at: 0.18, v: 0.08, type: 'triangle' },
+      { f: 784, d: 0.36, at: 0.36, v: 0.08, type: 'triangle' },
+      { f: 988, d: 0.30, at: 0.62, v: 0.07, type: 'triangle' },
+      { f: 880, d: 0.30, at: 0.84, v: 0.07, type: 'triangle' },
+      { f: 784, d: 0.50, at: 1.08, v: 0.07, type: 'triangle' },
+      { f: 659, d: 0.40, at: 1.36, v: 0.06, type: 'triangle' },
+      { f: 523, d: 0.65, at: 1.60, v: 0.06, type: 'triangle' },
+    ],
     star: [
       { f: 988, d: 0.06, at: 0, v: 0.10, type: 'square' },
       { f: 1319, d: 0.10, at: 0.05, v: 0.09, type: 'square' },

@@ -190,6 +190,7 @@ vm.createContext(sandbox);
 
 const repoRoot = path.join(__dirname, '..');
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/engine.js'), 'utf8'), sandbox, { filename: 'js/engine.js' });
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/sprites.js'), 'utf8'), sandbox, { filename: 'js/sprites.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/audio.js'), 'utf8'), sandbox, { filename: 'js/audio.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/cloud-config.js'), 'utf8'), sandbox, { filename: 'js/cloud-config.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/auth.js'), 'utf8'), sandbox, { filename: 'js/auth.js' });
@@ -2034,6 +2035,362 @@ testAsync('token 过期（#43）：进入标题自动续期，登录态保持', 
   const stored = JSON.parse(localStorageStub.getItem(main.ACCOUNT_KEY));
   assert.strictEqual(stored.accessToken, 'access-2');
   game.destroy();
+});
+
+/* ─────────────────── 序章（#11 分步接入） ─────────────────── */
+
+function prologueData() {
+  const data = {};
+  vm.runInNewContext(fs.readFileSync(path.join(repoRoot, 'js/data.js'), 'utf8'), data);
+  return data.GAME;
+}
+
+function finishPrologue(game) {
+  let pages = 0;
+  while (game.scene && pages++ < 30) {
+    game._tapDialog(); // 打字快进
+    game._tapDialog(); // 翻页
+  }
+  assert.strictEqual(game.scene, null, '序章必须结束并交接关卡');
+}
+
+test('序章：levels 为空仍采用真实 p0 台词、姓名与场景；输入/计时不进入关卡', () => {
+  const data = prologueData();
+  data.levels = []; // 明确保留地图尚未就位时的序章回退测试
+  assert.ok(fs.existsSync(path.join(repoRoot, data.scenes.p0.background)));
+  withGAME(data, () => {
+    const game = makeGame();
+    try {
+      elt('btn-start').click();
+      assert.strictEqual(game.state, STATE.DIALOGUE);
+      assert.strictEqual(game.scene.id, 'p0');
+      assert.strictEqual(game.level, null);
+      assert.strictEqual(game.player, null);
+      assert.strictEqual(game._dialog.nodeId, 'p0');
+      assert.strictEqual(game._dialog.lines.length, 9);
+      assert.strictEqual(game.characters.byeori.name, 'Byeori');
+      assert.strictEqual(text('hud-level'), '序章 · 生日夜的房间');
+      assert.strictEqual(text('hud-shards'), '');
+      assert.ok(hidden('title-screen') && shown('dialog'));
+      assert.ok(elt('dialog-backdrop').classList.contains('scene-art'));
+      assert.strictEqual(localStorageStub.getItem(main.SAVE_KEY), null, '新游戏不写盘');
+      key('keydown', 'd'); tick(game, 5); key('keyup', 'd');
+      press('Escape'); tick(game);
+      assert.strictEqual(game.state, STATE.DIALOGUE);
+      assert.strictEqual(game.runTime, 0);
+      assert.strictEqual(game.stars, 0);
+      finishPrologue(game);
+      assert.strictEqual(game.state, STATE.PLAYING);
+      assert.strictEqual(game.level.id, 1);
+      assert.ok(game._playedNodes.has('p0'));
+      assert.ok(hidden('dialog') && hidden('dialog-backdrop'));
+      assert.ok(!elt('dialog-backdrop').classList.contains('scene-art'));
+      assert.strictEqual(data.levels.length, 0, '序章不伪装为正式关卡');
+    } finally { game.destroy(); }
+  });
+});
+
+test('序章：E/空格/Enter 翻页与完整台词顺序，播完后才触发第一关 load 演出', () => {
+  const data = prologueData();
+  data.levels = [dataLevel([{ type: 'spawn', x: 2, y: 26 }])];
+  data.dialogue['l1.load'] = {
+    type: 'cutscene', trigger: 'load:1', scopeId: 1, entry: true, once: true,
+    lines: [{ s: 'nar', t: '进入第一关。' }],
+  };
+  withGAME(data, () => {
+    const game = makeGame();
+    try {
+      elt('btn-start').click();
+      const keys = ['e', ' ', 'Enter'];
+      for (let i = 0; i < 9; i++) {
+        assert.strictEqual(game._dialog.idx, i);
+        assert.ok(!game._playedNodes.has('l1.load'));
+        assert.strictEqual(hidden('dialog-name'), i < 3);
+        if (i >= 3) assert.strictEqual(text('dialog-name'), 'Byeori');
+        press(keys[i % keys.length]); tick(game);
+        assert.strictEqual(text('dialog-text'), data.dialogue.p0.lines[i].t);
+        press(keys[i % keys.length]); tick(game);
+      }
+      assert.strictEqual(game.scene, null);
+      assert.strictEqual(game.level.id, 1);
+      assert.strictEqual(game._dialog.nodeId, 'l1.load');
+    } finally { game.destroy(); }
+  });
+});
+
+test('序章：保存/读档与重玩跳过 p0，新游戏重播；旧档无 p0 标记也直接继续', () => {
+  withGAME(prologueData(), () => {
+    const game = makeGame();
+    try {
+      elt('btn-start').click();
+      finishPrologue(game);
+      press('Escape'); tick(game);
+      elt('btn-save-quit').click();
+      const slot = JSON.parse(localStorageStub.getItem(main.SAVE_KEY)).slots[0];
+      assert.strictEqual(slot.current, 1);
+      assert.ok(slot.played.includes('p0'));
+      elt('btn-continue').click();
+      assert.strictEqual(game.state, STATE.PLAYING);
+      assert.strictEqual(game.scene, null);
+      press('Escape'); tick(game);
+      elt('btn-restart').click();
+      assert.strictEqual(game.state, STATE.PLAYING);
+      assert.strictEqual(game.scene, null);
+      press('Escape'); tick(game);
+      elt('btn-quit').click();
+      const raw = JSON.parse(localStorageStub.getItem(main.SAVE_KEY));
+      raw.slots[0].played = [];
+      localStorageStub.setItem(main.SAVE_KEY, JSON.stringify(raw));
+      elt('btn-continue').click();
+      assert.strictEqual(game.state, STATE.PLAYING);
+      assert.strictEqual(game.scene, null);
+      press('Escape'); tick(game);
+      elt('btn-quit').click();
+      elt('btn-start').click();
+      assert.strictEqual(game.scene.id, 'p0');
+      assert.strictEqual(game._dialog.idx, 0);
+    } finally { game.destroy(); }
+    assert.ok(!elt('dialog-backdrop').classList.contains('scene-art'));
+  });
+});
+
+test('序章：背景加载完成才绘制；慢加载/损坏图片仍可读完，不依赖图片回调', () => {
+  const prevImage = sandbox.Image;
+  sandbox.Image = class { constructor() { this.complete = false; this.naturalWidth = 0; } };
+  try {
+    withGAME(prologueData(), () => {
+      const game = makeGame();
+      const ctx = game.renderer.ctx;
+      const drawImage = ctx.drawImage;
+      const draws = [];
+      ctx.drawImage = (...args) => draws.push(args);
+      try {
+        elt('btn-start').click();
+        game._render();
+        assert.strictEqual(draws.length, 0);
+        const image = game._sceneImages.get('p0');
+        image.complete = true; // 加载失败：complete=true 但 naturalWidth=0
+        game._render();
+        assert.strictEqual(draws.length, 0);
+        image.naturalWidth = 1499;
+        game._render();
+        assert.strictEqual(draws.length, 1);
+        assert.deepStrictEqual(draws[0].slice(1), [0, 0, 320, 224]);
+        image.naturalWidth = 0;
+        finishPrologue(game);
+        assert.strictEqual(game.state, STATE.PLAYING);
+      } finally { ctx.drawImage = drawImage; game.destroy(); }
+    });
+  } finally {
+    if (prevImage === undefined) delete sandbox.Image;
+    else sandbox.Image = prevImage;
+  }
+});
+
+test('序章：缺少场景或入口台词时直接进入第一关', () => {
+  for (const missing of ['scene', 'dialogue']) {
+    const data = prologueData();
+    if (missing === 'scene') delete data.scenes.p0;
+    else delete data.dialogue.p0;
+    withGAME(data, () => {
+      const game = makeGame();
+      try {
+        elt('btn-start').click();
+        assert.strictEqual(game.state, STATE.PLAYING);
+        assert.strictEqual(game.scene, null);
+        assert.strictEqual(game.level.id, 1);
+      } finally { game.destroy(); }
+    });
+  }
+});
+
+/* ─────────────────── 第一关正式地图 ─────────────────── */
+
+const level1Run = require('./play-level1.js');
+
+test('第一关：序章 → 开门/找唱片/舞台播放/后台对话/三星/黑羊 → 过关保存 → 返回标题（真实地图）', () => {
+  withGAME(prologueData(), () => {
+    const game = makeGame();
+    try {
+      elt('btn-start').click();
+      const result = level1Run.playLevel1(game);
+      assert.deepStrictEqual(result, { stars: 3, sheep: 1, gateOpen: true, state: STATE.CLEAR });
+      const slot = JSON.parse(localStorageStub.getItem(main.SAVE_KEY)).slots[0];
+      assert.deepStrictEqual(slot.stars['1'].slice().sort(), ['s1', 's2', 's3']);
+      assert.deepStrictEqual(slot.cleared, [1]);
+      assert.strictEqual(slot.current, 1, '后续地图未制作时存档仍指向已存在关卡');
+      assert.strictEqual(text('btn-next'), '↩ 回到标题（后续关卡制作中）');
+      elt('btn-next').click();
+      assert.strictEqual(game.state, STATE.TITLE);
+      elt('btn-continue').click();
+      assert.strictEqual(game.level.id, 1);
+      assert.strictEqual(game.stars, 3);
+      assert.strictEqual(game.sheepCount, 1);
+      assert.strictEqual(game.scene, null);
+    } finally { game.destroy(); }
+  });
+});
+
+test('第一关：后台对话/三星保存恢复；重玩重新收前两星即可解锁，不要求重播 once 对话', () => {
+  withGAME(prologueData(), () => {
+    const game = makeGame();
+    try {
+      elt('btn-start').click();
+      level1Run.playLevel1(game);
+      elt('btn-next').click(); elt('btn-continue').click();
+      let star = game._entitiesOf('star').find(e => e.id === 's3');
+      assert.ok(star.collected && game._starAvailable(star));
+      assert.ok(game._entitiesOf('record')[0].taken);
+      assert.ok(game._entitiesOf('gate')[0].open);
+      game._setState(STATE.PAUSED); elt('btn-restart').click();
+      star = game._entitiesOf('star').find(e => e.id === 's3');
+      assert.strictEqual(star.collected, undefined);
+      assert.ok(game._starAvailable(star));
+      assert.strictEqual(game.stars, 0);
+      assert.ok(game._entitiesOf('record')[0].taken);
+      assert.ok(!game._entitiesOf('gate')[0].open);
+      level1Run.walkTo(game, 10, 24);
+      level1Run.walkTo(game, 5, 8); game._interact();
+      level1Run.walkTo(game, 4, 4);
+      game._syncProgressLocks();
+      assert.ok(game._entitiesOf('gate')[0].open);
+    } finally { game.destroy(); }
+  });
+});
+
+test('第一关：阅读告示牌不修改共享对话字典或 played，靠近提示不被更远 NPC 抢走', () => {
+  const data = prologueData();
+  withGAME(data, () => {
+    const game = makeGame();
+    try {
+      elt('btn-start').click();
+      level1Run.finishDialogue(game);
+      const before = Object.keys(game.dialogue).length;
+      level1Run.walkTo(game, 3, 23);
+      assert.strictEqual(game._nearInteractable().type, 'sign');
+      assert.ok(game._interact());
+      assert.strictEqual(game._dialog.lines[0].t, game.level.entities.find(e => e.id === 'party-plan').text);
+      level1Run.finishDialogue(game);
+      assert.strictEqual(Object.keys(game.dialogue).length, before);
+      assert.ok(!game._playedNodes.has('sign:party-plan'));
+    } finally { game.destroy(); }
+  });
+});
+
+test('场景素材：按源路径缓存、加载失败降级，礼物盒和星光门使用独立素材', () => {
+  const prevImage = sandbox.Image;
+  sandbox.Image = class { constructor() { this.complete = false; this.naturalWidth = 0; } };
+  try {
+    withGAME(prologueData(), () => {
+      const game = makeGame();
+      const ctx = game.renderer.ctx, drawImage = ctx.drawImage, draws = [];
+      ctx.drawImage = (...args) => draws.push(args);
+      try {
+        elt('btn-start').click(); level1Run.finishDialogue(game);
+        assert.strictEqual(game._sceneryImages.size, Object.keys(game.level.sceneryAssets).length);
+        assert.strictEqual(game._drawGift(5, 4), false);
+        const props = game._sceneryImages.get(game.level.sceneryAssets.backstage);
+        props.complete = true; props.naturalWidth = 1536;
+        assert.strictEqual(game._drawGift(5, 4), true);
+        assert.strictEqual(draws[0][0], props);
+        props.naturalWidth = 0;
+        assert.strictEqual(game._drawGift(5, 4), false);
+        const portal = game._sceneryImages.get(game.level.sceneryAssets.portal);
+        portal.complete = true; portal.naturalWidth = 1024; portal.naturalHeight = 1536;
+        assert.strictEqual(game._drawSceneryAsset({ art: 'portal', x: 48, y: 10, w: 3, h: 4 }), true);
+        assert.strictEqual(draws[1][0], portal);
+      } finally { ctx.drawImage = drawImage; game.destroy(); }
+    });
+  } finally { if (prevImage === undefined) delete sandbox.Image; else sandbox.Image = prevImage; }
+});
+
+test('唱片播放后上台右转往返化妆间：普通门往返不丢星星与剧情进度', () => {
+  withGAME(prologueData(), () => {
+    const game = makeGame();
+    try {
+      elt('btn-start').click();
+      level1Run.playLevel1(game, {
+        onBackstage(g) {
+          assert.strictEqual(g._resolveNpcNode(g._entitiesOf('npc').find(e => e.id === 'lily' && e.room === 'backstage')), 'l1.backstage.lily');
+          const bounds=g._currentArea().rect;
+          assert.ok(g.camera.x>=bounds.x*16 && g.camera.x+320<=(bounds.x+bounds.w)*16);
+          assert.ok(g.camera.y>=bounds.y*16 && g.camera.y+224<=(bounds.y+bounds.h)*16);
+          level1Run.walkTo(g,65,11);level1Run.walkTo(g,48,11); // 北侧过道完整可走。
+          level1Run.walkTo(g,49,12);
+          const before={...g.player};
+          assert.strictEqual(g._moveAxis(0,4),false,'不能从过道走到背面的镜子上');
+          assert.deepStrictEqual([g.player.x,g.player.y],[before.x,before.y]);
+          level1Run.walkTo(g,48,20);level1Run.walkTo(g,65,20); // 南侧过道完整可走。
+          level1Run.walkTo(g,41,15);
+          assert.strictEqual(g._currentArea().id,'backstage','后台西侧不能被礼堂的摄像机留白抢走');
+          const stars=g.stars, door=g._entitiesOf('roomdoor').find(e=>e.id==='to-hall');
+          level1Run.walkTo(g, door.x, door.y);
+          assert.strictEqual(g._currentArea().id,'hall'); assert.strictEqual(g.stars,stars);
+          assert.ok(g._entitiesOf('gate')[0].open);
+          level1Run.walkTo(g,28,5);assert.strictEqual(g._currentArea().id,'backstage');
+        },
+      });
+    } finally { game.destroy(); }
+  });
+});
+
+test('唱片机前置：缺一位 Muse / 缺一颗星不能取唱片，没取唱片不能播放', () => {
+  withGAME(prologueData(), () => {
+    const game=makeGame();
+    try {
+      elt('btn-start').click();level1Run.finishDialogue(game);
+      const record=game._entitiesOf('record')[0], music=game._entitiesOf('gramophone')[0], req=music.requiresDialogue;
+      for(let i=0;i<req.length;i++) {
+        game._playedNodes=new Set(req.filter((_,n)=>n!==i));game.collected=['s1','s2'];game._syncProgressLocks();
+        assert.ok(!game._requirementsMet(record) && !game._requirementsMet(music));
+        assert.ok(!game._entitiesOf('gate')[0].open);
+      }
+      game._playedNodes=new Set(req);game.collected=['s1'];assert.ok(!game._requirementsMet(record));
+      game.collected.push('s2');game._syncProgressLocks();assert.ok(game._requirementsMet(record));
+      game.player={x:music.x*16,y:music.y*16};game._interact();level1Run.finishDialogue(game);
+      assert.ok(!game._playedNodes.has('l1.music.play') && !game._entitiesOf('gate')[0].open);
+      withSfx(calls=>{
+        game._playedNodes.add('l1.record.take');game._interact();
+        assert.ok(!game._entitiesOf('gate')[0].open, '播放台词没完成不能开后台');
+        level1Run.finishDialogue(game);assert.ok(game._entitiesOf('gate')[0].open);
+        assert.strictEqual(calls.filter(n=>n==='record-start').length,1);
+        game._interact();level1Run.finishDialogue(game);assert.ok(game._entitiesOf('gate')[0].open);
+        assert.strictEqual(calls.filter(n=>n==='record-start').length,1,'重复提示不重播启动音');
+      });
+    } finally {game.destroy();}
+  });
+});
+
+test('第一关开场：由暗渐亮，淡入结束不改变玩家位置或收集进度', () => {
+  withGAME(prologueData(), () => {
+    const game = makeGame();
+    try {
+      elt('btn-start').click(); level1Run.finishDialogue(game);
+      assert.ok(game._entryFade > 0);
+      const pos = { ...game.player };
+      for (let i = 0; i < 40; i++) game._update(0.05);
+      assert.strictEqual(game._entryFade, 0);
+      assert.deepStrictEqual([game.player.x, game.player.y], [pos.x, pos.y]); assert.strictEqual(game.stars, 0);
+    } finally { game.destroy(); }
+  });
+});
+
+test('唱片拾取后保存继续：携带记录保留，回舞台可播放，播放后读档后台仍开放', () => {
+  withGAME(prologueData(), () => {
+    const game=makeGame(), stop=new Error('saved-with-record');
+    try {
+      elt('btn-start').click();
+      assert.throws(()=>level1Run.playLevel1(game,{onRecord(g){
+        g._setState(STATE.PAUSED);elt('btn-save-quit').click();elt('btn-continue').click();
+        assert.strictEqual(g.stars,2);assert.ok(g._entitiesOf('record')[0].taken);
+        assert.ok(!g._entitiesOf('gate')[0].open);
+        level1Run.talkTo(g,'stage-music');assert.ok(g._entitiesOf('gate')[0].open);
+        g._setState(STATE.PAUSED);elt('btn-save-quit').click();elt('btn-continue').click();
+        assert.ok(g._entitiesOf('gate')[0].open && g._entitiesOf('record')[0].taken);
+        throw stop;
+      }}),err=>err===stop);
+    }finally{game.destroy();}
+  });
 });
 
 /* ─────────────────── 汇总 ─────────────────── */

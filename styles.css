@@ -551,6 +551,13 @@ body {
   pointer-events: none; /* 点击穿透，不影响游戏区（对话页由对话框处理） */
 }
 
+/* 序章以场景插画承载叙事，保留画面清晰度与烛光。 */
+#dialog-backdrop.scene-art {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* 说话人头像位（Issue #28）：贴在对话框右上方、底边压在框顶上沿向上延伸；
    3:4 竖版半身照，宽 = 对话框宽 × 2/6；缺图时由 main.js 挂 .hidden 隐藏（nar/all 无立绘） */
 #dialog-portrait {
@@ -626,6 +633,13 @@ body {
 @media (pointer: coarse), (any-pointer: coarse) {
   #dialog {
     bottom: 92px;
+  }
+
+  /* 竖屏序章画布居中，按键在画布下方；对话留在画面底部。 */
+  @media (orientation: portrait) {
+    #dialog-backdrop.scene-art + #dialog {
+      bottom: 10px;
+    }
   }
 
   /* 矮横屏为抬高的对话框上方留出空间，头像保留 3:4 比例。 */

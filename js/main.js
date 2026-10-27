@@ -59,9 +59,9 @@
  *   - 单游戏循环：start() 防重复启动，destroy() 解绑全部 UI 监听、输入与渲染器。
  *
  * 数据来源：window.GAME（js/data.js，Issue #11/#12）就位后自动采用；
- * 当前 data.js 的 levels 为空，内置「占位关卡 ×2」兜底（复用引擎演示地形，
- * 关 1 已带开关/门/礼物盒，用于验证 #9 的单关完整闭环），保证六态全部可达、
- * 可往返验证。正式关卡/美术/演出由后续 Issue 接管：#11 地图、#13 美术、#15 演出。
+ * data.js 已接入序章与关 1；仅在 levels 缺失/为空时使用内置占位关卡兜底，
+ * 便于无数据的引擎/UI 测试。指向未制作关卡的显式出口结算后回标题，不提前播放终章。
+ * 后续接入：#11 关 2–6 地图、#13 正式人物美术、#15 演出。
  *
  * 启用方式：index.html 在 engine.js 之后加载本文件；本文件立即设置
  * MIXX_NO_DEMO = true 停用引擎演示模式，并在 DOMContentLoaded 后自启动。
@@ -185,22 +185,16 @@
     ];
   }
 
-  /** 读 data.js 的 GAME（已就位则采用），否则回退占位数据 */
+  /** 内容逐步接入：地图为空时仅回退地图，保留已就位的场景与台词。 */
   function loadData(root) {
-    const g = root.GAME;
-    if (g && Array.isArray(g.levels) && g.levels.length > 0) {
-      return {
-        levels: g.levels,
-        characters: Object.assign({}, BOOT_CHARACTERS, g.characters || {}),
-        dialogue: Object.assign({}, BOOT_DIALOGUE, g.dialogue || {}),
-        source: 'data',
-      };
-    }
+    const g = root.GAME || {};
+    const hasLevels = Array.isArray(g.levels) && g.levels.length > 0;
     return {
-      levels: buildBootLevels(),
-      characters: BOOT_CHARACTERS,
-      dialogue: BOOT_DIALOGUE,
-      source: 'boot',
+      levels: hasLevels ? g.levels : buildBootLevels(),
+      scenes: g.scenes || {},
+      characters: Object.assign({}, BOOT_CHARACTERS, g.characters || {}),
+      dialogue: Object.assign({}, BOOT_DIALOGUE, g.dialogue || {}),
+      source: hasLevels ? 'data' : 'boot',
     };
   }
 
@@ -443,6 +437,28 @@
 
       const data = loadData(this.root);
       this.levels = data.levels;
+      this.scenes = data.scenes;
+      this.scene = null;       // 独立序章，不计入关卡、星数或关卡用时
+      this._sceneImages = new Map();
+      this._sceneryImages = new Map();
+      for (const id of Object.keys(this.scenes)) {
+        const scene = this.scenes[id];
+        if (scene.background && typeof this.root.Image === 'function') {
+          const img = new this.root.Image();
+          img.src = scene.background;
+          this._sceneImages.set(id, img); // 提前加载；失败时台词仍可完整播放
+        }
+      }
+      if (typeof this.root.Image === 'function') {
+        for (const level of this.levels) {
+          for (const src of Object.values(level.sceneryAssets || {})) {
+            if (this._sceneryImages.has(src)) continue;
+            const img = new this.root.Image();
+            img.src = src;
+            this._sceneryImages.set(src, img);
+          }
+        }
+      }
       this.characters = data.characters;
       this.dialogue = data.dialogue;
       this.dataSource = data.source;
@@ -485,7 +501,10 @@
       this._playedNodes = new Set(); // 已播放过的 once 节点（随存档 slot.played 持久化）
       this._npcTarget = {};   // <关卡id>:<实体id> → 开场 intro 结束后指向的后续节点（hint）
       this.sheepCount = 0;    // 黑羊彩蛋计数 0–6（随存档持久化）
+      this.carriedBox = null;
+      this.facing = { x: 0, y: -1 };
       this._pendingNextIsEnding = false; // 结算按钮指向结局（最后一关）
+      this._pendingNextUnavailable = false; // 显式出口指向尚未制作的关卡
       this._pendingNextIndex = -1;       // 结算后要进入的关卡下标（portal.to 或下一关）
       this._portraitSrc = null;          // 头像当前 src 缓存（避免重复赋值导致闪动）
       this._failedPortraits = new Set(); // 加载失败的路径，后续渲染保持隐藏
@@ -548,6 +567,7 @@
       // 这里显式清理，避免复用同一 DOM 时残留暗化/模糊遮罩（PR #33 评审）
       this._hide(this._ui.dialog);
       this._hide(this._ui.dialogBackdrop);
+      if (this._ui.dialogBackdrop) this._ui.dialogBackdrop.classList.remove('scene-art');
       this._hide(this._ui.saveScreen); // 销毁时复用的 DOM 不残留选择存档界面
       this._hide(this._ui.loginScreen); // #43：登录界面同样不残留
       this._hide(this._ui.accountNote);
@@ -600,6 +620,7 @@
           // HUD 保持可见（对话仍在关卡内）；输入保持启用（confirm 快进/翻页）
           this._show(this._ui.dialog);
           this._show(this._ui.dialogBackdrop); // 背景虚化：只突出对话框与头像
+          if (this._ui.dialogBackdrop) this._ui.dialogBackdrop.classList.toggle('scene-art', !!this.scene);
           break;
         case STATE.PAUSED:
           this._show(this._ui.pauseScreen);
@@ -635,6 +656,7 @@
         case STATE.DIALOGUE:
           this._hide(this._ui.dialog);
           this._hide(this._ui.dialogBackdrop);
+          if (this._ui.dialogBackdrop) this._ui.dialogBackdrop.classList.remove('scene-art');
           this._clearDialog();
           this._dialog = null;
           break;
@@ -658,6 +680,7 @@
     /* ── 每帧更新 ── */
 
     _update(dt) {
+      if (this.level && this._entryFade > 0) this._entryFade = Math.max(0, this._entryFade - dt);
       switch (this.state) {
         case STATE.PLAYING:
           this._updatePlaying(dt);
@@ -680,19 +703,19 @@
 
     _updatePlaying(dt) {
       if (this.input.wasPressed('pause')) { this._setState(STATE.PAUSED); return; }
+      this._syncProgressLocks();
+      if (this._checkTriggers()) return;
       if (this.input.wasPressed('confirm') && this._interact()) return; // 进入对话
       const axis = this.input.getAxis();
       if (axis.x) this._moveAxis(axis.x * MOVE_SPEED * dt, 0);
       if (axis.y) this._moveAxis(0, axis.y * MOVE_SPEED * dt);
       this._syncSwitches();
-      this.camera.follow(
-        this.player.x + PLAYER_SIZE / 2,
-        this.player.y + PLAYER_SIZE / 2,
-        this.level.map.w * TILE,
-        this.level.map.h * TILE
-      );
+      this._followCamera();
       this._checkPickups();
       if (this.state !== STATE.PLAYING) return; // 收集触发台词进入对话，本帧不再推进
+      this._syncProgressLocks();
+      if (this._checkTriggers()) return;
+      this._checkRoomDoors();
       this._checkPortal();
       if (this.state !== STATE.PLAYING) return; // 过关台词进入对话，本帧不再计时
       this.runTime += dt;
@@ -706,6 +729,7 @@
      */
     _moveAxis(dx, dy) {
       if (!dx && !dy) return false;
+      this.facing = { x: Math.sign(dx), y: Math.sign(dy) };
       const p = this.player;
       const nx = p.x + dx;
       const ny = p.y + dy;
@@ -755,7 +779,7 @@
     /** 本关星星是否已集齐且存在传送门（传送门激活条件） */
     _portalActive() {
       const total = this._starCount();
-      return total > 0 && this.stars >= total && this._entitiesOf('portal').length > 0;
+      return total > 0 && this.stars >= total && this._entitiesOf('portal').some(e => this._requirementsMet(e));
     }
 
     /** 从未激活到激活：粒子 + 音效 + 事件（每关只播一次） */
@@ -776,25 +800,67 @@
 
     /* ── 互动 ── */
 
-    /** 附近是否有可互动实体（NPC / 黑羊） */
+    /** 附近最近的可互动实体（NPC / 黑羊 / 告示牌）。 */
     _nearInteractable() {
       const cx = this.player.x + PLAYER_SIZE / 2;
       const cy = this.player.y + PLAYER_SIZE / 2;
-      for (const type of ['npc', 'sheep']) {
+      let nearest = null;
+      let distance = Infinity;
+      for (const type of ['door', 'record', 'gramophone', 'npc', 'sheep', 'sign', 'box']) {
         for (const e of this._entitiesOf(type)) {
+          if (e.carried || e.taken || (type === 'box' && !e.carryable)) continue;
           const ex = e.x * TILE + TILE / 2;
           const ey = e.y * TILE + TILE / 2;
-          if (Math.abs(cx - ex) <= INTERACT_RANGE && Math.abs(cy - ey) <= INTERACT_RANGE) return e;
+          const d = Math.abs(cx - ex) + Math.abs(cy - ey);
+          if (d <= INTERACT_RANGE && d < distance) { nearest = e; distance = d; }
         }
       }
-      return null;
+      return nearest;
     }
 
     /** 确认键互动：NPC → 对话；黑羊 → 彩蛋谜语（首次计数 sheep +1）。返回是否触发了状态切换 */
     _interact() {
       if (!this.player) return false;
+      if (this.carriedBox) return this._dropBox();
       const ent = this._nearInteractable();
       if (!ent) return false;
+      if (ent.type === 'door') {
+        if (!ent.open) { ent.open = true; this._sfx('gate-open'); this._emit('door', { id: ent.id }); }
+        return true;
+      }
+      if (ent.type === 'record' || ent.type === 'gramophone') {
+        this._syncProgressLocks();
+        const say = text => this._playNode('music.hint', { node: { lines: [{ s: 'nar', t: text }] } });
+        if (!this._requirementsMet(ent)) {
+          say('先听完六位 Muse 的自我介绍，再找齐气球下和杂物间的两颗星。唱片机还在等待大家的祝福。');
+        } else if (ent.type === 'record') {
+          this._playNode(ent.dialogue, { onEnd: () => { this._syncProgressLocks(); this._sfx('star'); this._emit('record', { id: ent.id }); } });
+        } else if (this._playedNodes.has(ent.dialogue)) {
+          say('《Strange Muse》唱片正在播放。向右走，穿过帷幕就到后台化妆间了。');
+        } else if (!this._playedNodes.has(ent.recordNode)) {
+          if (!this._playedNodes.has('l1.music.ready')) this._playNode('l1.music.ready');
+          else say('去左上角的杂物间，按 E 取走《Strange Muse》唱片，再回来播放。');
+        } else {
+          this._playNode(ent.dialogue, { onEnd: () => {
+            this._syncProgressLocks(); this._sfx('record-start'); this._sfx('gate-open'); this._emit('music', { id: ent.id, playing: true });
+          } });
+        }
+        return true;
+      }
+      if (ent.type === 'box') {
+        this._syncProgressLocks();
+        if (ent.locked) { this._playNode('carry.locked', { node: { lines: [{ s: 'nar', t: '先完成这里的提示，才能搬动这个盒子。' }] } }); return true; }
+        ent.carried = true;
+        this.carriedBox = ent;
+        this._syncSwitches();
+        this._refreshHud();
+        this._emit('carry', { id: ent.id, carried: true });
+        return true;
+      }
+      if (ent.type === 'sign') {
+        this._playNode('sign:' + ent.id, { node: { lines: [{ s: 'nar', t: ent.text }] } });
+        return true;
+      }
       if (ent.type === 'sheep') {
         // 黑羊：绑定节点为 once，首次互动播放并计数（集齐 6 句追加结局画面，演出接入 #15）
         const nodeId = ent.dialogue;
@@ -815,7 +881,7 @@
       const px = this.player.x;
       const py = this.player.y;
       for (const e of this._entitiesOf('star')) {
-        if (e.collected) continue;
+        if (e.collected || !this._starAvailable(e)) continue;
         const rx = e.x * TILE;
         const ry = e.y * TILE;
         if (px < rx + TILE && px + PLAYER_SIZE > rx && py < ry + TILE && py + PLAYER_SIZE > ry) {
@@ -836,6 +902,87 @@
           if (activated) return; // 同帧又激活传送门：仍按顺序，本帧到此为止
         }
       }
+    }
+
+    /** 条件星只在指定的自我介绍全部播完后出现；存档沿用 played，不添加新字段。 */
+    _starAvailable(star) {
+      return this._requirementsMet(star);
+    }
+
+    _requirementsMet(entity) {
+      return (!entity.requiresStars || entity.requiresStars.every(id => this.collected.includes(id)))
+        && (!entity.requiresDialogue || entity.requiresDialogue.every(id =>
+          this._playedNodes.has(id) && (!this._dialog || this._dialog.nodeId !== id)));
+    }
+
+    _syncProgressLocks() {
+      if (!this.level) return;
+      for (const e of this.level.entities) {
+        if (e.type === 'box') e.locked = !this._requirementsMet(e);
+        if (e.type === 'switch') e.hidden = !this._requirementsMet(e);
+        if (e.type === 'record') e.taken = this._playedNodes.has(e.dialogue)
+          && (!this._dialog || this._dialog.nodeId !== e.dialogue);
+        if (e.type === 'gate' && e.requiresDialogue) e.open = this._requirementsMet(e);
+      }
+    }
+
+    _dropBox() {
+      const p = this.player, b = this.carriedBox, d = this.facing;
+      const tx = d.x > 0 ? Math.ceil((p.x + PLAYER_SIZE) / TILE)
+        : d.x < 0 ? Math.floor((p.x - 1) / TILE) : Math.round(p.x / TILE);
+      const ty = d.y > 0 ? Math.ceil((p.y + PLAYER_SIZE) / TILE)
+        : d.y < 0 ? Math.floor((p.y - 1) / TILE) : Math.round(p.y / TILE);
+      if (!this.mechanics._canPlaceBox(tx, ty, b)) {
+        this._playNode('carry.blocked', { node: { lines: [{ s: 'nar', t: '这里会挡住通道、门口或落入死角。换一个空旷的位置，再按 E 放下。' }] } });
+        return true;
+      }
+      b.x = tx; b.y = ty; b.carried = false;
+      this.carriedBox = null;
+      this._syncSwitches();
+      this._refreshHud();
+      this._emit('carry', { id: b.id, carried: false, x: tx, y: ty });
+      return true;
+    }
+
+    _checkTriggers() {
+      for (const e of this._entitiesOf('trigger')) {
+        const node = this.dialogue[e.dialogue], r = e.rect;
+        if (!node || !r || (node.once && this._playedNodes.has(e.dialogue)) || !this._requirementsMet(e)
+          || (e.skipIfDialogue || []).some(id => this._playedNodes.has(id))) continue;
+        if (this.player.x < (r.x + r.w) * TILE && this.player.x + PLAYER_SIZE > r.x * TILE
+          && this.player.y < (r.y + r.h) * TILE && this.player.y + PLAYER_SIZE > r.y * TILE) {
+          this._playNode(e.dialogue); return true;
+        }
+      }
+      return false;
+    }
+
+    _currentArea() {
+      const x = (this.player.x + 8) / TILE, y = (this.player.y + 8) / TILE;
+      return (this.level.areas || []).find(a => {
+        const r = a.bounds || a.rect; // 归属边界与允许看到草地的摄像机边界分开。
+        return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+      });
+    }
+
+    _followCamera() {
+      const area = this._currentArea(), r = area && area.rect;
+      const ox = r ? r.x * TILE : 0, oy = r ? r.y * TILE : 0;
+      this.camera.x -= ox; this.camera.y -= oy;
+      this.camera.follow(this.player.x + 8 - ox, this.player.y + 8 - oy,
+        (r ? r.w : this.level.map.w) * TILE, (r ? r.h : this.level.map.h) * TILE);
+      this.camera.x += ox; this.camera.y += oy;
+    }
+
+    _checkRoomDoors() {
+      for (const e of this._entitiesOf('roomdoor')) {
+        if (this.mechanics.overlapsTile(this.player.x, this.player.y, PLAYER_SIZE, e.x, e.y)) {
+          this.player.x = e.to.x * TILE; this.player.y = e.to.y * TILE;
+          this._followCamera(); this._refreshHud();
+          this._emit('room', { id: e.id }); return true;
+        }
+      }
+      return false;
     }
 
     /** 集齐星星后传送门激活；接触传送门 → 先播过关台词（clear:<关卡id>，once），播完结算 */
@@ -1182,8 +1329,31 @@
       this._pendingOverwrite = -1;
       this._pendingDelete = -1;
       this.levelIndex = 0;
-      this._loadLevel(0);
+      this._startPrologue();
       return true;
+    }
+
+    /** 新游戏专用：独立场景的自动对话播完后才创建第一关。 */
+    _startPrologue() {
+      const scene = this.scenes.p0;
+      if (!scene || !this._findAutoEntry('load:p0')) {
+        this._loadLevel(0);
+        return;
+      }
+      this.scene = Object.assign({ id: 'p0' }, scene);
+      this.level = null;
+      this.player = null;
+      this.mechanics = null;
+      this.stars = 0;
+      this.collected = [];
+      this.runTime = 0;
+      this.particles.clear();
+      this._hideAllScreens();
+      this._show(this._ui.hud);
+      this._refreshHud();
+      this.input.setEnabled(true);
+      this.input.setTouchVisible(true); // 手机 A 键仍可快进/翻页
+      this._dispatchAuto('load:p0', () => this._loadLevel(0));
     }
 
     /** 标题「继续冒险」：载入 updatedAt 最新的存档位 */
@@ -1409,6 +1579,7 @@
     _loadLevel(i, opts) {
       const lv = this.levels[i];
       if (!lv) return;
+      this.scene = null;
       const restore = !!(opts && opts.restore) && !!this.saveData;
       this.levelIndex = i;
       this.level = Object.assign({}, lv, {
@@ -1418,7 +1589,10 @@
       this.particles.clear();
       this._pendingNextIndex = -1;
       const spawn = this._entitiesOf('spawn')[0] || { x: 2, y: 2 };
+      this._pendingNextUnavailable = false;
       this.player = { x: spawn.x * TILE, y: spawn.y * TILE };
+      this.carriedBox = null;
+      this.facing = { x: 0, y: -1 };
       this.stars = 0;
       this.collected = [];
       if (restore) {
@@ -1435,21 +1609,18 @@
       this._portalWasActive = this._portalActive(); // 读档已集齐时不重播激活演出
       this.runTime = 0;
       this._dialog = null;
+      this._entryFade = Number(lv.entryFade) || 0;
       this.camera.x = 0;
       this.camera.y = 0;
-      this.camera.follow(
-        this.player.x + PLAYER_SIZE / 2,
-        this.player.y + PLAYER_SIZE / 2,
-        this.level.map.w * TILE,
-        this.level.map.h * TILE
-      );
+      this._followCamera();
+      this._syncProgressLocks();
       this._syncSwitches(true); // 初始化开关/门状态（spawn 压住开关等边界情况）
       this._refreshHud();
       this._setState(STATE.PLAYING);
       if (this.onEvent) {
         try { this.onEvent('restart', { level: this.levelIndex }); } catch (e) { /* 忽略钩子异常 */ }
       }
-      // 关卡加载自动演出（load:<关卡id>；序章 p0 等场景在 #11 场景系统落地后同机制接入）
+      // 关卡加载自动演出；序章仅由新游戏入口调度，读档/重玩不触发。
       this._dispatchAuto('load:' + this.level.id);
     }
 
@@ -1459,10 +1630,12 @@
     }
 
     /** 回标题（不写盘）：放弃上次存档之后的进度；存档本身保持不动 */
-    _quitToTitle() {
-      if (this.state !== STATE.PAUSED && this.state !== STATE.ENDING) return;
+    _quitToTitle(fromClear) {
+      if (this.state !== STATE.PAUSED && this.state !== STATE.ENDING
+        && !(fromClear === true && this.state === STATE.CLEAR)) return;
       this.level = null;
       this.player = null;
+      this.carriedBox = null;
       this.stars = 0;
       this.collected = [];
       this.runTime = 0;
@@ -1490,10 +1663,13 @@
       const clearText = '星星 ' + this.stars + '/' + starCount + ' · 用时 ' + formatTime(this.runTime);
       this._text(this._ui.clearText, clearText);
       const nextIndex = this._nextLevelIndex(); // 优先 portal.to，其次线性下一关
-      const isLast = nextIndex < 0;
+      const portal = this._entitiesOf('portal')[0];
+      this._pendingNextUnavailable = !!portal && Number.isInteger(portal.to) && nextIndex < 0;
+      const isLast = nextIndex < 0 && !this._pendingNextUnavailable;
       this._pendingNextIsEnding = isLast;
       this._pendingNextIndex = nextIndex;
-      this._text(this._ui.btnNext, isLast ? '▶ 见证结局' : '▶ 下一关');
+      this._text(this._ui.btnNext, this._pendingNextUnavailable
+        ? '↩ 回到标题（后续关卡制作中）' : isLast ? '▶ 见证结局' : '▶ 下一关');
       // 通关自动存档：记录已收集星、cleared、unlocked，current 指向下一关（末关停留在本关）
       if (this.saveData) {
         const cleared = this.saveData.cleared.slice();
@@ -1518,7 +1694,9 @@
 
     _nextFromClear() {
       if (this.state !== STATE.CLEAR) return;
-      if (this._pendingNextIsEnding) {
+      if (this._pendingNextUnavailable) {
+        this._quitToTitle(true);
+      } else if (this._pendingNextIsEnding) {
         this._enterEnding();
       } else if (this._pendingNextIndex >= 0) {
         this._loadLevel(this._pendingNextIndex);
@@ -1541,7 +1719,7 @@
       const to = portal && Number(portal.to);
       if (isFinite(to) && to > 0) {
         const byPortal = this._levelIndexById(to);
-        if (byPortal >= 0) return byPortal;
+        return byPortal; // 未制作的显式出口不能回退到别关或提前播放终章
       }
       const next = this.levelIndex + 1;
       return next < this.levels.length ? next : -1;
@@ -1585,7 +1763,7 @@
      */
     _playNode(nodeId, opts) {
       opts = opts || {};
-      const node = this.dialogue[nodeId];
+      const node = opts.node || this.dialogue[nodeId];
       const lines = node && Array.isArray(node.lines) ? node.lines : [];
       if (!lines.length) {
         // 无内容不进入对话态；自动事件直接走完成回调，不打断流程
@@ -1638,11 +1816,12 @@
       }
       const key = 'npc:' + ent.id;
       const levelPrefix = 'l' + this.level.id + '.';
-      const targetKey = this.level.id + ':' + ent.id;
+      const targetKey = this.level.id + ':' + (ent.room || 'hall') + ':' + ent.id;
       const cands = [];
       for (const id in this.dialogue) {
         const n = this.dialogue[id];
-        if (id.indexOf(levelPrefix) === 0 && n.trigger === key && !n.entry) cands.push({ id: id, node: n });
+        if (id.indexOf(levelPrefix) === 0 && n.trigger === key && !n.entry
+          && (n.room || 'hall') === (ent.room || 'hall')) cands.push({ id: id, node: n });
       }
       const unplayed = (type) => {
         for (const c of cands) {
@@ -1726,7 +1905,9 @@
       }
       this._text(textEl, '');
       this._text(this._ui.dialogHint, DIALOG_HINT_TYPING);
-      this._setPortrait(line.s); // 说话人头像位（Issue #28）
+      if ((this.scene && this.scene.portraits === false)
+        || (this.level && this.level.portraits === false)) this._hidePortrait();
+      else this._setPortrait(line.s); // 说话人头像位（Issue #28）
     }
 
     /**
@@ -1941,8 +2122,14 @@
     /* ── HUD ── */
 
     _refreshHud() {
+      if (this.scene) {
+        this._text(this._ui.hudLevel, '序章 · ' + this.scene.title);
+        this._text(this._ui.hudShards, '');
+        return;
+      }
       if (!this.level) return;
-      this._text(this._ui.hudLevel, this.level.title);
+      const area = this.player && this._currentArea();
+      this._text(this._ui.hudLevel, area && area.id === 'backstage' ? area.title : this.level.title);
       this._text(this._ui.hudShards, '★ ' + this.stars + '/' + this._starCount());
       // 注：关 6 总进度「★ x/25」等 HUD 扩展随 #11 接入
     }
@@ -2122,15 +2309,45 @@
 
     _render() {
       const ctx = this.renderer.ctx;
+      if (this.scene && this.state === STATE.DIALOGUE) {
+        ctx.fillStyle = 'rgb(43,33,64)';
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+        const img = this._sceneImages.get(this.scene.id);
+        if (img && img.complete && img.naturalWidth > 0) {
+          ctx.drawImage(img, 0, 0, VIEW_W, VIEW_H);
+        }
+        return;
+      }
       if (!this.level || this.state === STATE.TITLE || this.state === STATE.ENDING) {
         ctx.fillStyle = 'rgb(11,11,30)';
         ctx.fillRect(0, 0, VIEW_W, VIEW_H);
         return;
       }
       this.renderer.renderLevel(this.level, this.camera);
+      this._drawDecorations();
       this._drawEntities();
       this._drawPlayer();
+      if (this.carriedBox) this._drawGift(this.player.x / TILE - 0.2, this.player.y / TILE - 1.1);
+      if (this._playedNodes.has('l1.record.take') && !this._playedNodes.has('l1.music.play')) {
+        this._drawRecord(this.camera.x / TILE + 0.4, this.camera.y / TILE + 0.5, 1.6);
+      }
       this.particles.draw(ctx, this.camera); // #9 拾取/开门/传送门粒子（画在角色之上）
+      this._drawExterior();
+      if (this.level.sceneryAssets && typeof ctx.createRadialGradient === 'function') {
+        const shade = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, 70, VIEW_W / 2, VIEW_H / 2, 210);
+        shade.addColorStop(0, 'rgba(18,29,50,0)');
+        shade.addColorStop(1, 'rgba(11,18,42,0.18)');
+        ctx.save();
+        ctx.fillStyle = shade;
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+        ctx.restore();
+      }
+      if (this._entryFade > 0) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, this._entryFade / (Number(this.level.entryFade) || 1));
+        ctx.fillStyle = 'rgb(6,9,20)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+        ctx.restore();
+      }
     }
 
     /** 占位实体绘制：仅用 fillRect（兼容测试桩与后续替换） */
@@ -2142,12 +2359,14 @@
         (ENTITY_DRAW_LAYER[a.type] || ENTITY_DRAW_LAYER_DEFAULT)
         - (ENTITY_DRAW_LAYER[b.type] || ENTITY_DRAW_LAYER_DEFAULT));
       for (const e of list) {
+        const area = this._currentArea();
+        if (area && e.room && e.room !== area.id) continue;
         const sx = Math.round(e.x * TILE - camX);
         const sy = Math.round(e.y * TILE - camY);
         if (sx < -TILE || sy < -TILE || sx > VIEW_W || sy > VIEW_H) continue;
         switch (e.type) {
           case 'star': {
-            if (e.collected) continue;
+            if (e.collected || !this._starAvailable(e)) continue;
             ctx.fillStyle = 'rgb(255,200,87)';
             ctx.fillRect(sx + 8, sy + 4, 1, 1);
             ctx.fillRect(sx + 7, sy + 5, 3, 1);
@@ -2157,14 +2376,35 @@
             break;
           }
           case 'npc': {
-            ctx.fillStyle = 'rgb(255,143,163)';
+            ctx.fillStyle = (this.characters[e.id] || {}).color || 'rgb(255,143,163)';
             ctx.fillRect(sx + 2, sy + 2, 12, 12);
             ctx.fillStyle = 'rgb(255,255,255)';
             ctx.fillRect(sx + 5, sy + 6, 2, 2);
             ctx.fillRect(sx + 9, sy + 6, 2, 2);
             break;
           }
+          case 'sheep': {
+            ctx.fillStyle = 'rgb(43,33,64)';
+            ctx.fillRect(sx + 2, sy + 4, 12, 8);
+            ctx.fillRect(sx + 3, sy + 12, 2, 3);
+            ctx.fillRect(sx + 11, sy + 12, 2, 3);
+            ctx.fillStyle = 'rgb(184,168,224)';
+            ctx.fillRect(sx + 10, sy + 5, 5, 5);
+            break;
+          }
+          case 'sign': {
+            if (this._drawSceneryAsset({ art: 'backstage', frame: [1035, 0, 501, 550], x: e.x - 0.5, y: e.y - 1.1, w: 2, h: 2.2 })) break;
+            ctx.fillStyle = 'rgb(93,65,73)';
+            ctx.fillRect(sx + 7, sy + 8, 2, 8);
+            ctx.fillRect(sx + 1, sy + 1, 14, 10);
+            ctx.fillStyle = 'rgb(255,209,102)';
+            ctx.fillRect(sx + 3, sy + 3, 10, 2);
+            ctx.fillRect(sx + 3, sy + 7, 7, 1);
+            break;
+          }
           case 'box': {
+            if (e.carried) continue;
+            if (e.carryable && this._drawGift(e.x - 0.2, e.y - 0.5)) break;
             // 生日礼物盒：粉盒 + 奶油缎带 + 金星结
             ctx.fillStyle = 'rgb(255,143,163)';
             ctx.fillRect(sx + 1, sy + 1, 14, 14);
@@ -2175,7 +2415,21 @@
             ctx.fillRect(sx + 6, sy + 6, 4, 4);
             break;
           }
+          case 'record': {
+            if (!e.taken) this._drawRecord(e.x - 0.35, e.y - 0.5, 1.8);
+            break;
+          }
+          case 'gramophone': {
+            this._drawSceneryAsset({ art: 'fitting', frame: [0, 512, 512, 512], x: e.x - 1, y: e.y - 2.6, w: 3, h: 3.6 });
+            if (this._playedNodes.has(e.dialogue) && typeof ctx.fillText === 'function') {
+              ctx.fillStyle = 'rgb(255,220,137)'; ctx.font = '10px serif'; ctx.fillText('♪ ♫', sx + 5, sy - 27);
+            }
+            break;
+          }
           case 'switch': {
+            if (e.hidden) continue;
+            if (this._drawSceneryAsset({ art: 'backstage', frame: [1090, 590, 400, 380],
+              x: e.x - 0.15, y: e.y - 0.1 + (e.pressed ? 0.1 : 0), w: 1.3, h: 1.25 })) break;
             // 彩色音乐地垫：按下时变成薄荷绿
             ctx.fillStyle = 'rgb(26,16,51)';
             ctx.fillRect(sx, sy, 16, 16);
@@ -2189,6 +2443,17 @@
             break;
           }
           case 'gate': {
+            if (e.visual === 'curtain') break; // 房间入口统一绘制普通门 / 帘幕。
+            if (e.id === 'gate1' && this.level.stageRect) {
+              ctx.fillStyle = 'rgb(98,63,47)'; ctx.fillRect(sx, sy, 16, 16);
+              ctx.fillStyle = 'rgb(221,186,132)';
+              for (let i = 0; i < 3; i++) ctx.fillRect(sx + 1, sy + 3 + i * 5, 14, 2);
+              if (!e.open) {
+                ctx.fillStyle = 'rgb(133,67,95)'; ctx.fillRect(sx, sy + 6, 16, 5);
+                ctx.fillStyle = 'rgb(244,206,131)'; ctx.fillRect(sx, sy + 7, 16, 1);
+              }
+              break;
+            }
             // 舞台折叠屏风：关闭时是金色竖条栅栏，打开时只留两侧门柱
             if (e.open) {
               ctx.fillStyle = 'rgb(255,200,87)';
@@ -2207,7 +2472,58 @@
             }
             break;
           }
+          case 'door': {
+            ctx.fillStyle = 'rgb(83,57,54)'; ctx.fillRect(sx - 1, sy - 15, 18, 31);
+            ctx.fillStyle = e.open ? 'rgb(28,37,61)' : 'rgb(177,126,88)';
+            ctx.fillRect(sx + 1, sy - 13, 14, 28);
+            if (!e.open) {
+              ctx.fillStyle = 'rgb(225,191,128)'; ctx.fillRect(sx + 11, sy + 3, 2, 3);
+              ctx.fillRect(sx + 3, sy - 10, 8, 8);
+            }
+            break;
+          }
+          case 'roomdoor':
           case 'portal': {
+            if (e.type === 'roomdoor') {
+              const gate = this._entitiesOf('gate').find(g => g.x === e.x && g.y === e.y);
+              const locked = gate && !gate.open;
+              ctx.fillStyle = 'rgb(101,77,56)'; ctx.fillRect(sx - 5, sy - 21, 26, 39);
+              ctx.fillStyle = 'rgb(226,203,156)'; ctx.fillRect(sx - 3, sy - 19, 22, 36);
+              ctx.fillStyle = locked ? 'rgb(40,88,126)' : 'rgb(34,33,51)'; ctx.fillRect(sx, sy - 16, 16, 31);
+              if (locked) {
+                ctx.fillStyle = 'rgb(93,153,181)';
+                for (let i = 2; i < 16; i += 4) ctx.fillRect(sx + i, sy - 15, 1, 29);
+                ctx.fillStyle = 'rgb(232,191,106)'; ctx.fillRect(sx, sy + 2, 16, 1);
+              } else {
+                ctx.fillStyle = 'rgb(171,124,81)'; ctx.fillRect(sx + 13, sy - 16, 3, 30);
+                ctx.fillStyle = 'rgb(241,207,139)'; ctx.fillRect(sx + 12, sy, 2, 2);
+              }
+              if (typeof ctx.fillText === 'function') {
+                ctx.font = '7px monospace'; ctx.fillStyle = 'rgb(230,207,161)';
+                ctx.fillText(locked ? '播放唱片后进入' : e.label || '出入口', sx - 14, sy + 25);
+              }
+              break;
+            }
+            if (this.level.sceneryAssets && this.level.sceneryAssets.portal) {
+              const active = this._portalActive();
+              const art = e.facing === 'east' && this.level.sceneryAssets.portalEast ? 'portalEast' : 'portal';
+              ctx.save(); ctx.globalAlpha = active ? 1 : 0.7;
+              const drawn = this._drawSceneryAsset({ art, x: e.x - 1, y: e.y - 3, w: 3, h: 4.5 });
+              ctx.restore();
+              if (drawn) {
+                if (typeof ctx.fillText === 'function') {
+                  ctx.fillStyle = 'rgb(248,225,177)'; ctx.font = '7px monospace';
+                  const label = active ? '前往灯油长廊' : '星光门 · 尚未点亮';
+                  ctx.fillText(label, sx - 24, sy + 20);
+                }
+                break;
+              }
+              if (typeof ctx.ellipse === 'function') {
+                ctx.beginPath(); ctx.ellipse(sx + 8, sy - 12, 14, 23, 0, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgb(220,189,117)'; ctx.lineWidth = 2; ctx.stroke();
+                break;
+              }
+            }
             const active = this._portalActive();
             ctx.fillStyle = active ? 'rgb(255,200,87)' : 'rgb(110,100,140)';
             ctx.fillRect(sx, sy, 16, 2);
@@ -2224,6 +2540,179 @@
           }
           default:
             break; // 其余实体（NPC 精灵、告示牌等）由 #13 渲染
+        }
+      }
+      const nearby = this.player && this._nearInteractable();
+      if ((nearby || this.carriedBox) && typeof ctx.fillText === 'function') {
+        const actor = nearby || this.carriedBox;
+        const label = this.carriedBox ? '放下礼物盒' : actor.type === 'npc' ? (this.characters[actor.id] || {}).name
+          : actor.type === 'sheep' ? '黑羊' : actor.type === 'door' ? '打开杂物间'
+          : actor.type === 'record' ? '取走唱片' : actor.type === 'gramophone' ? '唱片机'
+          : actor.type === 'box' ? actor.locked ? '礼物盒尚未解锁' : '拿起礼物盒' : '告示牌';
+        const text = (label || '') + ' · E / A';
+        const px = this.carriedBox ? this.player.x : actor.x * TILE;
+        const py = this.carriedBox ? this.player.y - 12 : actor.y * TILE;
+        const x = Math.max(4, Math.min(VIEW_W - 100, px - camX - 24));
+        const y = Math.max(12, py - camY - 4);
+        ctx.fillStyle = 'rgb(43,33,64)';
+        ctx.fillRect(x - 2, y - 10, 100, 13);
+        ctx.fillStyle = 'rgb(255,243,196)';
+        ctx.font = '8px monospace';
+        ctx.fillText(text, x, y);
+      }
+    }
+
+    _drawGift(x, y) {
+      return this._drawSceneryAsset({ art: 'backstage', frame: [540, 30, 480, 510], x, y, w: 1.5, h: 1.6 });
+    }
+
+    /** 官方封套原图与黑胶分开绘制，保留封面，不让生成图改写专辑设计。 */
+    _drawRecord(x, y, size) {
+      const ctx = this.renderer.ctx;
+      this._drawSceneryAsset({ art: 'cover', x: x + size * 0.35, y, w: size * 0.65, h: size * 0.65 });
+      const px = Math.round(x * TILE - this.camera.x), py = Math.round((y + 0.22) * TILE - this.camera.y);
+      const s = Math.round(size * 10);
+      ctx.fillStyle = 'rgb(31,31,43)'; ctx.fillRect(px + 2, py, s - 4, s); ctx.fillRect(px, py + 3, s, s - 6);
+      ctx.fillStyle = 'rgb(69,64,80)'; ctx.fillRect(px + 3, py + 3, s - 6, 1);
+      ctx.fillStyle = 'rgb(227,161,173)'; ctx.fillRect(px + Math.floor(s / 2) - 2, py + Math.floor(s / 2) - 2, 4, 4);
+      ctx.fillStyle = 'rgb(232,212,171)'; ctx.fillRect(px + Math.floor(s / 2), py + Math.floor(s / 2), 1, 1);
+    }
+
+    /** 场景图集只负责绘制；家具脚下的 F/M 瓦片统一决定碰撞。 */
+    _drawSceneryAsset(d) {
+      const lit = d.kind === 'cake' && this.stars >= this._starCount() && d.litArt;
+      const src = (this.level.sceneryAssets || {})[lit ? d.litArt : d.art];
+      const img = this._sceneryImages.get(src);
+      if (!img || !img.complete || img.naturalWidth <= 0) return false;
+      const frame = (lit ? d.litFrame : d.frame) || [0, 0, img.naturalWidth, img.naturalHeight];
+      this.renderer.ctx.drawImage(img, frame[0], frame[1], frame[2], frame[3],
+        Math.round(d.x * TILE - this.camera.x), Math.round(d.y * TILE - this.camera.y),
+        Math.round(d.w * TILE), Math.round(d.h * TILE));
+      return true;
+    }
+
+    /** 场景地面与家具；尚未加载的图片可降级，不阻塞移动或剧情。 */
+    _drawDecorations() {
+      const ctx = this.renderer.ctx;
+      if (this.level.stageRect) {
+        const r = this.level.stageRect;
+        const x = r.x * TILE - this.camera.x, y = r.y * TILE - this.camera.y;
+        ctx.fillStyle = 'rgb(158,110,74)'; ctx.fillRect(x, y, r.w * TILE, r.h * TILE);
+        ctx.fillStyle = 'rgb(205,158,101)';
+        for (let i = 0; i < r.h; i++) ctx.fillRect(x, y + i * TILE, r.w * TILE, 1);
+        ctx.fillStyle = 'rgb(86,56,50)'; ctx.fillRect(x, y + r.h * TILE - 3, r.w * TILE, 3);
+      }
+      if (this.level.sceneryAssets) {
+        // 只在真正墙体与地板交界处收边，不给每块墙砖重复加踢脚线。
+        const rows = this.level.map.rows;
+        for (let ty = 0; ty < this.level.map.h; ty++) {
+          for (let tx = 0; tx < this.level.map.w; tx++) {
+            if (rows[ty][tx] !== '#') continue;
+            const x = Math.round(tx * TILE - this.camera.x), y = Math.round(ty * TILE - this.camera.y);
+            if (x < -TILE || y < -TILE || x > VIEW_W || y > VIEW_H) continue;
+            ctx.fillStyle = 'rgb(221,210,186)'; ctx.fillRect(x, y, TILE, TILE);
+            const floorBelow = this.mechanics.tileType(tx, ty + 1) === 'floor';
+            if (floorBelow) {
+              ctx.fillStyle = 'rgb(119,85,63)'; ctx.fillRect(x, y + 9, TILE, 7);
+              ctx.fillStyle = 'rgb(177,134,91)'; ctx.fillRect(x + 2, y + 11, 12, 3);
+            }
+            ctx.fillStyle = 'rgb(177,134,91)';
+            if (floorBelow) ctx.fillRect(x, y + 13, TILE, 2);
+            ctx.fillStyle = 'rgb(63,73,92)';
+            if (this.mechanics.tileType(tx + 1, ty) === 'floor') ctx.fillRect(x + 14, y, 2, TILE);
+            if (this.mechanics.tileType(tx - 1, ty) === 'floor') ctx.fillRect(x, y, 2, TILE);
+          }
+        }
+      }
+      for (const rug of this.level.groundDecorations || []) {
+        const x = Math.round(rug.x * TILE - this.camera.x), y = Math.round(rug.y * TILE - this.camera.y);
+        ctx.fillStyle = rug.border;
+        ctx.fillRect(x, y, rug.w * TILE, rug.h * TILE);
+        ctx.fillStyle = rug.color;
+        ctx.fillRect(x + 2, y + 2, rug.w * TILE - 4, rug.h * TILE - 4);
+        ctx.fillStyle = rug.border;
+        for (let i = 8; i < rug.w * TILE - 8; i += 12) {
+          ctx.fillRect(x + i, y + 5, 3, 1);
+          ctx.fillRect(x + i, y + rug.h * TILE - 6, 3, 1);
+        }
+      }
+      const decorations = (this.level.decorations || []).slice().sort((a, b) =>
+        (a.kind === 'rug' ? -1 : 0) - (b.kind === 'rug' ? -1 : 0));
+      for (const d of decorations) {
+        const x = Math.round(d.x * TILE - this.camera.x);
+        const y = Math.round(d.y * TILE - this.camera.y);
+        if (x + (d.w || 2) * TILE < 0 || y + (d.h || 2) * TILE < 0 || x > VIEW_W || y > VIEW_H) continue;
+        if (d.art && this._drawSceneryAsset(d)) continue;
+        if (d.kind === 'stageSteps') {
+          ctx.fillStyle = 'rgb(92,64,49)'; ctx.fillRect(x - 3, y, 22, 16);
+          ctx.fillStyle = 'rgb(224,185,126)';
+          for (let i = 0; i < 3; i++) ctx.fillRect(x - 3, y + 2 + i * 5, 22, 2);
+        } else if (d.kind === 'chair') {
+          ctx.fillStyle = 'rgb(184,224,210)';
+          ctx.fillRect(x + 3, y + 2, 10, 5);
+          ctx.fillRect(x + 2, y + 8, 12, 3);
+          ctx.fillStyle = 'rgb(111,151,148)';
+          ctx.fillRect(x + 3, y + 11, 2, 4);
+          ctx.fillRect(x + 11, y + 11, 2, 4);
+        } else if (d.kind === 'cake') {
+          ctx.fillStyle = 'rgb(93,65,73)';
+          ctx.fillRect(x - 4, y + 11, 24, 3);
+          ctx.fillRect(x - 2, y + 14, 2, 2);
+          ctx.fillRect(x + 16, y + 14, 2, 2);
+          ctx.fillStyle = 'rgb(255,182,201)';
+          ctx.fillRect(x + 1, y + 4, 14, 7);
+          ctx.fillStyle = 'rgb(246,231,216)';
+          ctx.fillRect(x + 1, y + 4, 14, 2);
+          ctx.fillRect(x + 7, y, 2, 4);
+          if (this.stars >= this._starCount()) {
+            ctx.fillStyle = 'rgb(255,209,102)';
+            ctx.fillRect(x + 7, y - 3, 2, 3);
+          }
+        } else if (d.kind === 'arch') {
+          for (let i = 0; i < 7; i++) {
+            ctx.fillStyle = i % 2 ? 'rgb(255,182,201)' : 'rgb(184,224,210)';
+            const bx = x - 23 + i * 7;
+            const by = y - 10 + Math.abs(i - 3) * 5;
+            ctx.fillRect(bx, by, 6, 7);
+            ctx.fillStyle = 'rgb(255,209,102)';
+            ctx.fillRect(bx + 2, by + 7, 1, 9);
+          }
+        } else if (d.kind === 'curtain') {
+          ctx.fillStyle = 'rgb(151,72,109)';
+          ctx.fillRect(x, y, 16, 32);
+          ctx.fillStyle = 'rgb(255,182,201)';
+          ctx.fillRect(x + 3, y, 2, 32);
+          ctx.fillStyle = 'rgb(255,209,102)';
+          ctx.fillRect(x, y + 20, 16, 2);
+        } else if (d.kind === 'bunting') {
+          ctx.fillStyle = 'rgb(255,182,201)';
+          ctx.fillRect(x, y, 32, 1);
+          for (let i = 0; i < 4; i++) {
+            ctx.fillStyle = i % 2 ? 'rgb(184,224,210)' : 'rgb(255,209,102)';
+            ctx.fillRect(x + i * 8 + 1, y + 1, 6, 3);
+            ctx.fillRect(x + i * 8 + 2, y + 4, 4, 2);
+            ctx.fillRect(x + i * 8 + 3, y + 6, 2, 1);
+          }
+        }
+      }
+    }
+
+    _drawExterior() {
+      if (!this.level.outdoor) return;
+      const area = this._currentArea();
+      const b = area && area.id === 'backstage' ? area.rect : { x: 0, y: 0, w: 40, h: 28 };
+      const ctx = this.renderer.ctx;
+      for (let y = Math.floor(this.camera.y / TILE); y <= Math.floor((this.camera.y + VIEW_H) / TILE); y++) {
+        for (let x = Math.floor(this.camera.x / TILE); x <= Math.floor((this.camera.x + VIEW_W) / TILE); x++) {
+          if (x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h) continue;
+          const px = Math.round(x * TILE - this.camera.x), py = Math.round(y * TILE - this.camera.y);
+          ctx.fillStyle = (x + y) % 2 ? 'rgb(77,104,73)' : 'rgb(81,109,76)';
+          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = 'rgb(111,140,87)';
+          ctx.fillRect(px + 3, py + 4, 1, 3); ctx.fillRect(px + 10, py + 11, 2, 1);
+          if (Math.abs(x * 13 + y * 7) % 9 === 0) {
+            ctx.fillStyle = 'rgb(231,204,153)'; ctx.fillRect(px + 7, py + 7, 2, 2);
+          }
         }
       }
     }
