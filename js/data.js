@@ -1,6 +1,6 @@
 /**
  * js/data.js —— 关卡数据：6 关地图 + 对话 + 谜题（数据驱动）
- * 所属任务：Issue #11 地图数据（未开始，levels 暂空） / Issue #12 对话文案（已接入）。
+ * 所属任务：Issue #11 地图数据（关 1 已接入，关 2–6 待制作） / Issue #12 对话文案（已接入）。
  *
  * 数据格式规格见 docs/GAME_DESIGN.md §11（GAME 全局对象：
  * meta / scenes / avatarPresets / characters / levels / dialogue / saveKey）。
@@ -30,9 +30,13 @@
   const GAME = {
     meta: { version: '1.0', tile: 16, viewport: { w: 20, h: 14 } },
 
-    /* 独立场景作用域（序章等）：场景系统由 Issue #11 接入 */
+    /* 独立场景：新游戏播放 p0，结束后载入第一关；不纳入 levels 与星数。 */
     scenes: {
-      p0: { title: '生日夜的房间' },
+      p0: {
+        title: '生日夜的房间',
+        background: 'assets/scenes/p0-bedroom.png',
+        portraits: false, // 序章聚焦场景；Byeori 立绘尚未制作
+      },
     },
 
     /* 账户头像固定选项集（Issue #44）：昵称/头像读写 profiles 表，白名单放在前端。
@@ -64,8 +68,2001 @@
       all: { name: '全员', color: '#FFFFFF' },   // 伪说话人（仅结局合唱行）
     },
 
-    /* 关卡列表：地图与实体由 Issue #11 落地（main.js 在其就位前使用内置占位关卡） */
-    levels: [],
+    /* 关 1：礼堂 / 舞台 / 后台化妆间，实体坐标统一，区域入口仅移动玩家。 */
+    levels: [
+      {
+        "id": 1,
+        "title": "Birthday Wish",
+        "region": "海洋生日会 · 舞台与化妆间",
+        "tileset": "birthday",
+        "palette": {
+          "bg": "#1B2847",
+          "cream": "#C69A6F",
+          "pink": "#A97856",
+          "mint": "#B8E0D2",
+          "gold": "#E4BD8B"
+        },
+        "bgm": "l1_candle",
+        "portraits": false,
+        "starCount": 3,
+        "map": {
+          "w": 68,
+          "h": 28,
+          "rows": [
+            "####################################################################",
+            "##########MMMMMMMMMMMMMMMMMMM#######################################",
+            "#·#FFFFF##MMMMMMMMMMMMMMMMMMM#######################################",
+            "#·#·····##MMMMMMMMMMMMMMMMMMM#######################################",
+            "#·#·····##MMMMMMMMMMMMMMMMMMM#######################################",
+            "#·#·····##···················#######################################",
+            "#·#·····##···················############········FFFFFFFFFFFFFFF···#",
+            "#·###·####··FFF······FF······############·FF·FF··FFFFFFFFFFFFFFF···#",
+            "#········#·······FFF·········############·FF·····FFFFFFFFFFFFFFF···#",
+            "#········#···················############·········F··F··F··F··F····#",
+            "#········##########·#####################·FF·F·····················#",
+            "#······································##··························#",
+            "#······································##·········F··F··F··F··F····#",
+            "#······································##········FFFFFFFFFFFFFFF···#",
+            "#···FFF·························FFFF···##········FFFFFFFFFFFFFFF···#",
+            "#············F··F··F··F··F·············##········FFFFFFFFFFFFFFF···#",
+            "#······································##········FFFFFFFFFFFFFFF···#",
+            "#······································##········FFFFFFFFFFFFFFF···#",
+            "#············F··F··F··F··F·············##········FFFFFFFFFFFFFFF···#",
+            "#···FFF································##·········F··F··F··F··F····#",
+            "#·······························FFFF···##··························#",
+            "#············F··F··F··F··F·············##··························#",
+            "#······································##·········F··F··F··F··F····#",
+            "#······································##·FFFFF··FFFFFFFFFFFFFFF···#",
+            "#······F·····F··F··F··F··F·············##·FFFFF··FFFFFFFFFFFFFFF···#",
+            "#······FF·······················FFFF···##·FFF····FFFFFFFFFFFFFFF···#",
+            "#······································##··························#",
+            "####################################################################"
+          ],
+          "legend": {
+            "#": "wall",
+            "·": "floor",
+            "F": "wall",
+            "M": "wall"
+          },
+          "styles": {
+            "F": "floor",
+            "M": "panel"
+          }
+        },
+        "entities": [
+          {
+            "type": "spawn",
+            "x": 2,
+            "y": 25
+          },
+          {
+            "type": "npc",
+            "id": "lily",
+            "x": 5,
+            "y": 24,
+            "room": "hall",
+            "dialogue": "l1.intro"
+          },
+          {
+            "type": "npc",
+            "id": "haewon",
+            "x": 10,
+            "y": 21,
+            "room": "hall",
+            "dialogue": "l1.npc.haewon"
+          },
+          {
+            "type": "npc",
+            "id": "sullyoon",
+            "x": 24,
+            "y": 12,
+            "room": "hall",
+            "dialogue": "l1.npc.sullyoon"
+          },
+          {
+            "type": "npc",
+            "id": "bae",
+            "x": 8,
+            "y": 12,
+            "room": "hall",
+            "dialogue": "l1.npc.bae"
+          },
+          {
+            "type": "npc",
+            "id": "jiwoo",
+            "x": 18,
+            "y": 14,
+            "room": "hall",
+            "dialogue": "l1.npc.jiwoo"
+          },
+          {
+            "type": "npc",
+            "id": "kyujin",
+            "x": 27,
+            "y": 14,
+            "room": "hall",
+            "dialogue": "l1.npc.kyujin"
+          },
+          {
+            "type": "sheep",
+            "id": "sheep1",
+            "x": 3,
+            "y": 20,
+            "dialogue": "l1.sheep"
+          },
+          {
+            "type": "star",
+            "id": "s1",
+            "x": 10,
+            "y": 24
+          },
+          {
+            "type": "star",
+            "id": "s2",
+            "x": 4,
+            "y": 4
+          },
+          {
+            "type": "door",
+            "id": "gift-door",
+            "x": 5,
+            "y": 7,
+            "open": false,
+            "label": "杂物间 · E 开门"
+          },
+          {
+            "type": "roomdoor",
+            "id": "to-backstage",
+            "x": 28,
+            "y": 5,
+            "to": {
+              "x": 65,
+              "y": 20
+            },
+            "label": "后台化妆间"
+          },
+          {
+            "type": "roomdoor",
+            "id": "to-hall",
+            "x": 66,
+            "y": 20,
+            "to": {
+              "x": 27,
+              "y": 8
+            },
+            "label": "返回舞台"
+          },
+          {
+            "type": "star",
+            "id": "s3",
+            "x": 47,
+            "y": 16,
+            "requiresDialogue": [
+              "l1.backstage.lily",
+              "l1.backstage.sullyoon",
+              "l1.backstage.byeori"
+            ]
+          },
+          {
+            "type": "portal",
+            "x": 42,
+            "y": 16,
+            "to": 2,
+            "requiresDialogue": [
+              "l1.backstage.lily",
+              "l1.backstage.sullyoon",
+              "l1.backstage.byeori"
+            ],
+            "facing": "east"
+          },
+          {
+            "type": "sign",
+            "id": "party-plan",
+            "x": 3,
+            "y": 23,
+            "text": "生日会：和六位 Muse 聊聊，收集气球下与杂物间的两颗星。杂物间按 E 开门。准备好后，上舞台看看唱片机。"
+          },
+          {
+            "type": "sign",
+            "id": "backstage",
+            "x": 30,
+            "y": 11,
+            "text": "舞台上的唱片机正在等一张唱片。完成六位 Muse 的自我介绍、找到两颗星后，靠近它看看。舞台右侧的帷幕后通往化妆间。"
+          },
+          {
+            "type": "npc",
+            "id": "lily",
+            "x": 43,
+            "y": 12,
+            "room": "backstage",
+            "dialogue": "l1.backstage.lily"
+          },
+          {
+            "type": "npc",
+            "id": "haewon",
+            "x": 44,
+            "y": 12,
+            "room": "backstage",
+            "dialogue": "l1.backstage.haewon"
+          },
+          {
+            "type": "npc",
+            "id": "sullyoon",
+            "x": 45,
+            "y": 12,
+            "room": "backstage",
+            "dialogue": "l1.backstage.sullyoon"
+          },
+          {
+            "type": "npc",
+            "id": "bae",
+            "x": 43,
+            "y": 19,
+            "room": "backstage",
+            "dialogue": "l1.backstage.bae"
+          },
+          {
+            "type": "npc",
+            "id": "jiwoo",
+            "x": 44,
+            "y": 19,
+            "room": "backstage",
+            "dialogue": "l1.backstage.jiwoo"
+          },
+          {
+            "type": "npc",
+            "id": "kyujin",
+            "x": 45,
+            "y": 19,
+            "room": "backstage",
+            "dialogue": "l1.backstage.kyujin"
+          },
+          {
+            "type": "npc",
+            "id": "byeori",
+            "x": 45,
+            "y": 16,
+            "room": "backstage",
+            "dialogue": "l1.backstage.byeori"
+          },
+          {
+            "type": "record",
+            "id": "birthday-record",
+            "x": 5,
+            "y": 4,
+            "dialogue": "l1.record.take",
+            "requiresStars": [
+              "s1",
+              "s2"
+            ],
+            "requiresDialogue": [
+              "l1.npc.lily",
+              "l1.npc.haewon",
+              "l1.npc.sullyoon",
+              "l1.npc.bae",
+              "l1.npc.jiwoo",
+              "l1.npc.kyujin"
+            ]
+          },
+          {
+            "type": "gramophone",
+            "id": "stage-music",
+            "x": 25,
+            "y": 8,
+            "dialogue": "l1.music.play",
+            "recordNode": "l1.record.take",
+            "requiresStars": [
+              "s1",
+              "s2"
+            ],
+            "requiresDialogue": [
+              "l1.npc.lily",
+              "l1.npc.haewon",
+              "l1.npc.sullyoon",
+              "l1.npc.bae",
+              "l1.npc.jiwoo",
+              "l1.npc.kyujin"
+            ]
+          },
+          {
+            "type": "gate",
+            "id": "backstage-gate",
+            "requiresStars": [
+              "s1",
+              "s2"
+            ],
+            "x": 28,
+            "y": 5,
+            "open": false,
+            "requiresDialogue": [
+              "l1.music.play"
+            ],
+            "visual": "curtain"
+          },
+          {
+            "type": "trigger",
+            "id": "music-ready",
+            "skipIfDialogue": [
+              "l1.record.take",
+              "l1.music.play"
+            ],
+            "x": 25,
+            "y": 8,
+            "rect": {
+              "x": 23,
+              "y": 7,
+              "w": 4,
+              "h": 3
+            },
+            "dialogue": "l1.music.ready",
+            "requiresStars": [
+              "s1",
+              "s2"
+            ],
+            "requiresDialogue": [
+              "l1.npc.lily",
+              "l1.npc.haewon",
+              "l1.npc.sullyoon",
+              "l1.npc.bae",
+              "l1.npc.jiwoo",
+              "l1.npc.kyujin"
+            ]
+          }
+        ],
+        "sceneryAssets": {
+          "classroom": "assets/scenes/level1/classroom-props-v1.png",
+          "ocean": "assets/scenes/level1/ocean-party-v1.png",
+          "mural": "assets/scenes/level1/whale-mural-v1.png",
+          "backstage": "assets/scenes/level1/backstage-props-v1.png",
+          "portal": "assets/scenes/level1/star-portal-v1.png",
+          "seating": "assets/scenes/level1/seating-entrance-v1.png",
+          "curtains": "assets/scenes/level1/stage-curtains-v1.png",
+          "games": "assets/scenes/level1/party-games-v1.png",
+          "fitting": "assets/scenes/level1/dressing-music-v1.png",
+          "instruments": "assets/scenes/level1/stage-instruments-v1.png",
+          "cover": "assets/scenes/level1/strange-muse-cover.jpg",
+          "vanityModules": "assets/scenes/level1/vanity-modules-v1.png",
+          "portalEast": "assets/scenes/level1/star-portal-east-v1.png"
+        },
+        "groundDecorations": [],
+        "decorations": [
+          {
+            "kind": "entranceDoor",
+            "art": "seating",
+            "frame": [
+              570,
+              0,
+              680,
+              724
+            ],
+            "x": 0.7,
+            "y": 25.5,
+            "w": 3,
+            "h": 2.5
+          },
+          {
+            "kind": "arch",
+            "art": "ocean",
+            "frame": [
+              0,
+              0,
+              680,
+              670
+            ],
+            "x": 8,
+            "y": 22,
+            "w": 5,
+            "h": 4
+          },
+          {
+            "kind": "welcomeWhale",
+            "art": "ocean",
+            "frame": [
+              0,
+              688,
+              655,
+              550
+            ],
+            "x": 5.5,
+            "y": 24,
+            "w": 3,
+            "h": 2.6
+          },
+          {
+            "kind": "rug",
+            "art": "backstage",
+            "frame": [
+              0,
+              550,
+              512,
+              430
+            ],
+            "x": 5.5,
+            "y": 22,
+            "w": 8,
+            "h": 4
+          },
+          {
+            "kind": "balloons",
+            "art": "games",
+            "frame": [
+              0,
+              512,
+              512,
+              512
+            ],
+            "x": 6,
+            "y": 20.5,
+            "w": 3,
+            "h": 4.8
+          },
+          {
+            "kind": "window",
+            "art": "games",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": -0.1,
+            "y": 8.5,
+            "w": 3,
+            "h": 3.8
+          },
+          {
+            "kind": "window",
+            "art": "games",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": -0.1,
+            "y": 16.5,
+            "w": 3,
+            "h": 3.8
+          },
+          {
+            "kind": "ringToss",
+            "art": "games",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 31,
+            "y": 10.5,
+            "w": 6,
+            "h": 5
+          },
+          {
+            "kind": "fishing",
+            "art": "games",
+            "frame": [
+              1024,
+              0,
+              512,
+              512
+            ],
+            "x": 31,
+            "y": 17,
+            "w": 6,
+            "h": 4.5
+          },
+          {
+            "kind": "beanbag",
+            "art": "games",
+            "frame": [
+              512,
+              512,
+              512,
+              512
+            ],
+            "x": 31,
+            "y": 22,
+            "w": 6,
+            "h": 4.5
+          },
+          {
+            "kind": "instrumentBench",
+            "art": "instruments",
+            "frame": [
+              512,
+              512,
+              512,
+              512
+            ],
+            "x": 3,
+            "y": 12,
+            "w": 4.5,
+            "h": 3
+          },
+          {
+            "kind": "costumeRail",
+            "art": "instruments",
+            "frame": [
+              0,
+              512,
+              512,
+              512
+            ],
+            "x": 3,
+            "y": 16.5,
+            "w": 4.5,
+            "h": 3.5
+          },
+          {
+            "kind": "storageTrunk",
+            "art": "games",
+            "frame": [
+              1024,
+              512,
+              512,
+              512
+            ],
+            "x": 3,
+            "y": 1.5,
+            "w": 4,
+            "h": 2.1
+          },
+          {
+            "kind": "whaleMural",
+            "art": "mural",
+            "x": 11.5,
+            "y": 2.8,
+            "w": 15,
+            "h": 3.2
+          },
+          {
+            "kind": "piano",
+            "art": "instruments",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 12,
+            "y": 4.5,
+            "w": 3.6,
+            "h": 3.5
+          },
+          {
+            "kind": "drums",
+            "art": "instruments",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 16.5,
+            "y": 5,
+            "w": 3.7,
+            "h": 3.5
+          },
+          {
+            "kind": "guitars",
+            "art": "instruments",
+            "frame": [
+              1024,
+              0,
+              512,
+              512
+            ],
+            "x": 20.7,
+            "y": 4.5,
+            "w": 3,
+            "h": 3.5
+          },
+          {
+            "kind": "stageCurtains",
+            "art": "curtains",
+            "x": 9,
+            "y": 0,
+            "w": 21,
+            "h": 11
+          },
+          {
+            "kind": "stageSteps",
+            "x": 19,
+            "y": 10,
+            "w": 1,
+            "h": 1
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "y": 14.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "y": 14.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 18.8,
+            "y": 14.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 21.8,
+            "y": 14.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 24.8,
+            "y": 14.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "y": 17.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "y": 17.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 18.8,
+            "y": 17.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 21.8,
+            "y": 17.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 24.8,
+            "y": 17.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "y": 20.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "y": 20.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 18.8,
+            "y": 20.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 21.8,
+            "y": 20.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 24.8,
+            "y": 20.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 12.8,
+            "y": 23.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 15.8,
+            "y": 23.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 18.8,
+            "y": 23.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 21.8,
+            "y": 23.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "chair",
+            "x": 24.8,
+            "y": 23.3,
+            "w": 1.4,
+            "h": 1.7,
+            "facing": "north",
+            "art": "seating",
+            "frame": [
+              60,
+              150,
+              460,
+              520
+            ]
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 49,
+            "y": 6,
+            "w": 3,
+            "h": 3,
+            "facing": "south",
+            "stations": 1,
+            "collision": {
+              "x": 49,
+              "y": 6,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 50,
+            "y": 8.798283261802576,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 50,
+              "y": 9,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 52,
+            "y": 6,
+            "w": 3,
+            "h": 3,
+            "facing": "south",
+            "stations": 1,
+            "collision": {
+              "x": 52,
+              "y": 6,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 53,
+            "y": 8.798283261802576,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 53,
+              "y": 9,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 55,
+            "y": 6,
+            "w": 3,
+            "h": 3,
+            "facing": "south",
+            "stations": 1,
+            "collision": {
+              "x": 55,
+              "y": 6,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 56,
+            "y": 8.798283261802576,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 56,
+              "y": 9,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 58,
+            "y": 6,
+            "w": 3,
+            "h": 3,
+            "facing": "south",
+            "stations": 1,
+            "collision": {
+              "x": 58,
+              "y": 6,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 59,
+            "y": 8.798283261802576,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 59,
+              "y": 9,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 61,
+            "y": 6,
+            "w": 3,
+            "h": 3,
+            "facing": "south",
+            "stations": 1,
+            "collision": {
+              "x": 61,
+              "y": 6,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 62,
+            "y": 8.798283261802576,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 62,
+              "y": 9,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 49,
+            "y": 13,
+            "w": 3,
+            "h": 3,
+            "facing": "north",
+            "stations": 1,
+            "collision": {
+              "x": 49,
+              "y": 13,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 50,
+            "y": 11.798283261802576,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 50,
+              "y": 12,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 52,
+            "y": 13,
+            "w": 3,
+            "h": 3,
+            "facing": "north",
+            "stations": 1,
+            "collision": {
+              "x": 52,
+              "y": 13,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 53,
+            "y": 11.798283261802576,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 53,
+              "y": 12,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 55,
+            "y": 13,
+            "w": 3,
+            "h": 3,
+            "facing": "north",
+            "stations": 1,
+            "collision": {
+              "x": 55,
+              "y": 13,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 56,
+            "y": 11.798283261802576,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 56,
+              "y": 12,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 58,
+            "y": 13,
+            "w": 3,
+            "h": 3,
+            "facing": "north",
+            "stations": 1,
+            "collision": {
+              "x": 58,
+              "y": 13,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 59,
+            "y": 11.798283261802576,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 59,
+              "y": 12,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 61,
+            "y": 13,
+            "w": 3,
+            "h": 3,
+            "facing": "north",
+            "stations": 1,
+            "collision": {
+              "x": 61,
+              "y": 13,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 62,
+            "y": 11.798283261802576,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 62,
+              "y": 12,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 49,
+            "y": 16,
+            "w": 3,
+            "h": 3,
+            "facing": "south",
+            "stations": 1,
+            "collision": {
+              "x": 49,
+              "y": 16,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 50,
+            "y": 18.798283261802574,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 50,
+              "y": 19,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 52,
+            "y": 16,
+            "w": 3,
+            "h": 3,
+            "facing": "south",
+            "stations": 1,
+            "collision": {
+              "x": 52,
+              "y": 16,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 53,
+            "y": 18.798283261802574,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 53,
+              "y": 19,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 55,
+            "y": 16,
+            "w": 3,
+            "h": 3,
+            "facing": "south",
+            "stations": 1,
+            "collision": {
+              "x": 55,
+              "y": 16,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 56,
+            "y": 18.798283261802574,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 56,
+              "y": 19,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 58,
+            "y": 16,
+            "w": 3,
+            "h": 3,
+            "facing": "south",
+            "stations": 1,
+            "collision": {
+              "x": 58,
+              "y": 16,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 59,
+            "y": 18.798283261802574,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 59,
+              "y": 19,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              0,
+              512,
+              512
+            ],
+            "x": 61,
+            "y": 16,
+            "w": 3,
+            "h": 3,
+            "facing": "south",
+            "stations": 1,
+            "collision": {
+              "x": 61,
+              "y": 16,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 62,
+            "y": 18.798283261802574,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 62,
+              "y": 19,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 49,
+            "y": 23,
+            "w": 3,
+            "h": 3,
+            "facing": "north",
+            "stations": 1,
+            "collision": {
+              "x": 49,
+              "y": 23,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 50,
+            "y": 21.798283261802574,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 50,
+              "y": 22,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 52,
+            "y": 23,
+            "w": 3,
+            "h": 3,
+            "facing": "north",
+            "stations": 1,
+            "collision": {
+              "x": 52,
+              "y": 23,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 53,
+            "y": 21.798283261802574,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 53,
+              "y": 22,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 55,
+            "y": 23,
+            "w": 3,
+            "h": 3,
+            "facing": "north",
+            "stations": 1,
+            "collision": {
+              "x": 55,
+              "y": 23,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 56,
+            "y": 21.798283261802574,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 56,
+              "y": 22,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 58,
+            "y": 23,
+            "w": 3,
+            "h": 3,
+            "facing": "north",
+            "stations": 1,
+            "collision": {
+              "x": 58,
+              "y": 23,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 59,
+            "y": 21.798283261802574,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 59,
+              "y": 22,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "vanity",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              0,
+              512,
+              512
+            ],
+            "x": 61,
+            "y": 23,
+            "w": 3,
+            "h": 3,
+            "facing": "north",
+            "stations": 1,
+            "collision": {
+              "x": 61,
+              "y": 23,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "vanityStool",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1156,
+              202,
+              233,
+              280
+            ],
+            "x": 62,
+            "y": 21.798283261802574,
+            "w": 1,
+            "h": 1.201716738197425,
+            "collision": {
+              "x": 62,
+              "y": 22,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "posters",
+            "room": "backstage",
+            "art": "fitting",
+            "frame": [
+              1024,
+              0,
+              170,
+              512
+            ],
+            "x": 51,
+            "y": 3.5,
+            "w": 1.6,
+            "h": 2.3
+          },
+          {
+            "kind": "posters",
+            "room": "backstage",
+            "art": "fitting",
+            "frame": [
+              1194,
+              0,
+              170,
+              512
+            ],
+            "x": 56,
+            "y": 3.5,
+            "w": 1.6,
+            "h": 2.3
+          },
+          {
+            "kind": "posters",
+            "room": "backstage",
+            "art": "fitting",
+            "frame": [
+              1364,
+              0,
+              170,
+              512
+            ],
+            "x": 61,
+            "y": 3.5,
+            "w": 1.6,
+            "h": 2.3
+          },
+          {
+            "kind": "stageProps",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              512,
+              512,
+              512,
+              512
+            ],
+            "x": 41,
+            "y": 6,
+            "w": 3.5,
+            "h": 3.5,
+            "collision": {
+              "x": 42,
+              "y": 7,
+              "w": 2,
+              "h": 2
+            }
+          },
+          {
+            "kind": "instrumentBench",
+            "room": "backstage",
+            "art": "instruments",
+            "frame": [
+              512,
+              512,
+              512,
+              512
+            ],
+            "x": 44.5,
+            "y": 6,
+            "w": 2.8,
+            "h": 2.8,
+            "collision": {
+              "x": 45,
+              "y": 7,
+              "w": 2,
+              "h": 1
+            }
+          },
+          {
+            "kind": "storageTrunk",
+            "room": "backstage",
+            "art": "games",
+            "frame": [
+              1024,
+              512,
+              512,
+              512
+            ],
+            "x": 41.5,
+            "y": 9.2,
+            "w": 3,
+            "h": 2.8,
+            "collision": {
+              "x": 42,
+              "y": 10,
+              "w": 2,
+              "h": 1
+            }
+          },
+          {
+            "kind": "makeupTrolley",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              0,
+              512,
+              512,
+              512
+            ],
+            "x": 45,
+            "y": 9.2,
+            "w": 2,
+            "h": 2.5,
+            "collision": {
+              "x": 45,
+              "y": 10,
+              "w": 1,
+              "h": 1
+            }
+          },
+          {
+            "kind": "costumeRail",
+            "room": "backstage",
+            "art": "vanityModules",
+            "frame": [
+              1024,
+              512,
+              512,
+              512
+            ],
+            "x": 41,
+            "y": 22,
+            "w": 4.5,
+            "h": 4.5,
+            "collision": {
+              "x": 42,
+              "y": 23,
+              "w": 3,
+              "h": 3
+            }
+          },
+          {
+            "kind": "guitars",
+            "room": "backstage",
+            "art": "instruments",
+            "frame": [
+              1024,
+              0,
+              512,
+              512
+            ],
+            "x": 45,
+            "y": 22,
+            "w": 2.5,
+            "h": 3.5,
+            "collision": {
+              "x": 45,
+              "y": 23,
+              "w": 2,
+              "h": 2
+            }
+          }
+        ],
+        "areas": [
+          {
+            "id": "hall",
+            "title": "生日会礼堂",
+            "rect": {
+              "x": -2,
+              "y": -2,
+              "w": 44,
+              "h": 32
+            },
+            "bounds": {
+              "x": 0,
+              "y": 0,
+              "w": 40,
+              "h": 28
+            }
+          },
+          {
+            "id": "backstage",
+            "title": "后台化妆间",
+            "rect": {
+              "x": 40,
+              "y": 3,
+              "w": 28,
+              "h": 25
+            }
+          }
+        ],
+        "outdoor": true,
+        "entryFade": 1.4,
+        "stageRect": {
+          "x": 10,
+          "y": 5,
+          "w": 19,
+          "h": 5
+        }
+      }
+    ],
 
     /* ══════════ 对话稿（GAME_DESIGN.md §8，v0.3 全文） ══════════ */
 
@@ -104,7 +2101,7 @@
           { s: 'lily', t: '这里的彩带、椅子、蛋糕，都是照着你记忆里的生日会摆的。可蜡烛都灭了——愿望之星一散，生日会就停在这一刻。' },
           { s: 'haewon', t: '帮我们找回三颗愿望之星吧。集齐了，蜡烛就能重新亮起来。' },
           { s: 'lily', t: '先收下气球拱门下那颗——小时候的第一颗糖，也是第一颗愿望之星。' },
-          { s: 'haewon', t: '礼物堆后面还藏着一颗，要把礼物盒推开。最后，和这里的每一位缪斯都聊聊天。六个愿望，一个都不能少。' },
+          { s: 'haewon', t: '杂物间按 E 开门，里面有第二颗星。先和六位 Muse 都聊聊，再找齐两颗星——然后去舞台上看看唱片机。' },
           { s: 'haewon', t: '顺带一提，在这个梦里我们都有神话倒影——Lily 是春天，我是冥王。今天冥王也得当幼儿园小主持人。' },
           { s: 'haewon', t: '操作提示：方向键 / WASD 移动，E 或空格互动。手机用屏幕方向键和 A 键。' },
           { s: 'lily', t: '慢慢来。小时候的生日会，本来就不赶时间。응답하라 NSWER！' },
@@ -121,9 +2118,9 @@
       'l1.star3': {
         type: 'star', trigger: 'star:s3', once: true,
         lines: [
-          { s: 'haewon', t: '哦？蛋糕旁边有东西在发光……六个人都聊过了，最后那颗星星出现了！' },
-          { s: 'lily', t: '你看，愿望凑齐的时候，蜡烛就会自己亮起来。' },
-          { s: 'nar', t: '十八岁的你站在小小的蛋糕前，忽然想起小时候踮脚吹蜡烛的样子。' },
+          { s: 'haewon', t: '精灵、Sullyoon、Lily 都聊过了，化妆间里最后那颗星星出现了！' },
+          { s: 'lily', t: '把最后的星星收好，左侧的星光门就会亮起来。' },
+          { s: 'nar', t: '化妆镜的灯光映着星星，你听见下一场生日会轻轻开了门。' },
         ],
       },
       'l1.npc.lily': {
@@ -177,9 +2174,143 @@
       'l1.lily.hint': {
         type: 'hint', trigger: 'npc:lily', once: false,
         lines: [
-          { s: 'lily', t: '卡住了就看看告示牌，或者再和我们聊聊。生日会不赶时间。' },
+          { s: 'lily', t: '杂物间按 E 开门。听完六位 Muse 的自我介绍、找到两颗星后，上舞台靠近唱片机。' },
           { s: 'lily', t: '小时候的生日会，本来就是要慢慢过的呀。' },
         ],
+      },
+      'l1.byeori.hint': {
+        type: 'hint', trigger: 'npc:byeori', once: false,
+        room: 'backstage',
+        lines: [{ s: 'byeori', t: '딩동댕！三颗愿望之星会点亮这扇星光门。生日会的下一站，是 Jiwoo 的灯油长廊！' }],
+      },
+      "l1.music.ready": {
+        "type": "cutscene",
+        "trigger": "trigger:music-ready",
+        "once": true,
+        "lines": [
+          {
+            "s": "nar",
+            "t": "唱片机的金色喇叭闪了闪光。六份祝福和两颗星都齐了，还少一张唱片。"
+          },
+          {
+            "s": "haewon",
+            "t": "去左上角的杂物间找找《Strange Muse》吧！按 E 取走唱片，再回这里按 E 播放，右侧的帷幕就会打开。"
+          }
+        ]
+      },
+      "l1.record.take": {
+        "type": "cutscene",
+        "trigger": "interact:birthday-record",
+        "once": true,
+        "lines": [
+          {
+            "s": "nar",
+            "t": "你从舞台杂物中找到了一张《Strange Muse》唱片，熟悉的专辑封面映入眼帘。"
+          },
+          {
+            "s": "nar",
+            "t": "带回舞台上的唱片机，按 E 放入并播放。"
+          }
+        ]
+      },
+      "l1.music.play": {
+        "type": "cutscene",
+        "trigger": "interact:stage-music",
+        "once": true,
+        "lines": [
+          {
+            "s": "nar",
+            "t": "你把《Strange Muse》唱片放到转盘上，唱针轻轻落下。"
+          },
+          {
+            "s": "nar",
+            "t": "温柔的旋律响起，舞台右侧的帷幕缓缓打开——后台化妆间正在等你。"
+          }
+        ]
+      },
+      "l1.backstage.lily": {
+        "type": "npc",
+        "trigger": "npc:lily",
+        "room": "backstage",
+        "once": true,
+        "lines": [
+          {
+            "s": "lily",
+            "t": "到了化妆间就好好喘口气。把最后一颗星星带上，下一站也会有人认真等你。"
+          }
+        ]
+      },
+      "l1.backstage.sullyoon": {
+        "type": "npc",
+        "trigger": "npc:sullyoon",
+        "room": "backstage",
+        "once": true,
+        "lines": [
+          {
+            "s": "sullyoon",
+            "t": "化妆镜会记得今天的光。愿望的最后一笔，留给你来写。"
+          }
+        ]
+      },
+      "l1.backstage.byeori": {
+        "type": "npc",
+        "trigger": "npc:byeori",
+        "room": "backstage",
+        "once": true,
+        "lines": [
+          {
+            "s": "byeori",
+            "t": "딩동댕！和 Lily、Sullyoon、我都聊过之后，最后的愿望之星就会出现。收好它，左侧的星光门会带你去下一关。"
+          }
+        ]
+      },
+      "l1.backstage.haewon": {
+        "type": "npc",
+        "trigger": "npc:haewon",
+        "room": "backstage",
+        "once": true,
+        "lines": [
+          {
+            "s": "haewon",
+            "t": "后台也热闹得很。镜子前的灯都亮着，别落下你的愿望。"
+          }
+        ]
+      },
+      "l1.backstage.bae": {
+        "type": "npc",
+        "trigger": "npc:bae",
+        "room": "backstage",
+        "once": true,
+        "lines": [
+          {
+            "s": "bae",
+            "t": "终于可以休息一下啦！这张圆凳给你，今天的寿星。"
+          }
+        ]
+      },
+      "l1.backstage.jiwoo": {
+        "type": "npc",
+        "trigger": "npc:jiwoo",
+        "room": "backstage",
+        "once": true,
+        "lines": [
+          {
+            "s": "jiwoo",
+            "t": "星光门就在左侧！下一站由信使 Jiwoo 接力，咻——！"
+          }
+        ]
+      },
+      "l1.backstage.kyujin": {
+        "type": "npc",
+        "trigger": "npc:kyujin",
+        "room": "backstage",
+        "once": true,
+        "lines": [
+          {
+            "s": "kyujin",
+            "t": "舞台走得不错。下一次，继续保持。"
+          }
+        ]
       },
       'l1.clear': {
         type: 'clear', trigger: 'clear:1', scopeId: 1, entry: true, once: true,

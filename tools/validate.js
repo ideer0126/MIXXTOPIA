@@ -9,6 +9,7 @@
  *   node tools/validate.js                 # 常规校验（GAME 未落地时跳过规则 1–9）
  *   node tools/validate.js --require-data  # GAME 缺失按失败处理（CI 严格模式）
  *   node tools/validate.js --self-test     # 内置用例自测规则引擎（开发用）
+ *   node tools/validate.js --level 1       # 分步制作时，仅校验已落地的单关与序章
  *
  * 数据源约定：js/data.js 可声明 `const GAME = {...}` 或 `window.GAME = {...}`，
  * 两种写法本脚本都支持；data.js 落地前（Issue #11/#12 未完成）本脚本对
@@ -19,7 +20,7 @@
  * 已收集星集合；动作含移动、推箱（落点不含门格，与 engine 口径一致）、携油点灯、
  * 月相/风车开关、落点拾取。
  * BFS 穷举后仍无法「集齐本关全部星星并到达已激活传送门/蛋糕」→ 报错。
- * 对话条件星、清凉条计时、落水复位按宽松假设处理（只可能漏报、不会误报）；
+ * requiresDialogue 条件星包含就地 NPC 对话与 intro 前置；清凉条计时、落水复位仍为宽松假设；
  * 状态数达到 STATE_CAP 上限时报告无法证明同一次游玩可集齐星星并到达终点；
  * 静态近似（并集可达性）仅在状态搜索未执行时用于快速诊断，不能证明完整通关路径。
  *
@@ -163,7 +164,7 @@ function checkBase(game, R) {
     R.err('基础', '缺少 levels 数组');
     return;
   }
-  if (game.levels.length !== 6) {
+  if (!R.scopeLevel && game.levels.length !== 6) {
     R.err('基础', 'levels 数量 ' + game.levels.length + ' ≠ 6（§4 共 6 关）');
   }
   const ids = [];
@@ -295,6 +296,20 @@ function rule2(game, R) {
         R.err('规则 2', tag + ' ' + label(e) + ' 叠放在水域上，仅允许 WATER/STEPSTONE/浅滩星');
       }
     }
+    for (const d of lv.decorations || []) {
+      if (!d.collision) continue;
+      const r = d.collision;
+      if (![r.x, r.y, r.w, r.h].every(Number.isInteger) || r.w <= 0 || r.h <= 0
+        || r.x < 0 || r.y < 0 || r.x + r.w > lv.map.w || r.y + r.h > lv.map.h) {
+        R.err('规则 2', tag + ' 家具 ' + d.kind + ' collision 必须是地图内的整数矩形');
+        continue;
+      }
+      let missing = false;
+      for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
+        if (!isWall(lv, x, y)) missing = true;
+      }
+      if (missing) R.err('规则 2', tag + ' 家具 ' + d.kind + ' 的碰撞范围存在可通行瓦片');
+    }
   }
 }
 
@@ -329,7 +344,7 @@ function rule3(game, R) {
       }
     }
   }
-  if (total !== 25) {
+  if (!R.scopeLevel && total !== 25) {
     R.err('规则 3', '总星数 ' + total + ' ≠ 25（§4 总计 25 颗）');
   }
 }
@@ -355,7 +370,7 @@ function rule4(game, R) {
         R.err('规则 4', tag + ' 关 1–5 不得出现 cake');
       }
       for (const p of portals) {
-        if (!ids.has(p.to)) {
+        if (!ids.has(p.to) && !(R.scopeLevel === lv.id && p.to === lv.id + 1)) {
           R.err('规则 4', tag + ' portal.to=' + p.to + ' 引用不存在的关卡');
         } else if (p.to !== lv.id + 1) {
           R.err('规则 4', tag + ' portal.to=' + p.to + ' 应等于本关 id+1=' + (lv.id + 1));
@@ -401,6 +416,15 @@ function rule5(game, R) {
           R.err('规则 5', tag + ' trigger "' + e.id + '" 缺少完整数字 rect');
         } else if (r.x < 0 || r.y < 0 || r.x + r.w > lv.map.w || r.y + r.h > lv.map.h) {
           R.err('规则 5', tag + ' trigger "' + e.id + '" rect 越出地图范围');
+        }
+      }
+      if (e.type === 'roomdoor') {
+        const p = e.to;
+        if (!p || !Number.isInteger(p.x) || !Number.isInteger(p.y)
+          || p.x < 0 || p.y < 0 || p.x >= lv.map.w || p.y >= lv.map.h
+          || isWall(lv, p.x, p.y) || isWater(lv, p.x, p.y)
+          || (p.x === e.x && p.y === e.y)) {
+          R.err('规则 5', tag + ' roomdoor "' + e.id + '" 的落点必须是有效地面，且不能指回自身');
         }
       }
     }
@@ -469,11 +493,11 @@ function rule6(game, R) {
 
 const NODE_TYPES = new Set(['intro', 'hint', 'npc', 'check', 'star', 'clear', 'sheep', 'cutscene']);
 const NPC_INTERACT_TYPES = new Set(['intro', 'hint', 'npc', 'check']);
-/** 节点类型 → trigger 前缀（cutscene 允许 load:/trigger:/cake 三种） */
+/** 节点类型 → trigger 前缀（cutscene 包括道具 interact: 演出） */
 const TYPE_TRIGGER = {
   intro: ['npc:'], hint: ['npc:'], npc: ['npc:'], check: ['npc:'],
   star: ['star:'], clear: ['clear:'], sheep: ['sheep:'],
-  cutscene: ['load:', 'trigger:', 'cake'],
+  cutscene: ['load:', 'trigger:', 'interact:', 'cake'],
 };
 const CANON_SPEAKERS = ['lily', 'haewon', 'sullyoon', 'bae', 'jiwoo', 'kyujin', 'byeori', 'dj', 'sheep', 'nar', 'all'];
 
@@ -489,6 +513,7 @@ function rule7(game, R) {
   const sheepById = new Map();
   const starById = new Map();
   const triggerById = new Map();
+  const interactById = new Map();
   for (const lv of levels) {
     if (!lv || !Array.isArray(lv.entities)) continue;
     for (const e of lv.entities) {
@@ -497,6 +522,7 @@ function rule7(game, R) {
       else if (e.type === 'sheep') sheepById.set(e.id, { entity: e, level: lv });
       else if (e.type === 'star') starById.set(e.id, { entity: e, level: lv });
       else if (e.type === 'trigger') triggerById.set(e.id, { entity: e, level: lv });
+      else if (e.type === 'record' || e.type === 'gramophone') interactById.set(e.id, { entity: e, level: lv });
     }
   }
 
@@ -506,6 +532,41 @@ function rule7(game, R) {
     const tag = '关 ' + lv.id;
     for (const e of lv.entities) {
       if (!e) continue;
+      if (e.requiresStars !== undefined && (!Array.isArray(e.requiresStars) || !e.requiresStars.length
+        || new Set(e.requiresStars).size !== e.requiresStars.length
+        || e.requiresStars.some(id => !entitiesOf(lv, 'star').some(s => s.id === id)))) {
+        R.err('规则 7', tag + ' 实体 "' + e.id + '" requiresStars 必须引用本关不重复的星 id');
+      }
+      if (e.requiresDialogue !== undefined) {
+        const req = e.requiresDialogue;
+        if (!Array.isArray(req) || !req.length || new Set(req).size !== req.length) {
+          R.err('规则 7', tag + ' 星 "' + e.id + '" requiresDialogue 必须是非空且不重复的节点数组');
+        } else {
+          for (const id of req) {
+            const node = dialogue[id];
+            const npcId = node && String(node.trigger).replace(/^npc:/, '');
+            const action = node && String(node.trigger).startsWith('interact:')
+              && lv.entities.some(e => ['record', 'gramophone'].includes(e.type)
+                && node.trigger === 'interact:' + e.id && e.dialogue === id);
+            const actor = node && node.type === 'npc' && lv.entities.some(n => n.type === 'npc' && n.id === npcId
+              && (n.room || 'hall') === (node.room || 'hall'));
+            if (typeof id !== 'string' || !node || node.once !== true || !(actor || (action && node.type === 'cutscene'))
+              || !id.startsWith('l' + lv.id + '.')
+              ) {
+              R.err('规则 7', tag + ' 实体 "' + e.id + '" 条件 "' + id + '" 必须引用本关可互动的 once NPC 或道具节点');
+            }
+          }
+        }
+      }
+      if (e.type === 'record' || e.type === 'gramophone') {
+        const node = dialogue[e.dialogue];
+        if (!node || node.type !== 'cutscene' || node.once !== true || node.trigger !== 'interact:' + e.id) {
+          R.err('规则 7', tag + ' 道具 "' + e.id + '" 的 dialogue 必须指向自身的 once interact 节点');
+        }
+        if (e.type === 'gramophone' && !entitiesOf(lv, 'record').some(r => r.dialogue === e.recordNode)) {
+          R.err('规则 7', tag + ' 唱片机 "' + e.id + '" recordNode 必须指向本关唱片拾取节点');
+        }
+      }
       if (e.type === 'npc') {
         if (typeof e.dialogue !== 'string') {
           R.err('规则 7', tag + ' npc "' + e.id + '" 缺少 dialogue');
@@ -523,6 +584,9 @@ function rule7(game, R) {
         if (node.trigger !== 'npc:' + e.id) {
           R.err('规则 7', tag + ' npc "' + e.id + '" 的节点 "' + e.dialogue + '" trigger 应为 '
             + '"npc:' + e.id + '"（当前 "' + node.trigger + '"）');
+        }
+        if ((node.room || 'hall') !== (e.room || 'hall')) {
+          R.err('规则 7', tag + ' NPC "' + e.id + '" 的对话不属于其房间');
         }
       } else if (e.type === 'trigger') {
         if (typeof e.dialogue !== 'string') {
@@ -662,6 +726,11 @@ function rule7(game, R) {
       } else if (scope && scope.kind === 'level' && !scope.missing && hit.level.id !== scope.key) {
         R.warn('节点 "' + nodeId + '" 属于关 ' + scope.key + '，但其星 "' + sid + '" 在关 ' + hit.level.id);
       }
+    } else if (node.trigger.startsWith('interact:')) {
+      const hit = interactById.get(node.trigger.slice(9));
+      if (!hit || hit.entity.dialogue !== nodeId || (scope && hit.level.id !== scope.key)) {
+        R.err('规则 7', '道具节点 "' + nodeId + '" 必须与同关 record/gramophone 实体互相引用');
+      }
     } else if (node.trigger.startsWith('trigger:')) {
       const tid = node.trigger.slice(8);
       const hit = triggerById.get(tid);
@@ -783,16 +852,8 @@ function rule7(game, R) {
     }
   }
 
-  /* 无实体引用的 npc 触发节点（疑似死节点） */
-  for (const [nodeId, node] of Object.entries(dialogue)) {
-    if (!node || !NPC_INTERACT_TYPES.has(node.type)) continue;
-    const sp = String(node.trigger).slice(4);
-    const hit = npcById.get(sp);
-    if (hit && hit.entity.dialogue !== nodeId) {
-      R.warn('节点 "' + nodeId + '"（trigger npc:' + sp + '）未被 NPC "' + sp + '" 引用（其 dialogue 为 "'
-        + hit.entity.dialogue + '"）');
-    }
-  }
+  // 同一 NPC 的 intro/npc/hint/check 由运行时按当前关卡与 trigger 解析，
+  // 不要求全部显式绑定在实体的单个 dialogue 字段上；实体与 trigger 存在性已在上文检查。
 
   for (const id of CANON_SPEAKERS) {
     if (!(id in characters)) {
@@ -818,13 +879,25 @@ function rule8(game, R) {
     if (!lv || !Array.isArray(lv.entities) || lv.id == null) continue;
     if (!NPC_ROSTER[lv.id]) continue;
     const tag = '关 ' + lv.id;
-    const npcs = entitiesOf(lv, 'npc').map(e => e.id).sort();
+    const npcs = [...new Set(entitiesOf(lv, 'npc').map(e => e.id))].sort();
     const want = NPC_ROSTER[lv.id].slice().sort();
     if (JSON.stringify(npcs) !== JSON.stringify(want)) {
       R.err('规则 8', tag + ' NPC 出场 [' + npcs.join(',') + '] 与 §5 出场表 ['
         + want.join(',') + '] 不一致');
     }
     const sheep = entitiesOf(lv, 'sheep').length;
+    const actorKeys = new Set();
+    for (const e of entitiesOf(lv, 'npc')) {
+      const key = (e.room || 'hall') + ':' + e.id;
+      if (actorKeys.has(key)) R.err('规则 8', tag + ' 同一房间重复 NPC ' + key);
+      actorKeys.add(key);
+    }
+    if ((lv.areas || []).some(a => a.id === 'backstage')) {
+      for (const [room, ids] of [['hall', NPC_ROSTER[1].filter(id => id !== 'byeori')], ['backstage', NPC_ROSTER[1]]]) {
+        const actual = entitiesOf(lv, 'npc').filter(e => e.room === room).map(e => e.id).sort();
+        if (JSON.stringify(actual) !== JSON.stringify(ids.slice().sort())) R.err('规则 8', tag + ' ' + room + ' 出场不完整');
+      }
+    }
     if (sheep !== 1) {
       R.err('规则 8', tag + ' 黑羊数量 ' + sheep + ' ≠ 1（每关 1 只）');
     }
@@ -904,14 +977,38 @@ function staticReachability(lv) {
  *   - 风带只推动玩家不推动箱子。
  * @returns {{status:'ok'|'fail'|'cap'|'skip', msg?:string}}
  */
-function stateSearch(lv) {
+function stateSearch(lv, dialogue = {}) {
   const spawn = entitiesOf(lv, 'spawn')[0];
   const stars = entitiesOf(lv, 'star');
   const goal = lv.entities.find(e => e && (e.type === 'portal' || e.type === 'cake'));
   if (!spawn || !goal || stars.length === 0) return { status: 'skip' };
+  if (stars.some(s => s.requiresDialogue !== undefined && !Array.isArray(s.requiresDialogue))) {
+    return { status: 'fail', msg: '条件星 requiresDialogue 必须是节点数组' };
+  }
 
   const starIds = stars.map(s => s.id);
+  const required = [...new Set(lv.entities.flatMap(s =>
+    (Array.isArray(s.requiresDialogue) ? s.requiresDialogue : []).concat(s.recordNode || [])))];
+  const conversations = new Map();
+  for (const id of required) {
+    const node = dialogue[id];
+    const npc = node && lv.entities.find(n =>
+      ((n.type === 'npc' && node.trigger === 'npc:' + n.id)
+        || (['record', 'gramophone'].includes(n.type) && node.trigger === 'interact:' + n.id))
+      && (n.room || 'hall') === (node.room || 'hall'));
+    if (!npc) return { status: 'fail', msg: '剧情条件 "' + id + '" 无法由本关 NPC / 道具触发' };
+    const intro = Object.entries(dialogue).find(([key, n]) => key.startsWith('l' + lv.id + '.')
+      && n.trigger === node.trigger && n.type === 'intro' && n.once === true
+      && (n.room || 'hall') === (node.room || 'hall'));
+    if (intro) conversations.set(intro[0], { npc });
+    conversations.set(id, { npc, prerequisite: npc.recordNode || (intro && intro[0]) });
+  }
   const boxes0 = entitiesOf(lv, 'box').map(b => b.x + ',' + b.y).sort();
+  const boxDefs = boxes0.map(k => entitiesOf(lv, 'box').find(b => b.x + ',' + b.y === k));
+  const doorAt = new Map(entitiesOf(lv, 'door').map(d => [d.x + ',' + d.y, d]));
+  const roomAt = new Map(entitiesOf(lv, 'roomdoor').map(d => [d.x + ',' + d.y, d]));
+  const allowed = (e, st) => (!e.requiresDialogue || e.requiresDialogue.every(id => st.talked.includes(id)))
+    && (!e.requiresStars || e.requiresStars.every(id => st.stars.includes(id)));
   const oils0 = entitiesOf(lv, 'oil').map(o => o.x + ',' + o.y).sort();
   const gatesAt = new Map();
   const gateCtl = new Map();
@@ -923,7 +1020,7 @@ function stateSearch(lv) {
   }
   for (const s of entitiesOf(lv, 'switch')) {
     if (typeof s.target === 'string' && gateCtl.has(s.target)) {
-      gateCtl.get(s.target).switches.push(s.x + ',' + s.y);
+      gateCtl.get(s.target).switches.push(s);
     }
   }
   for (const l of entitiesOf(lv, 'lamp')) {
@@ -938,7 +1035,7 @@ function stateSearch(lv) {
   const moonAt = new Set(entitiesOf(lv, 'moonswitch').map(m => m.x + ',' + m.y));
   const windswitchAt = new Set(entitiesOf(lv, 'windswitch').map(w => w.x + ',' + w.y));
   const lampAt = new Map(entitiesOf(lv, 'lamp').map(l => [l.x + ',' + l.y, l]));
-  const starAt = new Map(stars.map(s => [s.x + ',' + s.y, s.id]));
+  const starAt = new Map(stars.map(s => [s.x + ',' + s.y, s]));
   const oilAt = new Set(oils0);
 
   /** 动态可站立判定（st = {pos, boxesSet, lit, waterLevel, windOffset}） */
@@ -947,6 +1044,7 @@ function stateSearch(lv) {
     if (isWall(lv, x, y)) return false;
     const k = x + ',' + y;
     if (st.boxesSet.has(k)) return false;
+    if (doorAt.has(k) && !st.openDoors.includes(doorAt.get(k).id)) return false;
     if (isWater(lv, x, y)) {
       if (st.waterLevel === 'high') return stoneAt.has(k);
       const w = waterAt.get(k);
@@ -955,10 +1053,11 @@ function stateSearch(lv) {
     const g = gatesAt.get(k);
     if (g) {
       const ctl = gateCtl.get(g.id) || { switches: [], lamps: [] };
-      let open = !!g.open;
-      if (!open) open = ctl.switches.some(sc => sc === st.pos || st.boxesSet.has(sc));
+      let open = !!g.open || (!!g.requiresDialogue && allowed(g, st));
+      if (!open) open = ctl.switches.some(s => allowed(s, st)
+        && ((!g.boxOnly && s.x + ',' + s.y === st.pos) || st.boxesSet.has(s.x + ',' + s.y)));
       if (!open) open = ctl.lamps.some(l => st.lit.includes(l.id));
-      if (!open && ctl.switches.length === 0 && ctl.lamps.length === 0) open = true; // 无控制器门按常开（宽松）
+      if (!open && !g.requiresDialogue && ctl.switches.length === 0 && ctl.lamps.length === 0) open = true; // 无控制器门按常开（宽松）
       return open;
     }
     return true;
@@ -991,8 +1090,10 @@ function stateSearch(lv) {
   const applyCell = (x, y, st) => {
     const k = x + ',' + y;
     const ns = { ...st, boxesSet: st.boxesSet, lit: st.lit, oils: st.oils, stars: st.stars };
-    if (starAt.has(k) && !ns.stars.includes(starAt.get(k))) {
-      ns.stars = ns.stars.concat(starAt.get(k)).sort();
+    const star = starAt.get(k);
+    if (star && !ns.stars.includes(star.id)
+      && (!star.requiresDialogue || star.requiresDialogue.every(id => ns.talked.includes(id)))) {
+      ns.stars = ns.stars.concat(star.id).sort();
     }
     if (oilAt.has(k) && ns.oils.includes(k) && !ns.carry) {
       ns.carry = true;
@@ -1003,7 +1104,8 @@ function stateSearch(lv) {
 
   const encode = st =>
     st.pos + '@b[' + st.boxes.join('|') + ']l[' + st.lit.join('|') + ']o[' + st.oils.join('|')
-    + ']c' + (st.carry ? 1 : 0) + 'w' + st.waterLevel + 'v' + st.windOffset + 's[' + st.stars.join('|') + ']';
+    + ']c' + (st.carry ? 1 : 0) + 'w' + st.waterLevel + 'v' + st.windOffset + 's[' + st.stars.join('|')
+    + ']t[' + st.talked.join('|') + ']d[' + st.openDoors.join('|') + ']b' + st.carryBox;
 
   const initial = {
     pos: spawn.x + ',' + spawn.y,
@@ -1015,6 +1117,9 @@ function stateSearch(lv) {
     waterLevel: 'high',
     windOffset: 0,
     stars: [],
+    talked: [],
+    openDoors: entitiesOf(lv, 'door').filter(d => d.open).map(d => d.id).sort(),
+    carryBox: -1,
   };
   if (!standable(spawn.x, spawn.y, initial)) {
     return { status: 'fail', msg: 'spawn 在初始状态下不可站立（墙体/关闭的门/高水位水面）' };
@@ -1036,9 +1141,23 @@ function stateSearch(lv) {
     let nearest = Infinity;
     for (const s of stars) {
       if (ns.stars.includes(s.id)) continue;
+      if (s.requiresDialogue && !s.requiresDialogue.every(id => ns.talked.includes(id))) continue;
       nearest = Math.min(nearest, Math.abs(x - s.x) + Math.abs(y - s.y));
     }
-    return remain * 1000 + nearest;
+    for (const [id, c] of conversations) {
+      if (!ns.talked.includes(id)) nearest = Math.min(nearest, Math.max(0, Math.abs(x - c.npc.x) + Math.abs(y - c.npc.y) - 1));
+    }
+    const carryDef = boxDefs.find(b => b.carryable);
+    if (carryDef && allowed(carryDef, ns)) {
+      const target = entitiesOf(lv, 'switch')[0];
+      const bi = boxDefs.indexOf(carryDef), bk = ns.boxes[bi];
+      if (target && bk === target.x + ',' + target.y) nearest -= 500;
+      else if (target) {
+        if (ns.carryBox === bi) nearest = Math.abs(x - target.x) + Math.abs(y - target.y) - 200;
+        else { const [bx, by] = bk.split(',').map(Number); nearest = Math.abs(x - bx) + Math.abs(y - by) - 100; }
+      }
+    }
+    return remain * 10000 + required.filter(id => !ns.talked.includes(id)).length * 1000 + nearest;
   };
 
   /* 最小堆（[priority, seq, state]），seq 保 FIFO 稳定 */
@@ -1095,7 +1214,7 @@ function stateSearch(lv) {
   while (heap.length) {
     const st = heapPop(heap)[2];
     const [px, py] = st.pos.split(',').map(Number);
-    if (st.stars.length === allStars && st.pos === goalCell) {
+    if (st.stars.length === allStars && st.pos === goalCell && allowed(goal, st)) {
       return { status: 'ok' };
     }
     if (visited.size >= STATE_CAP) return { status: 'cap' };
@@ -1107,7 +1226,9 @@ function stateSearch(lv) {
       if (!standable(px + dx, py + dy, st)) continue;
       if (onewayAt.get(st.pos) && onewayAt.get(st.pos) !== dirName) continue;
       if (onewayAt.get(nk) && onewayAt.get(nk) !== dirName) continue;
-      const [fx, fy] = resolveWind(px + dx, py + dy, st);
+      let [fx, fy] = resolveWind(px + dx, py + dy, st);
+      const room = roomAt.get(fx + ',' + fy);
+      if (room) { fx = room.to.x; fy = room.to.y; }
       const ns = applyCell(fx, fy, st);
       ns.pos = fx + ',' + fy;
       push(ns);
@@ -1118,6 +1239,8 @@ function stateSearch(lv) {
       const [dx, dy] = DIRV[dirName];
       const nk = (px + dx) + ',' + (py + dy);
       if (!st.boxesSet.has(nk)) continue;
+      const bi = st.boxes.indexOf(nk), def = boxDefs[bi];
+      if (def.carryable || !allowed(def, st)) continue;
       const bx = px + 2 * dx;
       const by = py + 2 * dy;
       const bk = bx + ',' + by;
@@ -1126,7 +1249,7 @@ function stateSearch(lv) {
       if (gatesAt.has(bk)) continue; // 门格一律不接受箱子（与 js/engine.js _canPlaceBox 口径一致）
       if (onewayAt.get(st.pos) && onewayAt.get(st.pos) !== dirName) continue;
       if (onewayAt.get(nk) && onewayAt.get(nk) !== dirName) continue;
-      const boxes = st.boxes.filter(b => b !== nk).concat(bk).sort();
+      const boxes = st.boxes.slice(); boxes[bi] = bk;
       const ns = applyCell(px + dx, py + dy, st);
       ns.pos = nk;
       ns.boxes = boxes;
@@ -1138,6 +1261,19 @@ function stateSearch(lv) {
     const nearCells = [[px, py], [px, py - 1], [px, py + 1], [px - 1, py], [px + 1, py]];
     for (const [cx, cy] of nearCells) {
       const ck = cx + ',' + cy;
+      const door = doorAt.get(ck);
+      if (door && !st.openDoors.includes(door.id)) push({ ...st, openDoors: st.openDoors.concat(door.id).sort() });
+      const bi = st.boxes.indexOf(ck);
+      if (bi >= 0 && st.carryBox < 0 && boxDefs[bi].carryable && allowed(boxDefs[bi], st)) {
+        const boxes = st.boxes.slice(); boxes[bi] = '@carried';
+        push({ ...st, boxes, boxesSet: new Set(boxes), carryBox: bi });
+      }
+      for (const [id, c] of conversations) {
+        if (c.npc.x !== cx || c.npc.y !== cy || st.talked.includes(id)) continue;
+        if (c.prerequisite && !st.talked.includes(c.prerequisite)) continue;
+        if (!allowed(c.npc, st)) continue;
+        push(applyCell(px, py, { ...st, talked: st.talked.concat(id).sort() }));
+      }
       if (lampAt.has(ck)) {
         const lamp = lampAt.get(ck);
         if (st.carry && !st.lit.includes(lamp.id)) {
@@ -1152,6 +1288,19 @@ function stateSearch(lv) {
       if (windswitchAt.has(ck)) {
         const ns = { ...st, boxesSet: st.boxesSet, lit: st.lit, oils: st.oils, stars: st.stars, windOffset: (st.windOffset + 1) % 4 };
         push(ns);
+      }
+    }
+    if (st.carryBox >= 0) {
+      const def = boxDefs[st.carryBox];
+      const solid = (x, y) => x < 0 || y < 0 || x >= lv.map.w || y >= lv.map.h || isWall(lv, x, y) || isWater(lv, x, y);
+      for (const [dx, dy] of Object.values(DIRV)) {
+        const x = px + dx, y = py + dy, k = x + ',' + y;
+        if (!standable(x, y, st) || gatesAt.has(k) || doorAt.has(k) || roomAt.has(k) || k === goalCell) continue;
+        const isSwitch = entitiesOf(lv, 'switch').some(s => s.x === x && s.y === y);
+        if (def.preventDeadlocks && !isSwitch && (solid(x - 1, y) || solid(x + 1, y))
+          && (solid(x, y - 1) || solid(x, y + 1))) continue;
+        const boxes = st.boxes.slice(); boxes[st.carryBox] = k;
+        push({ ...st, boxes, boxesSet: new Set(boxes), carryBox: -1 });
       }
     }
   }
@@ -1179,14 +1328,14 @@ function rule9(game, R) {
     /* 无控制器的门 → 提示（状态搜索按常开处理，避免对话开门误报） */
     for (const g of entitiesOf(lv, 'gate')) {
       const controlled = entitiesOf(lv, 'switch').some(s => s.target === g.id)
-        || entitiesOf(lv, 'lamp').some(l => l.target === g.id);
+        || entitiesOf(lv, 'lamp').some(l => l.target === g.id) || !!g.requiresDialogue;
       if (!controlled) {
         R.warn(tag + ' gate "' + g.id + '" 无 switch/lamp 控制，状态搜索按常开处理'
           + '（若由对话等控制，请在数据中声明控制方式）');
       }
     }
 
-    const search = stateSearch(lv);
+    const search = stateSearch(lv, game.dialogue);
     if (search.status === 'fail') {
       R.err('规则 9', tag + ' ' + search.msg);
     } else if (search.status === 'cap') {
@@ -1206,7 +1355,7 @@ function rule9(game, R) {
     }
   }
   R.note('规则 9 · 状态图搜索已覆盖：推箱压开关、携油点灯、月相/风车开关、单向门、风带、门与高/低水位；'
-    + '对话条件星、清凉条计时、落水复位按宽松假设处理（仅可能漏报、不误报）');
+    + '已覆盖 requiresDialogue 条件、就地 NPC 对话、取唱片 / 播放开门与房间切换；清凉条计时、落水复位仍按宽松假设处理');
 }
 
 /* ════════════════════════ 规则 10：占位文案与存档键 ════════════════════════ */
@@ -1857,6 +2006,17 @@ function selfTest() {
 
 /* ════════════════════════ 主流程 ════════════════════════ */
 
+/** 单关验收不等于全量验收：剔除别关台词，保留序章；完整模式仍要求 6 关/25 星。 */
+function selectLevel(game, id) {
+  const level = (game.levels || []).find(l => l.id === id);
+  if (!level) throw new Error('关 ' + id + ' 尚未制作或不存在');
+  const dialogue = Object.fromEntries(Object.entries(game.dialogue || {}).filter(([key]) => {
+    const scope = scopeOfNodeId(game, key);
+    return scope && (scope.kind === 'scene' || scope.key === id);
+  }));
+  return { ...game, levels: [level], dialogue };
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (args.includes('--self-test')) {
@@ -1865,8 +2025,22 @@ function main() {
   }
   const requireData = args.includes('--require-data');
 
-  const { game, loadError } = loadGame();
+  let { game, loadError } = loadGame();
   const R = makeReport();
+  const levelArg = args.indexOf('--level');
+  if (levelArg >= 0) {
+    const id = Number(args[levelArg + 1]);
+    if (!Number.isInteger(id) || id < 1 || id > 6 || !game) {
+      console.error('--level 需要已制作的关卡编号（1–6）');
+      process.exitCode = 1;
+      return;
+    }
+    try { game = selectLevel(game, id); }
+    catch (err) { console.error(err.message); process.exitCode = 1; return; }
+    R.scopeLevel = id;
+    R.note('单关模式：仅验收关 ' + id + ' 与独立场景；不检查六关总数/25 星；'
+      + '允许线性出口指向尚未制作的下一关。全量发布须使用不带 --level 的严格校验。');
+  }
 
   console.log('MIXXTOPIA 数据校验（规则来源 docs/GAME_DESIGN.md §11）');
   console.log('数据源：js/data.js\n');
@@ -1911,4 +2085,5 @@ module.exports = {
   loadGame, makeReport, checkBase, rule1, rule2, rule3, rule4, rule5, rule6,
   rule7, rule8, rule9, rule10, scanText, mechanismScope, buildValidGame,
   stateSearch, staticReachability,
+  selectLevel,
 };

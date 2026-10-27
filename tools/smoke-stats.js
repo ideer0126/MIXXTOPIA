@@ -93,6 +93,7 @@ const B = '22222222-2222-2222-2222-222222222222';
     const desktop = await context(A), page = await open(desktop);
     await page.locator('#btn-start').click();
     const measured = await page.evaluate(() => {
+      while (game.state === 'dialogue') game._tapDialog();
       game._update(1.25); game._update(1.25);
       const time = game.stats.record.seconds;
       game._setState('paused'); game._update(3);
@@ -124,7 +125,11 @@ const B = '22222222-2222-2222-2222-222222222222';
     console.log('  ✓ touch device: cross-device time / collection consistency / scrollable settings');
 
     offline = true;
-    await page.evaluate(() => { game._closeSettingsScreen(); game._startNewGame(); game._update(4.75); game._setState('paused'); game._saveAndQuit(); });
+    await page.evaluate(() => {
+      game._closeSettingsScreen(); game._startNewGame();
+      while (game.state === 'dialogue') game._tapDialog();
+      game._update(4.75); game._setState('paused'); game._saveAndQuit();
+    });
     await settle(page);
     assert.equal(await page.evaluate(() => game.state), 'title');
     assert.ok(await page.evaluate(() => game.stats.view().pending));
@@ -151,7 +156,10 @@ const B = '22222222-2222-2222-2222-222222222222';
 
     const guest = await context(''), guestPage = await open(guest), before = requests.length;
     await guestPage.locator('#btn-start').click();
-    await guestPage.evaluate(() => { game._update(1); game._setState('paused'); game._saveAndQuit(); });
+    await guestPage.evaluate(() => {
+      while (game.state === 'dialogue') game._tapDialog();
+      game._update(1); game._setState('paused'); game._saveAndQuit();
+    });
     await settle(guestPage); assert.equal(requests.length, before);
     console.log('  ✓ guest: zero cloud requests');
 

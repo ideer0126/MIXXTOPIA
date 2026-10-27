@@ -402,6 +402,20 @@ test('大图渲染：摄像机平移后瓦片取源正确（图集索引 → 屏
   assert.deepStrictEqual(px(canvas, 289, 193), [247, 232, 200, 255]);
 });
 
+test('家具样式：wall 碰撞格可以绘制 floor，玩家与箱子仍被阻挡', () => {
+  const level = smallLevel();
+  level.map.rows[4] = level.map.rows[4].slice(0, 4) + 'F' + level.map.rows[4].slice(5);
+  level.map.legend.F = 'wall';
+  level.map.styles = { F: 'floor' };
+  const canvas = new FakeCanvas();
+  const renderer = engine.createRenderer(canvas);
+  renderer.renderLevel(level, { x: 0, y: 0 });
+  assert.deepStrictEqual(px(canvas, 65, 65), [247, 232, 200, 255], '家具下方绘制地面底色');
+  const mechanics = engine.createMechanics(level);
+  assert.strictEqual(mechanics.blockedAt(64, 64, 16), true);
+  assert.strictEqual(mechanics._canPlaceBox(4, 4, {}), false);
+});
+
 test('未知地形符号与缺失行不崩溃', () => {
   const canvas = new FakeCanvas();
   const renderer = engine.createRenderer(canvas);
@@ -1056,6 +1070,37 @@ test('粒子：burst 计数、寿命更新、上限与绘制', () => {
   assert.ok(ctx.pixels[i + 3] > 0, '粒子像素已绘制');
   assert.strictEqual(ctx.pixels[i], 255);
   assert.strictEqual(ctx.pixels[i + 1], 200);
+});
+
+test('搬箱子：携带的礼物盒不碰撞、不压开关，也不能靠走动推动；舞台必须由盒子压住', () => {
+  const level = mechanicsLevel([
+    { type: 'box', id: 'gift', x: 3, y: 3, carryable: true },
+    { type: 'switch', x: 4, y: 3, target: 'stage' },
+    { type: 'gate', id: 'stage', x: 4, y: 1, boxOnly: true, open: false },
+  ]);
+  const m = engine.createMechanics(level), box = level.entities[0], gate = level.entities[2];
+  assert.strictEqual(m.pushBox(32, 48, 16, 4, 0), null);
+  box.carried = true;
+  assert.strictEqual(m.blockedAt(48, 48, 16), false);
+  m.syncSwitches(64, 48, 16);
+  assert.strictEqual(gate.open, false, '玩家踩按钮不能抢跑');
+  box.x = 4; box.y = 3;
+  m.syncSwitches(16, 16, 16);
+  assert.strictEqual(gate.open, false, '携带状态不能压按钮');
+  box.carried = false;
+  m.syncSwitches(16, 16, 16);
+  assert.strictEqual(gate.open, true);
+});
+
+test('开门与落点：关闭的门阻挡，开门后可经过，礼物盒不能放入门格或死角', () => {
+  const level = mechanicsLevel([{ type: 'door', id: 'gift-door', x: 3, y: 3, open: false }]);
+  const m = engine.createMechanics(level), box = { preventDeadlocks: true };
+  assert.strictEqual(m.blockedAt(48, 48, 16), true);
+  level.entities[0].open = true;
+  assert.strictEqual(m.blockedAt(48, 48, 16), false);
+  assert.strictEqual(m._canPlaceBox(3, 3, box), false);
+  assert.strictEqual(m._canPlaceBox(1, 1, box), false);
+  assert.strictEqual(m._canPlaceBox(4, 3, box), true);
 });
 
 /* ─────────────────── 11. 战斗（Issue #18） ─────────────────── */

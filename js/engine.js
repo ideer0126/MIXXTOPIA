@@ -403,7 +403,9 @@
           if (ch === undefined || ch === ' ') continue;
           const type = legend[ch];
           if (type === undefined) { warnOnce('未注册的地形符号 "' + ch + '"'); continue; }
-          const idx = atlas.index[type];
+          // 家具底部仍为 wall 碰撞，绘制地板供透明场景素材叠放。
+          const visualType = (map.styles && map.styles[ch]) || type;
+          const idx = atlas.index[visualType];
           if (idx === undefined) { warnOnce('未注册的瓦片类型 "' + type + '"'); continue; }
           ctx.drawImage(atlas.sheet, idx * TILE, 0, TILE, TILE, tx * TILE, ty * TILE, TILE, TILE);
         }
@@ -594,8 +596,10 @@
           if (this.isSolidTile(tx, ty)) return true;
           const gate = this.entityAtTile(tx, ty, 'gate');
           if (gate && !gate.open) return true;
+          const door = this.entityAtTile(tx, ty, 'door');
+          if (door && !door.open) return true;
           const box = this.entityAtTile(tx, ty, 'box');
-          if (box && box !== ignore) return true;
+          if (box && !box.carried && box !== ignore) return true;
         }
       }
       return false;
@@ -607,8 +611,15 @@
       if (this.isSolidTile(tx, ty)) return false;
       const gate = this.entityAtTile(tx, ty, 'gate');
       if (gate) return false; // 门格不接受箱子，避免箱子在门闭合后阻挡通路
+      if (this.entityAtTile(tx, ty, 'door') || this.entityAtTile(tx, ty, 'roomdoor')
+        || this.entityAtTile(tx, ty, 'portal')) return false;
       const other = this.entityAtTile(tx, ty, 'box');
-      if (other && other !== box) return false;
+      if (other && !other.carried && other !== box) return false;
+      if (box.preventDeadlocks && !this.entityAtTile(tx, ty, 'switch')) {
+        const solid = (x, y) => this.isSolidTile(x, y);
+        if ((solid(tx - 1, ty) || solid(tx + 1, ty))
+          && (solid(tx, ty - 1) || solid(tx, ty + 1))) return false;
+      }
       return true;
     }
 
@@ -629,6 +640,7 @@
         if (this.overlapsTile(probeX, probeY, size, box.x, box.y)) { hit = box; break; }
       }
       if (!hit) return null;
+      if (hit.carried || hit.carryable || hit.locked) return null;
       const nx = hit.x + sx;
       const ny = hit.y + sy;
       if (!this._canPlaceBox(nx, ny, hit)) return null;
@@ -643,13 +655,13 @@
      * @returns {{switches:Array, gates:Array<{gate:object,open:boolean}>}}
      */
     syncSwitches(px, py, size) {
-      const boxes = this.entitiesOf('box');
+      const boxes = this.entitiesOf('box').filter(b => !b.carried);
       const switches = this.entitiesOf('switch');
       const changedSwitches = [];
       for (let i = 0; i < switches.length; i++) {
         const sw = switches[i];
-        let pressed = this.overlapsTile(px, py, size, sw.x, sw.y);
-        if (!pressed) {
+        let pressed = !sw.hidden && this.overlapsTile(px, py, size, sw.x, sw.y);
+        if (!pressed && !sw.hidden) {
           for (let j = 0; j < boxes.length; j++) {
             const b = boxes[j];
             if (b.x === sw.x && b.y === sw.y) { pressed = true; break; }
@@ -670,7 +682,8 @@
         const ctlLamps = lamps.filter((l) => l.target === gate.id && l.lit === true);
         if (ctlSwitches.length + ctlLamps.length === 0) continue; // 无控制器的门保持数据初始态
         let next = this._initialGateOpen.get(gate) === true
-          || ctlSwitches.some((s) => s.pressed === true)
+          || ctlSwitches.some((s) => s.pressed === true && (!gate.boxOnly
+            || boxes.some(b => b.x === s.x && b.y === s.y)))
           || ctlLamps.length > 0;
         // 玩家正踩在门上：暂不关闭，避免门在脚下闭合把玩家夹死
         if (!next && gate.open && this.overlapsTile(px, py, size, gate.x, gate.y)) next = true;
