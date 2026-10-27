@@ -1101,6 +1101,7 @@
       for (const type of ['door', 'record', 'gramophone', 'npc', 'sheep', 'sign', 'box']) {
         for (const e of this._entitiesOf(type)) {
           if (e.carried || e.taken || (type === 'door' && e.open) || (type === 'box' && !e.carryable)) continue;
+          if (type === 'npc' && this._resolveNpcNode(e) === null) continue;
           const ex = e.x * TILE + TILE / 2;
           const ey = e.y * TILE + TILE / 2;
           const d = Math.abs(cx - ex) + Math.abs(cy - ey);
@@ -2935,17 +2936,18 @@
         }
         return null;
       };
+      // 候选筛选也会解析节点；缓存 next 不能跳过尚未播放的 intro。
+      const intro = unplayed('intro');
+      if (intro) {
+        if (intro.node.next) this._npcTarget[targetKey] = intro.node.next;
+        return intro.id;
+      }
       const target = this._npcTarget[targetKey];
       if (target && this.dialogue[target]) {
         // intro 已播：先补播未播的同 trigger npc 自我介绍（once），再回到 hint
         const npcOnce = unplayed('npc');
         if (npcOnce) return npcOnce.id;
         return target;
-      }
-      const intro = unplayed('intro');
-      if (intro) {
-        if (intro.node.next) this._npcTarget[targetKey] = intro.node.next;
-        return intro.id;
       }
       const npcOnce = unplayed('npc');
       if (npcOnce) return npcOnce.id;

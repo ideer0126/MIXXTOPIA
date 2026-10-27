@@ -343,19 +343,21 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 
 ## 6. 机制字典（engine 与 data.js 通用）
 
-> **层次约定**：有状态 / 有引用的元素（星星、开关、门、灯柱、灯油、单向门、水面、浮桥石、绿洲、风带、风车、蛋糕、NPC、黑羊、敌人、传送门、告示牌、触发器）一律放**实体层** `entities`；地砖层 `tiles` 只承担基础通行性与装饰（`#` 墙、`·` 地面、`~` 水等），最终通行性结合实体状态判定。§5 的地图符号用于关卡草稿标注，落数据时按实体层表示。
+> **层次约定**：有状态 / 有引用的元素（星星、开关、门、房间出入口、唱片、唱片机、灯柱、灯油、单向门、水面、浮桥石、绿洲、风带、风车、蛋糕、NPC、黑羊、敌人、传送门、告示牌、触发器）一律放**实体层** `entities`；地砖层 `tiles` 只承担基础通行性与装饰（`#` 墙、`·` 地面、`~` 水等），最终通行性结合实体状态判定。§5 的地图符号用于关卡草稿标注，落数据时按实体层表示。
 
 | 符号/类型 | 名称 | 行为 | 交互 | 数据字段 | 使用关卡 |
 |---|---|---|---|---|---|
 | `#` | 墙体 WALL | 不可通行 | — | tile | 全部 |
 | `·` | 地面 FLOOR | 可通行 | — | tile | 全部 |
 | STAR | 愿望之星 | 静止发光；拾取时粒子爆散 + 芯片音效 | 接触收集，+1 计数 | `{type:'star',id,requiresDialogue?:string[]}`（关 1 的 s3 使用三段后台对话节点） | 全部 |
-| PORTAL | 传送门 | 本关星数满后激活（粒子 + 音效） | 踩上（接触）进入下一关；`to` 优先于线性下一关 | `{type:'portal',to}` | 1–5 |
+| PORTAL | 传送门 | 本关星数满且剧情条件满足后激活（粒子 + 音效） | 踩上（接触）进入下一关；`to` 优先于线性下一关 | `{type:'portal',to,requiresDialogue?:string[]}` | 1–5 |
 | SWITCH | 压力开关 | 玩家或箱子压住期间开启 target 门；离开即关闭 | 物理（踩上/推箱压上） | `{type:'switch',target}` | 6 |
-| GATE | 门 | 关/开两态；关闭时阻挡通行，`open:true` 为常开；门格不接受箱子落点（门开时玩家可站在门格上） | 由开关、灯柱或 requiresDialogue / requiresStars 剧情条件控制 | `{type:'gate',id,open:false}` | 1、2、6 |
+| GATE | 门 | 关/开两态；关闭时阻挡通行，`open:true` 为常开；门格不接受箱子落点（门开时玩家可站在门格上） | 由开关、灯柱或 requiresDialogue / requiresStars 剧情条件控制 | `{type:'gate',id,open:false,requiresStars?:string[],requiresDialogue?:string[],visual?:string}` | 1、2、6 |
+| DOOR | 杂物间门 | 关闭时阻挡通行；打开后保持开启 | E 打开 | `{type:'door',id,open:false,label?:string}` | 1 |
+| ROOMDOOR | 房间出入口 | 接触后在同一关卡内移动到 `to` 坐标，保留星星、对话与唱片进度；可与 GATE 同格，由 GATE 阻挡入口 | 接触切换房间 | `{type:'roomdoor',id,to:{x,y},label?:string}` | 1 |
 | BOX | 箱子 | 沿方向推一格，压住开关 | 方向移动 | `{type:'box'}` | 6 |
-| RECORD | 唱片 | 前置满足后拾取，played 记录携带进度 | E 拿取 | `{type:'record',id,dialogue,requiresStars?,requiresDialogue?}` | 1 |
-| GRAMOPHONE | 唱片机 | 已取唱片后播放，开启后台通路 | E 播放 | `{type:'gramophone',id,dialogue,recordNode,requiresStars?,requiresDialogue?}` | 1 |
+| RECORD | 唱片 | 前置满足后拾取，played 记录携带进度 | E 拿取 | `{type:'record',id,dialogue,requiresStars?:string[],requiresDialogue?:string[]}` | 1 |
+| GRAMOPHONE | 唱片机 | 已取唱片后播放，开启后台通路 | E 播放 | `{type:'gramophone',id,dialogue,recordNode,requiresStars?:string[],requiresDialogue?:string[]}` | 1 |
 | LAMP | 灯柱 | 未燃/已燃；点燃后开启 target 指定的门 | 携油互动点燃 | `{type:'lamp',id,target,lit:false}` | 2 |
 | OIL | 灯油 | 拾取后跟随玩家（一次一罐） | 接触拾取；点燃灯柱时消耗 | `{type:'oil'}` | 2 |
 | ONEWAY | 单向门 | 仅指示方向可通行 | 反方向视为墙 | `{type:'oneway',dir}` | 3、6 |
@@ -367,12 +369,22 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | WIND | 风带 | 持续向指定方向推动玩家 | 站立 | `{type:'wind',dir}` | 6 |
 | WINDSWITCH | 风车开关 | 全体风向 N→E→S→W 循环 | 互动 | `{type:'windswitch'}` | 6 |
 | CAKE | 许愿蛋糕 | 25 星集齐后触发结局演出 | 自动触发 | `{type:'cake'}` | 6 |
-| NPC | 角色 | 静止待机 | 互动进入对话 | `{type:'npc',id,dialogue}` | 全部 |
+| NPC | 角色 | 静止待机；按 `room` 匹配同名角色的房间对话 | 有可播放节点时互动进入对话 | `{type:'npc',id,dialogue,room?:string}` | 全部 |
 | SHEEP | 黑羊彩蛋 | 每关一只 | 互动播放绑定谜语节点，仅首次计数 +1，集齐 6/6 | `{type:'sheep',id,dialogue}` | 全部 |
 | ENEMY | 梦境侵蚀生物 | 按关卡配置；仇恨范围内追击玩家，接触造成伤害 | 物理（被攻击/接触） | `{type:'enemy',id,kind,x,y,hp?,speed?,aggro?,damage?}`（kind: `dreamling` / `wisp`） | 全部（#18） |
 | SIGN | 告示牌 | 操作提示 | 互动显示文字 | `{type:'sign',text}` | 全部（每关 1–3 块） |
-| TRIGGER | 区域触发 | 进入 rect 范围自动播放 dialogue 指定的剧情节点（一次性） | 自动 | `{type:'trigger',id,rect:{x,y,w,h},dialogue}` | 全部 |
+| TRIGGER | 区域触发 | 前置满足且未命中跳过条件时，进入 rect 范围自动播放 dialogue 指定的剧情节点（一次性） | 自动 | `{type:'trigger',id,rect:{x,y,w,h},dialogue,requiresStars?:string[],requiresDialogue?:string[],skipIfDialogue?:string[]}` | 全部 |
 | SPAWN | 玩家出生点 | 每关唯一 | — | `{type:'spawn'}` | 全部 |
+
+**关 1 字段约定（以 `js/data.js` 为准）**：
+
+- 实体的 `x,y`、`roomdoor.to.x,y` 与 `trigger.rect` 均使用本关地图的瓦片坐标；`portal.to` 则是下一关的关卡 ID。
+- `room`：NPC 实体与对话节点使用相同的房间字符串（`hall` / `backstage`）；省略时按 `hall` 解析。同一角色的 `id` 可在两房间复用，互动候选与后续提示按房间区分。
+- `label`：门的显示名称字符串；关 1 的 `door` 和 `roomdoor` 都有此字段，目前出入口渲染读取 `roomdoor.label`，不参与解锁判断。
+- `visual`：门的绘制提示；后台入口的 `gate` 使用 `'curtain'`，跳过普通 GATE 图形，由同格 `roomdoor` 根据门状态绘制帘幕 / 出入口，不改变碰撞或解锁条件。
+- `requiresStars`：同关星星 ID 的字符串数组，全部已收集才满足；唱片、唱片机、后台门及寻找唱片的触发器均要求 `['s1','s2']`，不是星星数量。
+- `requiresDialogue`：对话节点 ID 的字符串数组，全部已记录在 `played` 且对应对话已结束才满足；与 `requiresStars` 同时存在时两组条件都须满足。唱片、唱片机与提示要求六位 Muse 的自我介绍；后台门要求 `l1.music.play`；s3 和星光门要求 `l1.backstage.lily`、`l1.backstage.sullyoon`、`l1.backstage.byeori`。前置数组省略或为空表示该项无限制。
+- `skipIfDialogue`：触发器的跳过节点 ID 数组，任一节点已记录在 `played` 就不触发；`music-ready` 使用 `['l1.record.take','l1.music.play']`，避免已取唱片或已播放后再提示寻找唱片。
 
 关 4 的每个 `~` 格必须在 `entities` 中有且仅有一个同坐标 WATER（含 `x,y`），所有 WATER 的 `waterLevel` 初始均为 `high`、运行时始终一致；`shallow` 是固定地形属性。高水位 STEPSTONE 的站立效果覆盖同格水面；低水位时 `shallow:false` 的水面仍不可站立。切换水位后若玩家脚下不再可站立，按 §5.4 落水回本岸、保留已收集星星处理。
 
@@ -539,6 +551,32 @@ dialogue: {
 |---|---|---|
 | l1.lily.hint.1 | lily | 卡住了就看看告示牌，或者再和我们聊聊。生日会不赶时间。 |
 | l1.lily.hint.2 | lily | 小时候的生日会，本来就是要慢慢过的呀。 |
+| l1.byeori.hint | byeori | 딩동댕！三颗愿望之星会点亮这扇星光门。生日会的下一站，是 Jiwoo 的灯油长廊！ |
+
+**唱片流程（`cutscene` 节点，一次性；区域提示与道具互动）**：
+
+| 节点 | 说话人 | 台词 |
+|---|---|---|
+| l1.music.ready.1 | nar | 唱片机的金色喇叭闪了闪光。六份祝福和两颗星都齐了，还少一张唱片。 |
+| l1.music.ready.2 | haewon | 去左上角的杂物间找找《Strange Muse》吧！按 E 取走唱片，再回这里按 E 播放，右侧的帷幕就会打开。 |
+| l1.record.take.1 | nar | 你从舞台杂物中找到了一张《Strange Muse》唱片，熟悉的专辑封面映入眼帘。 |
+| l1.record.take.2 | nar | 带回舞台上的唱片机，按 E 放入并播放。 |
+| l1.music.play.1 | nar | 你把《Strange Muse》唱片放到转盘上，唱针轻轻落下。 |
+| l1.music.play.2 | nar | 温柔的旋律响起，舞台右侧的帷幕缓缓打开——后台化妆间正在等你。 |
+
+**后台对话（`npc` 节点，一次性；实体与节点均为 `room:'backstage'`）**：
+
+Lily、Sullyoon、Byeori 三段全部完成后出现 s3；其余后台台词为氛围对话。Byeori 此后可重复播放上表的 `l1.byeori.hint`。
+
+| 节点 | 说话人 | 台词 |
+|---|---|---|
+| l1.backstage.lily | lily | 到了化妆间就好好喘口气。把最后一颗星星带上，下一站也会有人认真等你。 |
+| l1.backstage.sullyoon | sullyoon | 化妆镜会记得今天的光。愿望的最后一笔，留给你来写。 |
+| l1.backstage.byeori | byeori | 딩동댕！和 Lily、Sullyoon、我都聊过之后，最后的愿望之星就会出现。收好它，左侧的星光门会带你去下一关。 |
+| l1.backstage.haewon | haewon | 后台也热闹得很。镜子前的灯都亮着，别落下你的愿望。 |
+| l1.backstage.bae | bae | 终于可以休息一下啦！这张圆凳给你，今天的寿星。 |
+| l1.backstage.jiwoo | jiwoo | 星光门就在左侧！下一站由信使 Jiwoo 接力，咻——！ |
+| l1.backstage.kyujin | kyujin | 舞台走得不错。下一次，继续保持。 |
 
 ### 8.3 关 2 · Kerosene
 

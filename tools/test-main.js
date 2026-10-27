@@ -2373,6 +2373,42 @@ test('第一关：阅读告示牌不修改共享对话字典或 played，靠近�
   });
 });
 
+test('附近互动：无节点或已播完的 NPC 不遮挡告示牌，可重复提示仍可播放', () => {
+  const data = prologueData();
+  withGAME({
+    levels: [dataLevel([
+      { type: 'spawn', x: 2, y: 26 },
+      { type: 'npc', id: 'lily', x: 10, y: 15, room: 'backstage', dialogue: 'l1.backstage.lily' },
+      { type: 'npc', id: 'haewon', x: 10, y: 15, room: 'missing' },
+      { type: 'sign', id: 'hint', x: 11, y: 15, text: '附近的告示牌' },
+    ])],
+    characters: data.characters,
+    dialogue: data.dialogue,
+  }, () => {
+    const game = makeGame();
+    try {
+      elt('btn-start').click();
+      teleport(game, 10, 15);
+      assert.strictEqual(game._nearInteractable().id, 'lily');
+      assert.ok(game._interact());
+      assert.strictEqual(game._dialog.nodeId, 'l1.backstage.lily');
+      level1Run.finishDialogue(game);
+      assert.strictEqual(game._nearInteractable().id, 'hint');
+      assert.ok(game._interact());
+      assert.strictEqual(game._dialog.lines[0].t, '附近的告示牌');
+      level1Run.finishDialogue(game);
+
+      game.level.entities.push({ type: 'npc', id: 'byeori', x: 10, y: 15, room: 'backstage' });
+      for (const nodeId of ['l1.backstage.byeori', 'l1.byeori.hint', 'l1.byeori.hint']) {
+        assert.strictEqual(game._nearInteractable().id, 'byeori');
+        assert.ok(game._interact());
+        assert.strictEqual(game._dialog.nodeId, nodeId);
+        level1Run.finishDialogue(game);
+      }
+    } finally { game.destroy(); }
+  });
+});
+
 test('场景素材：按源路径缓存、加载失败降级，礼物盒和星光门使用独立素材', () => {
   const prevImage = sandbox.Image;
   sandbox.Image = class { constructor() { this.complete = false; this.naturalWidth = 0; } };
