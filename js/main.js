@@ -808,7 +808,7 @@
       let distance = Infinity;
       for (const type of ['door', 'record', 'gramophone', 'npc', 'sheep', 'sign', 'box']) {
         for (const e of this._entitiesOf(type)) {
-          if (e.carried || e.taken || (type === 'box' && !e.carryable)) continue;
+          if (e.carried || e.taken || (type === 'door' && e.open) || (type === 'box' && !e.carryable)) continue;
           const ex = e.x * TILE + TILE / 2;
           const ey = e.y * TILE + TILE / 2;
           const d = Math.abs(cx - ex) + Math.abs(cy - ey);
