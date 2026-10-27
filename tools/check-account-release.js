@@ -6,13 +6,24 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const repo = path.resolve(__dirname, '..');
-const args = process.argv.slice(2);
-if (args.length && (args.length !== 2 || args[0] !== '--out')) {
-  console.error('Usage: node tools/check-account-release.js [--out /tmp/account-release.json]');
-  process.exit(2);
-}
 const base = 'https://ideer0126.github.io/MIXXTOPIA/';
-const expectedCommit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+// Match build-channels.js's source allowlist. Generated channel metadata is excluded.
+const runtimePaths = ['index.html', 'styles.css', 'js', 'assets',
+  'CNAME', 'robots.txt', 'favicon.ico', 'manifest.webmanifest'];
+function git(args) {
+  return execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+}
+function compareDeployment(commit, expectedCommit, runGit = git) {
+  // Metadata is untrusted; accept only commit hashes, never revision expressions/options.
+  if (typeof commit !== 'string' || !/^[a-f0-9]{7,40}$/.test(commit)) return 'unknown-commit';
+  try {
+    const deployed = runGit(['rev-parse', '--verify', commit + '^{commit}']);
+    const expected = runGit(['rev-parse', '--verify', expectedCommit + '^{commit}']);
+    if (deployed === expected) return 'same-commit';
+    return runGit(['diff', '--name-only', expected, deployed, '--', ...runtimePaths])
+      ? 'different-runtime' : 'same-runtime';
+  } catch (err) { return 'unknown-commit'; }
+}
 async function read(url, headers) {
   try {
     const res = await fetch(url, { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(15000) });
@@ -23,12 +34,13 @@ async function read(url, headers) {
 function json(response) {
   try { return JSON.parse(response.text); } catch (err) { return null; }
 }
-(async () => {
+async function checkRelease({ read: get = read, expectedCommit = git(['rev-parse', '--short', 'HEAD']),
+  compare = compareDeployment } = {}) {
   const report = { observedAt: new Date().toISOString(), expectedCommit, channels: [], backends: [],
     blockers: [], pending: ['Authenticated cross-account RLS and cross-device verification',
       'Separate test and production backends', 'Manual account deletion and cascade verification'] };
   const snapshots = await Promise.all(['', 'beta/', 'preview/'].map(async prefix => {
-    const [meta, html] = await Promise.all([read(base + prefix + 'channel.json'), read(base + prefix)]);
+    const [meta, html] = await Promise.all([get(base + prefix + 'channel.json'), get(base + prefix)]);
     return { prefix, meta, html };
   }));
   for (const { prefix, meta, html } of snapshots) {
@@ -39,9 +51,13 @@ function json(response) {
     report.channels.push(item);
     if (meta.status !== 200 || html.status !== 200 || !info) report.blockers.push(item.url + ': unreadable deployment');
     if (game && missing.length) report.blockers.push(item.url + ': missing scripts ' + missing.join(', '));
-    if (game && info && info.commit !== expectedCommit) report.blockers.push(item.url + ': deployed commit differs from local HEAD');
+    if (game && info) {
+      item.sourceComparison = compare(info.commit, expectedCommit);
+      if (item.sourceComparison === 'different-runtime') report.blockers.push(item.url + ': deployed runtime sources differ from local HEAD');
+      if (item.sourceComparison === 'unknown-commit') report.pending.push(item.url + ': deployed commit cannot be compared locally; verify runtime sources');
+    }
     if (!game) continue;
-    const config = await read(item.url + 'js/cloud-config.js');
+    const config = await get(item.url + 'js/cloud-config.js');
     // Parse public constants only; never execute downloaded JavaScript.
     const host = config.text && config.text.match(/url:\s*'(https:\/\/[a-z0-9-]+\.supabase\.co)'/);
     const key = config.text && config.text.match(/anonKey:\s*'(sb_publishable_[A-Za-z0-9_-]+)'/);
@@ -50,8 +66,8 @@ function json(response) {
     if (report.backends.some(backend => backend.url === host[1])) continue;
     const headers = { apikey: key[1], Accept: 'application/json' };
     const [auth, stats] = await Promise.all([
-      read(host[1] + '/auth/v1/settings', headers),
-      read(host[1] + '/rest/v1/stats?select=device_millis,remainder_ms,collections&limit=0', headers)
+      get(host[1] + '/auth/v1/settings', headers),
+      get(host[1] + '/rest/v1/stats?select=device_millis,remainder_ms,collections&limit=0', headers)
     ]);
     const authData = json(auth), statsData = json(stats);
     report.backends.push({ url: host[1], authStatus: auth.status,
@@ -65,8 +81,20 @@ function json(response) {
   }
   if (!report.channels.some(c => c.game)) report.blockers.push('No game channel is deployed');
   report.ready = report.blockers.length === 0 && report.pending.length === 0;
-  const output = JSON.stringify(report, null, 2) + '\n';
-  if (args.length) fs.writeFileSync(path.resolve(args[1]), output);
-  process.stdout.write(output);
-  process.exitCode = report.ready ? 0 : 1;
-})().catch(err => { console.error(err.message); process.exitCode = 1; });
+  return report;
+}
+module.exports = { checkRelease, compareDeployment };
+
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  if (args.length && (args.length !== 2 || args[0] !== '--out')) {
+    console.error('Usage: node tools/check-account-release.js [--out /tmp/account-release.json]');
+    process.exit(2);
+  }
+  checkRelease().then(report => {
+    const output = JSON.stringify(report, null, 2) + '\n';
+    if (args.length) fs.writeFileSync(path.resolve(args[1]), output);
+    process.stdout.write(output);
+    process.exitCode = report.ready ? 0 : 1;
+  }).catch(err => { console.error(err.message); process.exitCode = 1; });
+}
