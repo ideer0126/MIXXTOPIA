@@ -150,7 +150,8 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
   两区在同一关卡 68×28 坐标图中，房间切换保留星星、对话与唱片进度。
   礼堂右上仅表现遮挡后台的墙面，实际后台在通过舞台右侧帘幕后显示。
 - **人物**：继续使用现有标记，等待用户提供绘画原图。后台六位 Muse 位于左侧上下两组，
-  每组三人，中间是精灵与左侧椭圆星光门；对话后的星出现在化妆台左端。
+  每组三人，中间是精灵与左侧椭圆星光门（传送门）；对话后的星出现在化妆台左端。
+- **术语**：关 1 的场景与台词使用“星光门”作为传送门（`PORTAL`）的名称；机制说明统一使用“传送门”。
 - **后台家具（比例 / 碰撞修正）**：北、中央、南三排；中央为背靠背的两组，镜面朝向相反。
   四组各 5 个独立单人圆镜台，单元以 3×3 瓦片等比例绘制，共 20 个梳妆位和 20 把椅子。
   整个桌镜区域都不可通行，不再只挡住桌脚；两条主过道各宽两格。墙上音乐 / 鲸鱼海报，
@@ -350,9 +351,9 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | `#` | 墙体 WALL | 不可通行 | — | tile | 全部 |
 | `·` | 地面 FLOOR | 可通行 | — | tile | 全部 |
 | STAR | 愿望之星 | 静止发光；拾取时粒子爆散 + 芯片音效 | 接触收集，+1 计数 | `{type:'star',id,requiresDialogue?:string[]}`（关 1 的 s3 使用三段后台对话节点） | 全部 |
-| PORTAL | 传送门 | 本关星数满且剧情条件满足后激活（粒子 + 音效） | 踩上（接触）进入下一关；`to` 优先于线性下一关 | `{type:'portal',to,requiresDialogue?:string[]}` | 1–5 |
+| PORTAL | 传送门 | 本关星数满且剧情条件满足后激活（粒子 + 音效） | 踩上（接触）进入下一关；`to` 优先于线性下一关 | `{type:'portal',to,requiresDialogue?:string[],facing?:'east'}` | 1–5 |
 | SWITCH | 压力开关 | 玩家或箱子压住期间开启 target 门；离开即关闭 | 物理（踩上/推箱压上） | `{type:'switch',target}` | 6 |
-| GATE | 门 | 关/开两态；关闭时阻挡通行，`open:true` 为常开；门格不接受箱子落点（门开时玩家可站在门格上） | 由开关、灯柱或 requiresDialogue / requiresStars 剧情条件控制 | `{type:'gate',id,open:false,requiresStars?:string[],requiresDialogue?:string[],visual?:string}` | 1、2、6 |
+| GATE | 门 | 关/开两态；关闭时阻挡通行，`open:true` 为常开；门格不接受箱子落点（门开时玩家可站在门格上） | 由开关、灯柱或 `requiresDialogue` 剧情条件控制；配置剧情条件时可叠加 `requiresStars`，不支持仅用 `requiresStars` 驱动开门 | `{type:'gate',id,open:false,requiresStars?:string[],requiresDialogue?:string[],visual?:string}` | 1、2、6 |
 | DOOR | 杂物间门 | 关闭时阻挡通行；打开后保持开启 | E 打开 | `{type:'door',id,open:false,label?:string}` | 1 |
 | ROOMDOOR | 房间出入口 | 接触后在同一关卡内移动到 `to` 坐标，保留星星、对话与唱片进度；可与 GATE 同格，由 GATE 阻挡入口 | 接触切换房间 | `{type:'roomdoor',id,to:{x,y},label?:string}` | 1 |
 | BOX | 箱子 | 沿方向推一格，压住开关 | 方向移动 | `{type:'box'}` | 6 |
@@ -381,8 +382,9 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 - 实体的 `x,y`、`roomdoor.to.x,y` 与 `trigger.rect` 均使用本关地图的瓦片坐标；`portal.to` 则是下一关的关卡 ID。
 - `room`：NPC 实体与对话节点使用相同的房间字符串（`hall` / `backstage`）；省略时按 `hall` 解析。同一角色的 `id` 可在两房间复用，互动候选与后续提示按房间区分。
 - `label`：门的显示名称字符串；关 1 的 `door` 和 `roomdoor` 都有此字段，目前出入口渲染读取 `roomdoor.label`，不参与解锁判断。
+- `facing`：传送门素材朝向，目前仅 `'east'` 有专用分支：配置 `sceneryAssets.portal` 且提供 `portalEast` 时选择右向素材；省略、其他值或缺少 `portalEast` 时选用默认 `portal` 素材。关 1 使用 `'east'` 面向右侧入口；该字段不改变碰撞、激活或目的地。
 - `visual`：门的绘制提示；后台入口的 `gate` 使用 `'curtain'`，跳过普通 GATE 图形，由同格 `roomdoor` 根据门状态绘制帘幕 / 出入口，不改变碰撞或解锁条件。
-- `requiresStars`：同关星星 ID 的字符串数组，全部已收集才满足；唱片、唱片机、后台门及寻找唱片的触发器均要求 `['s1','s2']`，不是星星数量。
+- `requiresStars`：同关星星 ID 的字符串数组，全部已收集才满足；唱片、唱片机、后台门及寻找唱片的触发器均要求 `['s1','s2']`，不是星星数量。对 `gate`，只有配置 `requiresDialogue` 时才会同步这些前置条件；单独配置 `requiresStars` 不会驱动门状态。
 - `requiresDialogue`：对话节点 ID 的字符串数组，全部已记录在 `played` 且对应对话已结束才满足；与 `requiresStars` 同时存在时两组条件都须满足。唱片、唱片机与提示要求六位 Muse 的自我介绍；后台门要求 `l1.music.play`；s3 和星光门要求 `l1.backstage.lily`、`l1.backstage.sullyoon`、`l1.backstage.byeori`。前置数组省略或为空表示该项无限制。
 - `skipIfDialogue`：触发器的跳过节点 ID 数组，任一节点已记录在 `played` 就不触发；`music-ready` 使用 `['l1.record.take','l1.music.play']`，避免已取唱片或已播放后再提示寻找唱片。
 
@@ -394,7 +396,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 - **推箱**：玩家朝箱子移动且箱后一格可站立时，箱子沿该方向滑动一格；墙与其他箱子阻挡，**门格一律不接受箱子**（门开/关都不行，防止箱子压住门格、门闭合后堵死通路）。门开启时玩家仍可正常通过或站在门格上，只是箱子落点被拒。推箱当帧玩家不前进，避免与箱子重叠。
 - **压力开关**：玩家或任意箱子压住开关期间，`target` 门开启；离开后若无人/无箱压住则关门。门初始 `open:true` 视为常开；玩家正踩在门格上时暂不关门，防止被夹住。
 - **星星**：接触即收集，星星中心爆散金色粒子并播放拾取音效；`star:<星id>` 台词由对话系统（#12）分发。
-- **传送门**：本关 `stars >= starCount` 时激活，播放粒子/音效并发出 `portal` 事件；玩家踩上传送门触发 `clear:<关卡id>` 台词/结算，`portal.to` 指向的关卡优先于数组线性下一关。
+- **传送门**：本关 `starCount > 0`、`stars >= starCount` 且传送门的前置条件全部满足时激活；`requiresDialogue` 指定的节点须已记录在 `played` 且对应对话已结束，如另有 `requiresStars` 也须同时满足。激活后播放粒子/音效并发出 `portal` 事件；玩家踩上传送门触发 `clear:<关卡id>` 台词/结算，`portal.to` 指向的关卡优先于数组线性下一关。
 - **音效降级**：`js/audio.js` 在无 WebAudio 或声音关闭时安静返回 false，不影响机制与状态机。
 
 > 战斗相关（敌人 ENEMY、攻击判定、能量炮）见 §12（Issue #18 已实现）。
@@ -695,6 +697,7 @@ Lily、Sullyoon、Byeori 三段全部完成后出现 s3；其余后台台词为�
 | 选择存档 | 3 个固定存档位，显示关卡名、该关星数、已通关数；空档可直接开始新游戏；已有档可载入或删除（删除需二次点击确认）；三档全满时新游戏需二次点击确认覆盖 |
 | HUD | 游戏画面上方、左缘对齐：关名 + 星数「★ 2/3」+ HP「♥ 10/10」+ 被动能量条（引擎预留 24px HUD 带，不压进画面；能量满时条变金色、标签变「F/G」）；关 5 追加清凉条；关 6 追加总进度「★ x/25」 |
 | 对话 | 底部框 + 姓名标签（§3 色；`nar` 使用 §3 旁白样式）+ 打字机；翻页提示「▼ E / 空格」；选项列表 ↑↓ 选择；对话期间**背景压暗虚化**（只突出对话框与头像）；对话框**右上方框外说话人头像位**（贴框顶、向上延伸，3:4 竖版半身照，宽 = 对话框宽 × 2/6；自动加载 `assets/characters/<speaker>/art/<speaker>-portrait.png`；`nar`/`all` 等伪说话人无立绘、缺图自动隐藏，不影响对话流程；见 Issue #28） |
+| 传送门状态 | 本关 `starCount > 0` 且 `stars >= starCount`，同时满足 `requiresDialogue` 等前置条件才点亮并允许进入；星数已满但剧情未完成时仍保持未激活，与 §6 一致 |
 | 结算 | 星星 x/y + 通关用时；按钮「下一关」（关 6 为「见证结局」）；进入结算即自动存档 |
 | 暂停 | 继续 / 重玩本关 / 回到标题（不保存）/ 保存并退出 |
 | 结局 | 星星雨粒子 + 台词滚动 +「再来一次」 |
@@ -809,7 +812,7 @@ const GAME = {
         { type: 'enemy', id: 'e1', kind: 'dreamling', x: 14, y: 19 }, // #18 战斗
         { type: 'switch', id: 'sw1', x: 30, y: 12, target: 'gate1' },
         { type: 'gate', id: 'gate1', x: 34, y: 12, open: false },
-        { type: 'portal', x: 38, y: 10, to: 2 }
+        { type: 'portal', x: 38, y: 10, to: 2, facing: 'east' } // 选择 sceneryAssets.portalEast；默认素材为 portal
       ],
       starCount: 3
     },
