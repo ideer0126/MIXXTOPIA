@@ -41,6 +41,7 @@
       this.config = opts.config || (this.root.MIXX && this.root.MIXX.cloudConfig);
       this.auth = opts.auth;
       this.fetch = opts.fetch || null;
+      this.resource = opts.resource || '/saves';
     }
     get available() { return !!(this.config && this.config.enabled && this.auth); }
     _assert(uid, session) {
@@ -74,7 +75,7 @@
         }
         let response, data;
         try {
-          response = await fetchFn(this.config.restUrl('/saves') + path, init);
+          response = await fetchFn(this.config.restUrl(this.resource) + path, init);
           // Error responses can contain HTML (proxy/CDN); status still determines
           // refresh, authorization and availability handling. Keep the timeout
           // active through body consumption, including JSON parse failures.

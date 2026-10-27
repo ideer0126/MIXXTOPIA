@@ -62,6 +62,7 @@ const UI_IDS = [
   'avatar-preview', 'avatar-preview-name', 'avatar-options',
   'btn-pref-sound', 'btn-pref-touch', 'settings-cloud-note', 'settings-msg',
   'btn-settings-retry', 'btn-settings-save', 'link-delete-account', 'btn-settings-back',
+  'stats-time', 'stats-collection', 'stats-achievements', 'stats-status', 'btn-stats-sync',
   'touch-controls',
 ];
 
@@ -216,6 +217,7 @@ vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/cloud-config.js'), 'utf8
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/auth.js'), 'utf8'), sandbox, { filename: 'js/auth.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/account.js'), 'utf8'), sandbox, { filename: 'js/account.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/cloud.js'), 'utf8'), sandbox, { filename: 'js/cloud.js' });
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/stats.js'), 'utf8'), sandbox, { filename: 'js/stats.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/main.js'), 'utf8'), sandbox, { filename: 'js/main.js' });
 
 const main = sandbox.MIXX.main;
@@ -290,6 +292,7 @@ function makeGame(opts) {
     opts = Object.assign({}, opts, { auth: null });
   }
   if (!opts.enableCloud && !Object.prototype.hasOwnProperty.call(opts, 'cloud')) opts = Object.assign({}, opts, { cloud: null });
+  if (!opts.enableStats && !Object.prototype.hasOwnProperty.call(opts, 'stats')) opts = Object.assign({}, opts, { stats: null });
   return new main.Game(registry.get('game'), opts);
 }
 
@@ -1915,6 +1918,7 @@ test('构建注入 beta 时 main 使用 beta 存档键（#17）', () => {
   const originalMain = sandbox.MIXX.main;
   sandbox.MIXXTOPIA_CHANNEL = 'beta';
   vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/cloud.js'), 'utf8'), sandbox, { filename: 'js/cloud.js' });
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/stats.js'), 'utf8'), sandbox, { filename: 'js/stats.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/main.js'), 'utf8'), sandbox, {
     filename: 'js/main.js?beta',
   });
@@ -3247,6 +3251,69 @@ testAsync('#45 保存助手处理开场对话，直到打字机和翻页结束',
   assert.equal(game.state, STATE.TITLE); assert.ok(game.store.readSlot(0));
   assert.ok(game.store.readSlot(0).played.includes('test.cloud-intro'));
   delete game.dialogue['test.cloud-intro']; game.destroy();
+});
+
+
+/* ─────────────────── #46 统计接线 ─────────────────── */
+test('#46 时长只随 runTime 累计，标题/暂停/对话/隐藏页面不计时', () => {
+  const game = makeGame({ enableStats: true });
+  game._update(1); assert.equal(game.stats.record.seconds, 0);
+  game._startNewGame();
+  while (game.state === STATE.DIALOGUE) advanceDialog(game);
+  for (let i = 0; i < 25; i++) game._update(0.04);
+  assert.ok(Math.abs(game.stats.record.seconds - game.runTime) < 1e-8);
+  const time = game.stats.record.seconds;
+  game._setState(STATE.PAUSED); game._update(5);
+  game._setState(STATE.DIALOGUE); game._update(5);
+  game._setState(STATE.PLAYING); documentStub.hidden = true; game._update(5);
+  documentStub.hidden = false;
+  assert.equal(game.stats.record.seconds, time);
+  game.destroy();
+});
+test('#46 拾星/全收集/通关成就接线；退出不保存也保留统计', () => {
+  const game = makeGame({ enableStats: true }); game._startNewGame();
+  while (game.state === STATE.DIALOGUE) advanceDialog(game);
+  collectAll(game);
+  assert.ok(game.stats.view().achievements.includes('first_star'));
+  assert.ok(game.stats.view().achievements.includes('wish_keeper'));
+  game._onLevelClear();
+  assert.ok(game.stats.view().achievements.includes('first_clear'));
+  assert.ok(!game.stats.view().achievements.includes('journey_complete'), '占位地图不解锁终章');
+  game._setState(STATE.PLAYING); game._update(1.25); game._setState(STATE.PAUSED);
+  game._quitToTitle(); game._openSettingsScreen();
+  assert.match(text('stats-time'), /1 秒/); assert.match(text('stats-status'), /游客/);
+  assert.match(text('stats-collection'), /3\/3（100%）/);
+  assert.match(text('stats-achievements'), /★ 初见星光/);
+  game.destroy();
+});
+test('#46 pagehide 保存小数；跨标签页切号撤销统计，destroy 解绑监听', () => {
+  const game = makeGame({ enableStats: true, auth: { session: { user: { id: 'A' } } }, profile: null });
+  game.stats.tick(0.375); fireWindow('pagehide', {});
+  assert.equal(game.stats.dirty, false);
+  const before = (windowListeners.storage || []).length;
+  fireWindow('storage', { key: main.ACCOUNT_KEY, newValue: JSON.stringify({ user: { id: 'B' } }) });
+  assert.equal(game.stats.suspended, true);
+  game.destroy(); assert.equal((windowListeners.storage || []).length, before - 1);
+});
+testAsync('#46 保存先完成云存档同步，再刷新账户收集率；离线不阻塞回标题', async () => {
+  const order = [];
+  const auth = { session: { user: { id: 'A' } } };
+  const cloud = { uid: 'A', busy: [false, false, false], loaded: false, loading: false,
+    remote: [null, null, null], record: { pending: [], decision: '' },
+    state: () => 'unsynced', save: async () => { await Promise.resolve(); order.push('save'); }, destroy() {} };
+  const stats = new sandbox.MIXX.stats.StatsTracker({ storage: localStorageStub,
+    client: { merge: async (uid, record) => { order.push('stats'); return {
+      user_id: uid, play_seconds: 0, remainder_ms: 0, device_millis: {}, achievements: [], collections: {},
+    }; } } });
+  const game = makeGame({ auth, cloud, profile: null, stats });
+  await stats.connect('A'); order.length = 0;
+  saveOne(game); await game._statsTask; await stats.task;
+  assert.equal(game.state, STATE.TITLE); assert.ok(game.store.readSlot(0));
+  assert.ok(order.lastIndexOf('stats') > order.indexOf('save'));
+  stats.client.merge = async () => { throw Error('offline'); };
+  saveOne(game); await game._statsTask; await stats.task;
+  assert.equal(game.state, STATE.TITLE); assert.ok(stats.error);
+  game.destroy();
 });
 
 /* ─────────────────── 汇总 ─────────────────── */

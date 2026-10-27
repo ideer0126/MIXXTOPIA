@@ -272,6 +272,7 @@
       settingsKey: 'mixxtopia.settings' + suffix + '.v1',
       accountKey: 'mixxtopia.account' + suffix + '.v1',
       cloudKey: 'mixxtopia.cloud' + suffix + '.v1',
+      statsKey: 'mixxtopia.stats' + suffix + '.v1',
     };
   }
 
@@ -583,6 +584,8 @@
       this.cloud = this._createCloud(opts);
       this._cloudTask = null;
       this._cloudConfirm = null;
+      this.stats = this._createStats(opts);
+      this._statsTask = null;
       this.profile = null;          // { nickname, avatar, prefs }（云端资料；游客为 null）
       this.profileError = null;     // 最近一次资料加载/保存失败（错误对象）
       this._profileUserId = '';     // profile 对应的 user id；会话切换时重新加载
@@ -630,6 +633,7 @@
       this.input.setTouchMode(this._settings.touch); // #44：恢复触屏按键偏好
       this._applySoundState();
       this._setState(STATE.TITLE);
+      if (this.stats) this._statsTask = this.stats.connect('');
       this._initAuth();
     }
 
@@ -687,6 +691,7 @@
       }
       this._authUnsubscribe = null;
       if (this.cloud) this.cloud.destroy();
+      if (this.stats) this.stats.destroy();
       for (let i = 0; i < this._uiHandlers.length; i++) {
         const el = this._uiHandlers[i][0];
         const type = this._uiHandlers[i][1];
@@ -704,6 +709,7 @@
     _setState(next) {
       if (next === this.state) return;
       const prev = this.state;
+      if (this.stats && prev === STATE.PLAYING) this.stats.flush();
       this._leaveState(prev);
       this.state = next;
       this._enterState(next);
@@ -790,6 +796,7 @@
     /* ── 每帧更新 ── */
 
     _update(dt) {
+      if (this.doc && this.doc.hidden) return;
       switch (this.state) {
         case STATE.PLAYING:
           this._updatePlaying(dt);
@@ -839,6 +846,7 @@
       this._checkPortal();
       if (this.state !== STATE.PLAYING) return; // 过关台词进入对话，本帧不再计时
       this.runTime += dt;
+      if (this.stats) this.stats.tick(dt);
     }
 
     /* ── 战斗（Issue #18） ── */
@@ -1106,6 +1114,10 @@
           e.collected = true;
           this.collected.push(e.id);
           this.stars++;
+          if (this.stats) {
+            this.stats.unlock('first_star');
+            if (this.stars >= this._starCount()) this.stats.unlock('wish_keeper');
+          }
           // 拾取反馈（#9）：星星中心金色爆散 + 芯片音
           this.particles.burst(
             rx + TILE / 2, ry + TILE / 2,
@@ -1209,12 +1221,52 @@
 
     /** 当前登录账号变化时重建云同步归属，令牌续期不重复连接。 */
     _syncCloud() {
+      if (this.stats && !this._destroyed) this._statsTask = this.stats.connect(this._currentUserId());
       if (!this.cloud || this._destroyed) return;
       const uid = this._currentUserId();
       if (uid !== this.cloud.uid) {
         this._cloudConfirm = null;
-        this._cloudTask = this.cloud.connect(uid);
+        this._cloudTask = this.cloud.connect(uid).then(result => {
+          if (!this._destroyed && this._currentUserId() === uid) this._syncStats();
+          return result;
+        });
       }
+    }
+
+    /** Statistics use their own account journals; guest time is never silently imported. */
+    _createStats(opts) {
+      if (Object.prototype.hasOwnProperty.call(opts, 'stats')) return opts.stats || null;
+      const mod = this.root.MIXX && this.root.MIXX.stats;
+      if (!mod) return null;
+      const client = this.auth ? new mod.StatsClient({ auth: this.auth, fetch: opts.fetch,
+        config: this.root.MIXX.cloudConfig, root: this.root,
+        isCurrent: uid => !this._destroyed && this.stats && !this.stats.suspended && this._currentUserId() === uid }) : null;
+      return new mod.StatsTracker({ client, storage: this.storage, key: CHANNEL_KEYS.statsKey,
+        onChange: () => this._refreshStatsUI() });
+    }
+
+    _syncStats() {
+      if (!this.stats || this._destroyed) return;
+      this._statsTask = this.stats.sync();
+    }
+
+    _refreshStatsUI() {
+      if (!this.stats || !this._ui || this._destroyed) return;
+      const mod = this.root.MIXX.stats, view = this.stats.view();
+      const minutes = Math.floor(view.seconds / 60);
+      this._text(this._ui.statsTime, Math.floor(minutes / 60) + ' 小时 ' + (minutes % 60) + ' 分 ' + (view.seconds % 60) + ' 秒');
+      const collections = this.stats.uid ? view.collections : mod.localCollections(this.store.readAll());
+      this._text(this._ui.statsCollection, mod.collectionRates(this.levels, collections).map(l =>
+        l.title + '：' + l.got + '/' + l.total + '（' + l.percent + '%）').join('\n'));
+      this._text(this._ui.statsAchievements, Object.keys(mod.ACHIEVEMENTS).map(id =>
+        (view.achievements.includes(id) ? '★ ' : '☆ ') + mod.ACHIEVEMENTS[id]).join('\n'));
+      const status = this.stats.error ? this.stats.error.message + '；未同步记录会在下次登录时重试'
+        : !this.stats.uid ? '游客统计仅保存在本机；登录后单独累计账户统计。'
+        : this.stats.task ? '正在同步统计…'
+        : view.pending ? '有统计待同步，本机记录已保留。'
+        : '统计已同步。';
+      this._text(this._ui.statsStatus, status);
+      if (this._ui.btnStatsSync) this._ui.btnStatsSync.disabled = !this.stats.uid || !!this.stats.task || this.stats.suspended;
     }
 
     /** 将存档时间显示为本地中文时间；没有存档时显示「无」。 */
@@ -1294,7 +1346,10 @@
       }
       this._cloudConfirm = null;
       this._cloudTask = cloud.transfer(index, direction).then(result => {
-        if (!this._destroyed) { this._refreshTitle(); this._refreshSaveScreen(); }
+        if (!this._destroyed) {
+          this._refreshTitle(); this._refreshSaveScreen();
+          if (result) this._syncStats();
+        }
         return result;
       });
     }
@@ -1800,6 +1855,8 @@
       // 只有「还没拿到过资料」才自动重试；保存失败时资料本身有效，不重新拉取，
       // 避免后台 GET 迟到后覆盖玩家正在编辑的内容。
       if (signedIn && this.account && !this.profile) this._loadProfile();
+      this._refreshStatsUI();
+      this._syncStats();
       return true;
     }
 
@@ -2339,6 +2396,13 @@
       const ok = this.store.writeSlot(this.saveSlotIndex, s);
       if (ok) {
         if (this.cloud) this._cloudTask = this.cloud.save(this.saveSlotIndex, cloneSlot(s));
+        if (this.stats) {
+          this.stats.flush();
+          const uid = this._currentUserId();
+          this._statsTask = Promise.resolve(this._cloudTask).then(() => {
+            if (!this._destroyed && this._currentUserId() === uid) return this.stats.sync();
+          });
+        }
         if (this.onEvent) {
           try {
             this.onEvent('save', { slot: this.saveSlotIndex, level: s.current, cleared: s.cleared.length });
@@ -2495,6 +2559,7 @@
     /** 回标题（不写盘）：放弃上次存档之后的进度；存档本身保持不动 */
     _quitToTitle() {
       if (this.state !== STATE.PAUSED && this.state !== STATE.ENDING) return;
+      this._syncStats();
       this.level = null;
       this.player = null;
       this.stars = 0;
@@ -2526,6 +2591,12 @@
       this._text(this._ui.clearText, clearText);
       const nextIndex = this._nextLevelIndex(); // 优先 portal.to，其次线性下一关
       const isLast = nextIndex < 0;
+      if (this.stats) {
+        if (lv.id > 0) this.stats.unlock('first_clear');
+        const completed = new Set((this.saveData && this.saveData.cleared || []).concat(lv.id));
+        if (isLast && this.dataSource === 'data' && this.levels.some(l => l.id === 6)
+          && this.levels.filter(l => l.id > 0).every(l => completed.has(l.id))) this.stats.unlock('journey_complete');
+      }
       this._pendingNextIsEnding = isLast;
       this._pendingNextIndex = nextIndex;
       this._text(this._ui.btnNext, isLast ? '▶ 见证结局' : '▶ 下一关');
@@ -3168,6 +3239,11 @@
         'btn-pref-touch': 'btnPrefTouch',
         'settings-cloud-note': 'settingsCloudNote',
         'settings-msg': 'settingsMsg',
+        'stats-time': 'statsTime',
+        'stats-collection': 'statsCollection',
+        'stats-achievements': 'statsAchievements',
+        'stats-status': 'statsStatus',
+        'btn-stats-sync': 'btnStatsSync',
         'btn-settings-save': 'btnSettingsSave',
         'btn-settings-retry': 'btnSettingsRetry',
         'link-delete-account': 'linkDeleteAccount',
@@ -3203,7 +3279,9 @@
       }
       this._on(ui.btnLoginCloud, 'click', () => this._openSaveScreen('load'));
       this._on(ui.btnCloudMerge, 'click', () => {
-        if (this.state === STATE.TITLE && this.cloud && !this._cloudBusy()) this._cloudTask = this.cloud.decide('merge');
+        if (this.state === STATE.TITLE && this.cloud && !this._cloudBusy()) {
+          this._cloudTask = this.cloud.decide('merge').then(result => { this._syncStats(); return result; });
+        }
       });
       this._on(ui.btnCloudSkip, 'click', () => {
         if (this.state === STATE.TITLE && this.cloud && !this._cloudBusy()) this._cloudTask = this.cloud.decide('cloud');
@@ -3211,7 +3289,7 @@
       this._on(ui.btnCloudRetry, 'click', () => {
         if (this.state === STATE.TITLE && this.cloud && !this._cloudBusy()) {
           this._cloudConfirm = null;
-          this._cloudTask = this.cloud.refresh(true);
+          this._cloudTask = this.cloud.refresh(true).then(result => { this._syncStats(); return result; });
         }
       });
       this._on(ui.btnHelp, 'click', () => {
@@ -3232,6 +3310,18 @@
       this._on(ui.btnSettings, 'click', () => { this._openSettingsScreen(); });
       this._on(ui.btnTitleSettings, 'click', () => { this._openSettingsScreen(); });
       this._on(ui.btnSettingsBack, 'click', () => { this._closeSettingsScreen(); });
+      this._on(ui.btnStatsSync, 'click', () => { if (this._settingsVisible()) this._syncStats(); });
+      this._on(this.root, 'pagehide', () => { if (this.stats) this.stats.flush(); });
+      this._on(this.doc, 'visibilitychange', () => {
+        if (this.doc.hidden && this.stats) this.stats.flush();
+      });
+      this._on(this.root, 'storage', ev => {
+        if (this.stats && this.auth && (ev.key === ACCOUNT_KEY || ev.key === null)) {
+          let uid = '';
+          try { uid = JSON.parse(ev.newValue).user.id; } catch (err) { /* Logout or damaged session. */ }
+          if (uid !== this._currentUserId()) this.stats.suspend();
+        }
+      });
       this._on(ui.btnSettingsSave, 'click', () => { this._onSettingsSave(); });
       this._on(ui.btnSettingsRetry, 'click', () => {
         if (this._settingsVisible()) this._loadProfile();
