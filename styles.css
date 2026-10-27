@@ -41,7 +41,8 @@ body {
   display: none !important;
 }
 
-/* ── 触屏虚拟按键（Issue #5）：pointer:coarse 设备显示十字键 + A 键 ── */
+/* ── 触屏虚拟按键（Issue #5）：pointer:coarse 设备显示十字键 + 操作键。
+   Issue #18：A 确认，B 轻击，C 重击（右侧 2×2 网格，避免窄屏横向溢出） ── */
 
 #touch-controls {
   display: none;
@@ -52,8 +53,8 @@ body {
   z-index: 50;
   justify-content: space-between;
   align-items: flex-end;
-  gap: 12px;
-  padding: 0 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  gap: 8px;
+  padding: 0 8px calc(12px + env(safe-area-inset-bottom, 0px));
   pointer-events: none; /* 容器穿透，仅按键自身响应 */
   user-select: none;
   -webkit-user-select: none;
@@ -74,6 +75,16 @@ body {
 
 #touch-controls.touch-off {
   display: none !important;
+}
+
+/* ── 操作偏好（Issue #44）：auto 跟随设备检测；on/off 显式覆盖。
+   与菜单态 .touch-off 正交——进入菜单的临时隐藏仍优先，不覆盖玩家偏好 ── */
+#touch-controls.touch-pref-off {
+  display: none !important;
+}
+
+#touch-controls.touch-pref-on:not(.touch-off) {
+  display: flex !important;
 }
 
 #dpad {
@@ -121,14 +132,48 @@ body {
 }
 
 #tbtn-a {
-  width: 64px;
-  height: 64px;
+  grid-area: 2 / 1 / 3 / 3;
+  justify-self: end;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   border-color: #ff8fa3;
   background: rgba(255, 143, 163, 0.55);
   color: #ffffff;
   font-size: 20px;
   pointer-events: auto;
+}
+
+/* 右侧操作区：#18 战斗键 B（轻击）/ C（重击）在上，A（确认）在下 */
+#touch-actions {
+  display: grid;
+  grid-template-columns: 46px 46px;
+  grid-template-rows: 46px 56px;
+  gap: 6px;
+  justify-items: center;
+  align-items: center;
+  pointer-events: none;
+}
+
+#touch-actions #tbtn-b,
+#touch-actions #tbtn-c {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  font-size: 14px;
+  pointer-events: auto;
+}
+
+#tbtn-b {
+  grid-area: 1 / 1;
+  border-color: #5ee6b8;
+  background: rgba(94, 230, 184, 0.32);
+}
+
+#tbtn-c {
+  grid-area: 1 / 2;
+  border-color: #ffc857;
+  background: rgba(255, 200, 87, 0.32);
 }
 
 /* ── 屏幕层与菜单（Issue #6）── */
@@ -333,6 +378,14 @@ body {
 
 /* ── 登录 / 账户（Issue #43）：标题入口 + 登录表单 + 已登录面板 ── */
 
+/* 标题账户按钮：昵称/邮箱可能较长，单行省略号截断（#44 标题优先显示昵称） */
+.account-btn {
+  max-width: min(320px, 86vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .account-btn.signed-in {
   border-color: #8ef0ff;
   color: #8ef0ff;
@@ -444,14 +497,277 @@ body {
   color: #8ef0ff;
 }
 
+/* ── 账户设置（Issue #44）：昵称 + 固定头像集（前端白名单）+ 音效/操作偏好 ── */
+
+.settings-account {
+  margin: 0;
+  max-width: 360px;
+  font-size: 8px;
+  line-height: 1.8;
+  color: #8ef0ff;
+  overflow-wrap: anywhere;
+}
+
+.settings-avatar-panel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(360px, 88vw);
+}
+
+.avatar-preview {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 68px;
+  height: 68px;
+  background: #7fb8e6;
+  border: 2px solid #ffc857;
+  border-radius: 6px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+}
+
+.avatar-preview-name {
+  font-size: 7px;
+  line-height: 1;
+  color: #0b0b1e;
+  max-width: 62px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 像素小脸：暗底 + 两只浅色眼睛，头像占位色由 JS 按 avatarPresets 设置 */
+.avatar-face {
+  position: relative;
+  display: block;
+  width: 28px;
+  height: 28px;
+  background: rgba(11, 11, 30, 0.55);
+  border-radius: 4px;
+}
+
+.avatar-face::before,
+.avatar-face::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  width: 4px;
+  height: 4px;
+  background: #f0e6d2;
+}
+
+.avatar-face::before { left: 6px; }
+.avatar-face::after { right: 6px; }
+
+.avatar-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.avatar-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 4px;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 7px;
+  color: #f0e6d2;
+  background: #14143a;
+  border: 2px solid #3a2a66;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.avatar-btn .avatar-face {
+  width: 24px;
+  height: 24px;
+}
+
+.avatar-btn .avatar-face::before,
+.avatar-btn .avatar-face::after {
+  top: 8px;
+  width: 3px;
+  height: 3px;
+}
+
+.avatar-btn .avatar-face::before { left: 5px; }
+.avatar-btn .avatar-face::after { right: 5px; }
+
+.avatar-btn .avatar-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* 头像占位色是浅色（缪斯配色），按名字用深色以保证对比度 */
+  color: #0b0b1e;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.avatar-btn:hover {
+  border-color: #6f5f95;
+}
+
+/* 键盘焦点：与「选中态」的金色边框区分，用青色 outline 保证可见（可访问性） */
+.avatar-btn:focus-visible {
+  border-color: #8ef0ff;
+  outline: 2px solid #8ef0ff;
+  outline-offset: 2px;
+}
+
+.avatar-btn.is-selected {
+  background: #23235c;
+  border-color: #ffc857;
+  box-shadow: 0 0 0 2px rgba(255, 200, 87, 0.35);
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(360px, 88vw);
+  font-size: 9px;
+  color: #ffc857;
+  text-align: left;
+}
+
+.settings-field input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 10px;
+  color: #f0e6d2;
+  background: #0b0b1e;
+  border: 2px solid #3a2a66;
+  border-radius: 6px;
+  outline: none;
+}
+
+.settings-field input:focus {
+  border-color: #ffc857;
+}
+
+.settings-hint {
+  margin: 0;
+  max-width: 360px;
+  font-size: 8px;
+  line-height: 1.8;
+  color: #b8a8e0;
+}
+
+.settings-hint.settings-hint-error {
+  color: #ff9bb5;
+}
+
+.settings-prefs {
+  display: flex;
+  gap: 10px;
+  width: min(360px, 88vw);
+}
+
+.settings-prefs .menu-btn {
+  flex: 1 1 0;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.settings-prefs .menu-btn.pref-on {
+  border-color: #8ef0ff;
+  color: #8ef0ff;
+}
+
+.settings-msg {
+  min-height: 1.4em;
+  margin: 0;
+  max-width: 360px;
+  font-size: 8px;
+  line-height: 1.8;
+  color: #b8a8e0;
+}
+
+.settings-msg.settings-msg-error {
+  color: #ff9bb5;
+}
+
+.settings-msg.settings-msg-ok {
+  color: #8ef0ff;
+}
+
+.settings-danger {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(360px, 88vw);
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px dashed #3a2a66;
+}
+
+.settings-delete {
+  font-size: 8px;
+  line-height: 1.6;
+  color: #ff9bb5;
+  text-decoration: none;
+  border-bottom: 1px dotted #7a3d5c;
+  padding-bottom: 1px;
+}
+
+.settings-delete:hover,
+.settings-delete:focus-visible {
+  color: #ffc0cf;
+  outline: none;
+}
+
+.settings-delete-note {
+  margin: 0;
+  max-width: 360px;
+  font-size: 7px;
+  line-height: 1.8;
+  color: #6f5f95;
+}
+
 .menu-btn:disabled {
   opacity: 0.55;
   cursor: wait;
 }
 
-/* 矮屏 / 手机横屏：登录内容可能超出可视高度，允许界面自身滚动，避免按钮被裁掉 */
+/* 矮屏 / 手机横屏：登录/账户设置内容可能超出可视高度，允许界面自身滚动，避免按钮被裁掉 */
+.stats-panel {
+  width: min(360px, 100%);
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid #6f5f95;
+  background: rgba(26, 16, 51, 0.65);
+  text-align: left;
+  font-size: 10px;
+  line-height: 1.8;
+  flex-shrink: 0;
+}
+.stats-panel h3, .stats-panel h4 { margin: 4px 0; color: #FFC857; }
+.stats-panel p { margin: 6px 0; }
+.stats-lines { white-space: pre-line; overflow-wrap: anywhere; }
+#settings-screen {
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding-top: 16px;
+  padding-bottom: 24px;
+}
+
 @media (max-height: 560px) {
-  #login-screen {
+  #login-screen,
+  #settings-screen {
     justify-content: flex-start;
     overflow-y: auto;
     gap: 10px;
@@ -460,9 +776,20 @@ body {
   }
 }
 
+/* 账户设置元素较多：中等高度也允许滚动，避免「保存/返回」被裁掉 */
+@media (max-height: 720px) {
+  #settings-screen {
+    justify-content: flex-start;
+    overflow-y: auto;
+    padding-top: 12px;
+    padding-bottom: 24px;
+  }
+}
+
 /* iOS 对 font-size < 16px 的输入框会自动放大页面；触屏设备上提高输入字号避免跳缩放 */
 @media (pointer: coarse) {
-  .login-field input {
+  .login-field input,
+  .settings-field input {
     font-size: 16px;
   }
 }
@@ -486,12 +813,13 @@ body {
 }
 
 /* ── HUD（Issue #6）：游戏画面上方、左缘对齐的关卡名 + 星数，不压画面。
-   引擎已为这一行预留空间（hudReserve=24px），HUD 隐藏时仍占位避免画布跳动 */
+   引擎已为这一行预留空间（hudReserve=24px），HUD 隐藏时仍占位避免画布跳动。
+   Issue #18：追加 HP 与被动能量条（窄屏下关卡名截断，保证一行放下） */
 #hud {
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 3px;
   height: 17px;        /* 固定带宽：有字/无字/隐藏都占同样高度，画布不跳动 */
   margin: 0 0 6px;
   font-family: "Press Start 2P", monospace;
@@ -501,6 +829,7 @@ body {
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
   pointer-events: none;
   white-space: nowrap;
+  max-width: 100%;
 }
 
 /* 隐藏态只不可见、仍占位：保证标题/游玩切换时画布不上下跳动 */
@@ -510,11 +839,83 @@ body {
 }
 
 #hud-level {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 136px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
   color: #ffc857;
 }
 
 #hud-shards {
+  flex: none;
   color: #ffffff;
+}
+
+/* HP：♥ 当前/上限；低血量变红 */
+#hud-hp {
+  flex: none;
+  font-size: 9px;
+  color: #ff8fa3;
+}
+
+#hud-hp.low {
+  color: #ff4d6d;
+  animation: hp-low-blink 0.7s steps(2, end) infinite;
+}
+
+@keyframes hp-low-blink {
+  50% { opacity: 0.45; }
+}
+
+/* 被动能量条：攒满后金色脉冲 + 标签提示 F/G 能量炮 */
+#hud-energy {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 8px;
+  color: #b8a8e0;
+}
+
+#hud-energy-bar {
+  display: block;
+  width: 40px;
+  height: 8px;
+  padding: 1px;
+  box-sizing: border-box;
+  border: 1px solid #8b7bb8;
+  background: #1a1033;
+}
+
+#hud-energy-fill {
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: #5ee6b8;
+  transition: width 0.12s linear;
+}
+
+#hud-energy-label {
+  min-width: 22px;
+}
+
+#hud-energy.ready #hud-energy-bar {
+  border-color: #ffc857;
+}
+
+#hud-energy.ready #hud-energy-fill {
+  background: #ffc857;
+  animation: energy-ready-pulse 0.55s steps(2, end) infinite;
+}
+
+#hud-energy.ready #hud-energy-label {
+  color: #ffc857;
+}
+
+@keyframes energy-ready-pulse {
+  50% { opacity: 0.5; }
 }
 
 /* ── 对话框（Issue #6 外壳；打字机/快进/翻页由 Issue #7 扩充）──
@@ -629,10 +1030,10 @@ body {
   50% { opacity: 0.35; }
 }
 
-/* 触屏设备：对话框抬高，避开底部虚拟按键 */
+/* 触屏设备：对话框抬高，避开底部虚拟按键（#18 右侧操作区两行更高） */
 @media (pointer: coarse), (any-pointer: coarse) {
   #dialog {
-    bottom: 92px;
+    bottom: calc(132px + env(safe-area-inset-bottom, 0px));
   }
 
   /* 竖屏序章画布居中，按键在画布下方；对话留在画面底部。 */
@@ -648,4 +1049,18 @@ body {
       width: min(33.333%, 12vh);
     }
   }
+}
+
+/* #45: per-slot cloud choices, including touch layouts. */
+#save-screen { overflow-y: auto; justify-content: flex-start; padding-top: 24px; }
+.cloud-status, .cloud-meta, .cloud-merge { font-size: 12px; line-height: 1.6; }
+.cloud-status { max-width: 460px; color: var(--gold, #FFC857); text-align: center; }
+.cloud-meta { margin: 4px 0; overflow-wrap: anywhere; }
+.cloud-slot { margin: 0 0 12px; padding: 0 8px 8px; border-bottom: 1px solid #ffffff30; }
+.cloud-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.cloud-actions .menu-btn { flex: 1; min-height: 44px; }
+.cloud-merge { max-width: 460px; padding: 10px; border: 1px solid #FFC857; }
+@media (pointer: coarse) {
+  #save-screen { padding: 12px 12px 32px; }
+  .cloud-actions { flex-direction: column; }
 }

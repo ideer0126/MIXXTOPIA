@@ -8,9 +8,10 @@
 </head>
 <body>
   <!--
-    tools/smoke-input.html —— 输入系统（Issue #5）浏览器冒烟测试
+    tools/smoke-input.html —— 输入系统（Issue #5 + #18 + #44）浏览器冒烟测试
     运行：任意静态服务器 + 无头浏览器 dump-dom，断言 <body data-smoke="ok">。
-    覆盖真实浏览器环境下的 KeyboardEvent / PointerEvent / 粗指针检测链路。
+    覆盖真实浏览器环境下的 KeyboardEvent / PointerEvent / 粗指针检测链路，
+    以及 F/G 攻击键、B/C 触屏键（#18）、触屏按键显示偏好（auto / on / off，Issue #44）与菜单显隐的正交关系。
   -->
   <div id="touch-controls">
     <div id="dpad">
@@ -19,7 +20,11 @@
       <button type="button" class="tbtn" data-key="down" aria-label="下">▼</button>
       <button type="button" class="tbtn" data-key="right" aria-label="右">▶</button>
     </div>
-    <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
+    <div id="touch-actions">
+      <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
+      <button type="button" id="tbtn-b" class="tbtn b" data-key="light" aria-label="轻击">B</button>
+      <button type="button" id="tbtn-c" class="tbtn c" data-key="heavy" aria-label="重击">C</button>
+    </div>
   </div>
   <pre id="results"></pre>
   <script>window.MIXX_NO_DEMO = true;</script>
@@ -62,15 +67,33 @@
       key('keyup', ' ');
       input.endFrame();
 
-      // 2) 触屏虚拟按键：十字键移动 + A 键确认（真实 PointerEvent）
+      // 1b) 战斗键（Issue #18）：F 轻击 / G 重击
+      key('keydown', 'f');
+      ok('F → light 按下边沿', input.wasPressed('light'));
+      key('keyup', 'f');
+      input.endFrame();
+      key('keydown', 'G');
+      ok('G → heavy 按下边沿', input.wasPressed('heavy'));
+      key('keyup', 'G');
+      input.endFrame();
+
+      // 2) 触屏虚拟按键：十字键移动 + A 确认 / B 轻击 / C 重击（真实 PointerEvent）
       var dpad = document.querySelector('#dpad [data-key="up"]');
       var aBtn = document.getElementById('tbtn-a');
+      var bBtn = document.getElementById('tbtn-b');
+      var cBtn = document.getElementById('tbtn-c');
       ptr(dpad, 'pointerdown', 1);
       ok('虚拟十字键 ↑ → 轴(0,-1)', input.getAxis().y === -1);
       ptr(aBtn, 'pointerdown', 2);
       ok('A 键 → confirm 按下边沿', input.wasPressed('confirm'));
+      ptr(bBtn, 'pointerdown', 3);
+      ok('B 键 → light 按下边沿', input.wasPressed('light'));
+      ptr(cBtn, 'pointerdown', 4);
+      ok('C 键 → heavy 按下边沿', input.wasPressed('heavy'));
       ptr(dpad, 'pointerup', 1);
       ptr(aBtn, 'pointerup', 2);
+      ptr(bBtn, 'pointerup', 3);
+      ptr(cBtn, 'pointerup', 4);
       ok('触屏松开后轴归零', input.getAxis().x === 0 && input.getAxis().y === 0);
       input.destroy();
 
@@ -87,6 +110,17 @@
       ok('setTouchVisible(false) → 隐藏', getComputedStyle(tc).display === 'none');
       touchInput.setTouchVisible(true);
       ok('setTouchVisible(true) → 恢复显示', getComputedStyle(tc).display !== 'none');
+
+      // 3b) 操作偏好（Issue #44）：auto 跟随设备检测；on / off 显式覆盖（真实 styles.css）
+      touchInput.setTouchMode('off');
+      ok('偏好关闭 → 强制隐藏', getComputedStyle(tc).display === 'none');
+      touchInput.setTouchMode('on');
+      ok('偏好常开 → 强制显示', getComputedStyle(tc).display === 'flex');
+      touchInput.setTouchVisible(false);
+      ok('菜单隐藏优先于偏好常开', getComputedStyle(tc).display === 'none');
+      touchInput.setTouchVisible(true);
+      ok('返回游玩恢复偏好常开', getComputedStyle(tc).display === 'flex');
+      touchInput.setTouchMode('auto');
       touchInput.destroy();
       window.matchMedia = realMM;
 

@@ -19,6 +19,11 @@
       <div id="hud" class="hidden">
         <span id="hud-level"></span>
         <span id="hud-shards"></span>
+        <span id="hud-hp">♥ 10/10</span>
+        <span id="hud-energy" aria-label="能量炮能量">
+          <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
+          <span id="hud-energy-label">0%</span>
+        </span>
       </div>
 
       <!-- 游戏画布 -->
@@ -50,8 +55,10 @@
         <button id="btn-saves" class="menu-btn">▤ 选择存档</button>
         <button id="btn-help" class="menu-btn">? 操作说明</button>
         <button id="btn-sound" class="menu-btn">♪ 声音：开</button>
+        <button type="button" id="btn-title-settings" class="menu-btn">⚙ 设置</button>
         <button id="btn-account" class="menu-btn account-btn">☁ 登录 / 注册</button>
       </div>
+      <p id="title-cloud-status" class="cloud-status" role="status" aria-live="polite"></p>
       <p id="account-note" class="account-note hidden" role="status"></p>
       <p class="footer-note">粉丝自制同人小游戏 · 非官方 · 灵感来自 NMIXX《Strange Muse》</p>
     </div>
@@ -60,6 +67,13 @@
     <div id="save-screen" class="screen hidden">
       <h2 class="screen-title">选择存档</h2>
       <p id="save-note" class="save-note">存档保存在本机浏览器 · 仅「保存并退出」与通关自动存档会写入</p>
+      <p id="cloud-status" class="cloud-status" role="status" aria-live="polite"></p>
+      <div id="cloud-merge" class="cloud-merge hidden">
+        <p>把本机进度并入账户？双方都有进度时，仍需逐档选择；不会自动覆盖。</p>
+        <button type="button" id="btn-cloud-merge" class="menu-btn small">并入本机进度</button>
+        <button type="button" id="btn-cloud-skip" class="menu-btn small">仅使用云端（逐档选择）</button>
+      </div>
+      <button type="button" id="btn-cloud-retry" class="menu-btn small">↻ 刷新 / 重试同步</button>
       <div class="save-list">
         <div class="slot-row">
           <button type="button" id="btn-slot-1" class="menu-btn slot-btn">
@@ -68,6 +82,13 @@
           </button>
           <button type="button" id="btn-slot-del-1" class="menu-btn slot-del hidden" aria-label="删除存档 1" title="删除存档 1">✕</button>
         </div>
+        <div class="cloud-slot">
+          <p id="cloud-meta-1" class="cloud-meta"></p>
+          <div class="cloud-actions">
+            <button type="button" id="btn-cloud-upload-1" class="menu-btn small hidden">↑ 上传本机</button>
+            <button type="button" id="btn-cloud-download-1" class="menu-btn small hidden">↓ 载入云端</button>
+          </div>
+        </div>
         <div class="slot-row">
           <button type="button" id="btn-slot-2" class="menu-btn slot-btn">
             <span class="slot-name">存档 2</span>
@@ -75,12 +96,26 @@
           </button>
           <button type="button" id="btn-slot-del-2" class="menu-btn slot-del hidden" aria-label="删除存档 2" title="删除存档 2">✕</button>
         </div>
+        <div class="cloud-slot">
+          <p id="cloud-meta-2" class="cloud-meta"></p>
+          <div class="cloud-actions">
+            <button type="button" id="btn-cloud-upload-2" class="menu-btn small hidden">↑ 上传本机</button>
+            <button type="button" id="btn-cloud-download-2" class="menu-btn small hidden">↓ 载入云端</button>
+          </div>
+        </div>
         <div class="slot-row">
           <button type="button" id="btn-slot-3" class="menu-btn slot-btn">
             <span class="slot-name">存档 3</span>
             <span id="slot-meta-3" class="slot-meta">空档</span>
           </button>
           <button type="button" id="btn-slot-del-3" class="menu-btn slot-del hidden" aria-label="删除存档 3" title="删除存档 3">✕</button>
+        </div>
+        <div class="cloud-slot">
+          <p id="cloud-meta-3" class="cloud-meta"></p>
+          <div class="cloud-actions">
+            <button type="button" id="btn-cloud-upload-3" class="menu-btn small hidden">↑ 上传本机</button>
+            <button type="button" id="btn-cloud-download-3" class="menu-btn small hidden">↓ 载入云端</button>
+          </div>
         </div>
       </div>
       <button id="btn-save-back" class="menu-btn small">← 返回</button>
@@ -106,12 +141,59 @@
       </div>
       <div id="login-account" class="login-account hidden">
         <p class="login-account-line">已登录：<span id="login-email-label"></span></p>
-        <p class="login-note">账户设置与云存档同步将在后续版本提供。</p>
+        <p class="login-account-line">昵称：<span id="login-nickname-label">NSWER</span></p>
+        <p id="login-account-note" class="login-note">账户设置可修改昵称、头像与音效/操作偏好；云存档可在选择存档界面管理。</p>
+        <button type="button" id="btn-settings" class="menu-btn small">⚙ 账户设置</button>
+        <button type="button" id="btn-login-cloud" class="menu-btn small hidden">☁ 管理云存档 / 并入进度</button>
         <button type="button" id="btn-logout" class="menu-btn small">↩ 登出</button>
       </div>
       <p id="login-msg" class="login-msg" role="status" aria-live="polite"></p>
       <p class="login-privacy">未登录时零上传，进度只存在本机。登录后仅保存游戏所需的邮箱、昵称、头像与进度；<a href="https://github.com/ideer0126/MIXXTOPIA/blob/main/docs/PRIVACY.md" target="_blank" rel="noopener">隐私说明</a>。</p>
       <button type="button" id="btn-login-back" class="menu-btn small">← 返回</button>
+    </div>
+
+    <!-- 账户设置（Issue #44）：昵称 + 固定头像集（前端白名单）+ 音效/操作偏好。
+         删除账户按 docs/PRIVACY.md §5 走 GitHub issue 人工处理，前端不碰 auth.users。 -->
+    <div id="settings-screen" class="screen hidden">
+      <h2 class="screen-title">账户设置</h2>
+      <p id="settings-account" class="settings-account">已登录</p>
+      <div class="settings-avatar-panel">
+        <div id="avatar-preview" class="avatar-preview">
+          <span class="avatar-face" aria-hidden="true"></span>
+          <span id="avatar-preview-name" class="avatar-preview-name">Lily</span>
+        </div>
+        <div id="avatar-options" class="avatar-options" role="group" aria-label="选择固定头像"></div>
+      </div>
+      <label class="settings-field">
+        <span>昵称（1–16 字）</span>
+        <input id="settings-nickname" type="text" autocomplete="nickname" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="NSWER" aria-describedby="settings-nickname-count" aria-invalid="false" />
+      </label>
+      <p id="settings-nickname-count" class="settings-hint" aria-live="polite">0/16</p>
+      <div class="settings-prefs">
+        <button type="button" id="btn-pref-sound" class="menu-btn">♪ 声音：开</button>
+        <button type="button" id="btn-pref-touch" class="menu-btn">📱 触屏按键：自动</button>
+      </div>
+      <p id="settings-cloud-note" class="settings-hint">昵称与头像保存到云端；声音与操作偏好同时保存到本机并立即生效。</p>
+      <p id="settings-msg" class="settings-msg" role="status" aria-live="polite"></p>
+      <section class="stats-panel" aria-labelledby="stats-heading">
+        <h3 id="stats-heading">梦境足迹</h3>
+        <p>游玩时长：<span id="stats-time">0 小时 0 分 0 秒</span></p>
+        <p class="settings-hint">仅游玩时计时，暂停和对话不计入。时长与成就独立记录，回标题也保留。</p>
+        <h4>愿望之星收集率</h4>
+        <p id="stats-collection" class="stats-lines"></p>
+        <p class="settings-hint">同关跨存档去重；账户收集率以云端存档为准，保存并同步后更新。</p>
+        <h4>成就</h4>
+        <p id="stats-achievements" class="stats-lines"></p>
+        <p id="stats-status" class="settings-hint" role="status" aria-live="polite"></p>
+        <button type="button" id="btn-stats-sync" class="menu-btn small">↻ 同步统计</button>
+      </section>
+      <button type="button" id="btn-settings-retry" class="menu-btn small hidden">↻ 重试读取云端资料</button>
+      <button type="button" id="btn-settings-save" class="menu-btn">💾 保存设置</button>
+      <div class="settings-danger">
+        <a id="link-delete-account" class="settings-delete" href="https://github.com/ideer0126/MIXXTOPIA/issues/new?title=%E7%94%B3%E8%AF%B7%E5%88%A0%E9%99%A4%E8%B4%A6%E6%88%B7&amp;body=%E7%94%B3%E8%AF%B7%E5%88%A0%E9%99%A4%E8%B4%A6%E6%88%B7%E3%80%82%0A%0A%EF%BC%88%E8%AF%B7%E5%8B%BF%E5%9C%A8%E6%AD%A4%20issue%20%E4%B8%AD%E9%99%84%E4%B8%8A%E9%82%AE%E7%AE%B1%E6%88%96%E5%85%B6%E4%BB%96%E4%B8%AA%E4%BA%BA%E4%BF%A1%E6%81%AF%EF%BC%9B%E7%BB%B4%E6%8A%A4%E8%80%85%E4%BC%9A%E5%9B%9E%E5%A4%8D%E5%B9%B6%E5%AE%89%E6%8E%92%E8%BA%AB%E4%BB%BD%E6%A0%B8%E5%AE%9E%EF%BC%8C%E6%A0%B8%E5%AE%9E%E5%90%8E%E5%88%A0%E9%99%A4%E8%B4%A6%E6%88%B7%E5%8F%8A%E5%85%B3%E8%81%94%E8%B5%84%E6%96%99%E3%80%82%EF%BC%89" target="_blank" rel="noopener">删除账户（提交申请）</a>
+        <p class="settings-delete-note">前端无法直接删除账号；提交申请后由维护者在 Supabase 后台删除 auth.users，profiles / 存档 / 统计级联删除，不可恢复。请勿在公开 issue 中填写邮箱等个人信息。</p>
+      </div>
+      <button type="button" id="btn-settings-back" class="menu-btn small">← 返回</button>
     </div>
 
     <!-- 帮助界面 -->
@@ -120,6 +202,9 @@
       <div class="help-body">
         <p><b>移动</b>　WASD / 方向键　（手机：屏幕方向键）</p>
         <p><b>对话 / 确认</b>　E 或 空格　（手机：A 键）</p>
+        <p><b>攻击</b>　F 轻击 / G 重击　（手机：B / C 键）；轻击与重击射程相同，只锁定正面 180° 扇形内、视线可达的敌人；无敌人时朝移动方向</p>
+        <p><b>能量炮</b>　被动能量条自动充能；攒满后按 F 或 G 释放，射程为普攻的 2.2 倍</p>
+        <p><b>倒下</b>　HP 归零会满血回到出生点，已收集星星与用时保留（无惩罚）</p>
         <p><b>对话快进</b>　打字中按住加速 · 点按显示全文 · 点击对话框翻页</p>
         <p><b>解谜</b>　推动礼物盒压住彩色地垫，屏风门会保持打开；星数集齐后星光门点亮，走进去过关</p>
         <p><b>暂停 / 存档</b>　Esc 暂停 →「保存并退出」写入存档；「回到标题（不保存）」丢弃未保存进度</p>
@@ -164,7 +249,11 @@
         <button type="button" class="tbtn" data-key="down" aria-label="下">▼</button>
         <button type="button" class="tbtn" data-key="right" aria-label="右">▶</button>
       </div>
-      <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
+      <div id="touch-actions">
+        <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
+        <button type="button" id="tbtn-b" class="tbtn b" data-key="light" aria-label="轻击">B</button>
+        <button type="button" id="tbtn-c" class="tbtn c" data-key="heavy" aria-label="重击">C</button>
+      </div>
     </div>
   </div>
 
@@ -174,6 +263,9 @@
   <script src="js/engine.js"></script>
   <script src="js/sprites.js"></script>
   <script src="js/auth.js"></script>
+  <script src="js/account.js"></script>
+  <script src="js/cloud.js"></script>
+  <script src="js/stats.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

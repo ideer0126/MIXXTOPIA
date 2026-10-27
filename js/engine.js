@@ -12,16 +12,21 @@
  *   - 摄像机：目标跟随 + 地图边界钳制 + 小地图居中
  *
  * 输入规格（Issue #5）：
- *   - 键盘：方向键/WASD 移动、E/空格确认、Esc 暂停、M 静音
- *   - 触屏：pointer:coarse 设备显示虚拟十字键与 A 键，与键盘输入等价
+ *   - 键盘：方向键/WASD 移动、E/空格确认、F 轻击、G 重击、Esc 暂停、M 静音
+ *   - 触屏：pointer:coarse 设备显示虚拟十字键与 A/B/C 键，与键盘输入等价
  *   - Input 管理器（engine.createInput）统一两路输入，供演示与 main.js 使用
  *
  * Issue #9：收集与解谜机制（瓦片/实体碰撞、推箱、压力开关门、传送门所需的
  *   AABB 判定）与本 Issue 专用的星星拾取粒子（Particles）。#15 在此之上扩展
  *   过场/结算等表现粒子。
  *
+ * Issue #18：战斗系统（Combat / COMBAT_TUNING）。F 轻击 / G 重击射程相同 24px，
+ *   攻击只锁定正面 180° 内、视线可达的最近敌人，无敌人时沿移动方向；被动能量条自动充能，
+ *   满能量时 F/G 释放 2.2 倍射程（52.8px）能量炮；
+ *   敌人 AI、接触伤害、无敌帧与倒下复位均在本文件，main.js 负责反馈与 HUD。
+ *
  * 后续 Issue 在本文件内追加（勿新建渲染文件）：
- *   #9 碰撞与机制（已实现）  ·  #15 表现粒子扩展
+ *   #9 碰撞与机制（已实现）  ·  #15 表现粒子扩展  ·  #18 战斗（已实现）
  *
  * 演示模式说明：
  *   js/data.js 与 js/main.js 就位前，本文件内置演示（默认地图 + 输入系统驱动小人移动）
@@ -691,11 +696,457 @@
     }
   }
 
+  /* ════════════════════════ 战斗（Issue #18） ════════════════════════ */
+
+  /**
+   * 战斗数值（单一真源：main.js / tools/test-* / GAME_DESIGN.md §12 均以此为准）。
+   *
+   * 武器 = NMIXX 二代应援棒：F 轻击 / G 重击；轻击与重击射程相同（24px）。
+   * 攻击方向只锁定正面 180° 内、视线可达的最近敌人；无敌人时沿最近移动方向（八向）。
+   * 被动能量条自动充能，命中额外充能；攒满 100 后按 F 或 G 释放能量炮，
+   * 射程 = 普攻 24px × 2.2 = 52.8px，穿透光束、消耗全部能量。
+   */
+  const COMBAT_TUNING = {
+    maxHp: 10,
+    maxEnergy: 100,
+    energyRegen: 7,            // 被动充能：每秒 +7（约 14.3s 充满）
+    invuln: 0.9,               // 受击无敌帧（秒）
+    respawnInvuln: 1.2,        // 倒下复位后的无敌帧
+    attackRange: 24,           // 普攻射程（px，轻击 = 重击）
+    cannonMultiplier: 2.2,     // 能量炮射程倍率
+    playerKnockback: 14,
+    light: {
+      damage: 1, cooldown: 0.26, active: 0.14, width: 24,
+      energyOnHit: 5, knockback: 10,
+    },
+    heavy: {
+      damage: 2, cooldown: 0.55, active: 0.22, width: 24,
+      energyOnHit: 10, knockback: 18,
+    },
+    cannon: {
+      damage: 6, cooldown: 0.8, active: 0.32, width: 32,
+      energyOnHit: 0, knockback: 26, energyCost: 100,
+    },
+    enemy: {
+      size: 12, hp: 3, speed: 36, aggro: 96, damage: 1, energyOnKill: 5,
+    },
+    enemyKinds: {
+      dreamling: { hp: 3, speed: 36, aggro: 96, damage: 1 },
+      wisp: { hp: 2, speed: 52, aggro: 128, damage: 1 },
+    },
+  };
+  COMBAT_TUNING.cannon.range = Math.round(COMBAT_TUNING.attackRange * COMBAT_TUNING.cannonMultiplier * 1000) / 1000;
+
+  /**
+   * 玩家战斗状态机（Issue #18）：生命 / 被动能量 / 朝向 / 攻击冷却 / 敌人 AI。
+   *
+   * 纯逻辑类，不依赖 DOM 与渲染：main.js 负责按键、粒子、音效、HUD 与绘制；
+   * tools/test-engine.js 可直接驱动本类做确定性单测。
+   *
+   * 与关卡数据的关系：敌人来自 `entities` 中 `type:'enemy'` 的实体；本类只把
+   * 实体坐标作为出生点，运行时位置保存在 `combat.enemies[i]`，不改 data.js。
+   */
+  class Combat {
+    constructor(level, opts) {
+      opts = opts || {};
+      this.level = level || { entities: [] };
+      this.maxHp = Number(opts.maxHp) > 0 ? Math.floor(Number(opts.maxHp)) : COMBAT_TUNING.maxHp;
+      this.hp = this.maxHp;
+      this.maxEnergy = Number(opts.maxEnergy) > 0 ? Number(opts.maxEnergy) : COMBAT_TUNING.maxEnergy;
+      this.energy = clamp(Number(opts.energy) || 0, 0, this.maxEnergy);
+      this.facing = { x: 0, y: 1 };   // 默认朝下（与出生点面向一致）
+      this.cooldown = 0;
+      this.swing = null;              // 当前挥击/光束演出 {kind,dir,origin,range,width,t,duration}
+      this.invuln = 0;
+      this.hurtFlash = 0;
+      this.time = 0;
+      this.down = false;
+      this.attackRange = COMBAT_TUNING.attackRange;
+      this.cannonRange = COMBAT_TUNING.cannon.range;
+      this.enemies = [];
+      this._spawnEnemies();
+    }
+
+    /** 从关卡实体层生成敌人运行时状态（出生点 / 覆盖数值） */
+    _spawnEnemies() {
+      const list = (this.level && this.level.entities) || [];
+      const base = COMBAT_TUNING.enemy;
+      let seq = 0;
+      for (let i = 0; i < list.length; i++) {
+        const e = list[i];
+        if (!e || e.type !== 'enemy') continue;
+        if (!isFinite(e.x) || !isFinite(e.y)) continue;
+        const kind = e.kind || 'dreamling';
+        const preset = COMBAT_TUNING.enemyKinds[kind] || COMBAT_TUNING.enemyKinds.dreamling;
+        const size = clamp(Number(e.size) || base.size, 8, TILE);
+        const x = e.x * TILE + (TILE - size) / 2;
+        const y = e.y * TILE + (TILE - size) / 2;
+        const hp = Number(e.hp) > 0 ? Math.floor(Number(e.hp)) : preset.hp;
+        this.enemies.push({
+          id: e.id || ('enemy-' + (++seq)),
+          kind: kind,
+          ref: e,                       // 关卡实体（出生点来源，不随 AI 移动）
+          x: x, y: y,
+          spawnX: x, spawnY: y,
+          size: size,
+          hp: hp, maxHp: hp,
+          speed: Number(e.speed) > 0 ? Number(e.speed) : preset.speed,
+          aggro: Number(e.aggro) > 0 ? Number(e.aggro) : preset.aggro,
+          damage: Number(e.damage) > 0 ? Math.floor(Number(e.damage)) : preset.damage,
+          dead: false,
+          hurt: 0,
+          moving: false,
+        });
+      }
+    }
+
+    /**
+     * 攻击方向的轴对齐包围盒（调试/测试用）：沿 facing 从玩家中心延伸 range，
+     * 宽度 width。实际命中判定走 _hitsEnemy() 的旋转矩形，支持斜向锁定。
+     */
+    hitArea(player, facing, range, width) {
+      const cx = player.x + 8;
+      const cy = player.y + 8;
+      const dx = (facing && facing.x) || 0;
+      const dy = (facing && facing.y) || 0;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (!len) return { x: cx - width / 2, y: cy, w: width, h: range };
+      const ux = dx / len;
+      const uy = dy / len;
+      const ex = cx + ux * range;
+      const ey = cy + uy * range;
+      const px = -uy * (width / 2);
+      const py = ux * (width / 2);
+      const xs = [cx + px, cx - px, ex + px, ex - px];
+      const ys = [cy + py, cy - py, ey + py, ey - py];
+      const minX = Math.min.apply(null, xs);
+      const minY = Math.min.apply(null, ys);
+      return { x: minX, y: minY, w: Math.max.apply(null, xs) - minX, h: Math.max.apply(null, ys) - minY };
+    }
+
+    /** 更新朝向：支持八向；无移动输入时保持上次朝向 */
+    face(dx, dy) {
+      const sx = Number(dx) > 0 ? 1 : Number(dx) < 0 ? -1 : 0;
+      const sy = Number(dy) > 0 ? 1 : Number(dy) < 0 ? -1 : 0;
+      if (!sx && !sy) return this.facing;
+      this.facing = { x: sx, y: sy };
+      return this.facing;
+    }
+
+    /**
+     * 自动锁敌：只锁定「正面 180° 扇形」内、攻击范围内、视线未被遮挡的
+     * 最近存活敌人（按敌人中心距离）。
+     * - 正面 = 最近一次移动方向 this.facing（八向），含 90° 边界；
+     * - 射程以敌人身体边缘计算：中心距离 - 敌人半身 <= range；
+     * - 视线检测覆盖墙体、关闭的门、箱子（水面不挡视线，GAME_DESIGN §12）。
+     * @param {{x:number,y:number}} player
+     * @param {number} range
+     * @param {object} [mechanics] engine.Mechanics；缺省时不做遮挡检测（单测/演示）
+     */
+    findTarget(player, range, mechanics) {
+      if (!player) return null;
+      const pcx = player.x + 8;
+      const pcy = player.y + 8;
+      const fx = this.facing.x;
+      const fy = this.facing.y;
+      const flen = Math.sqrt(fx * fx + fy * fy) || 1;
+      const ux = fx / flen;
+      const uy = fy / flen;
+      let best = null;
+      let bestDist = Infinity;
+      for (let i = 0; i < this.enemies.length; i++) {
+        const enemy = this.enemies[i];
+        if (enemy.dead) continue;
+        const dx = (enemy.x + enemy.size / 2) - pcx;
+        const dy = (enemy.y + enemy.size / 2) - pcy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist - enemy.size / 2 > range) continue;
+        // 正面 180°（中心线两侧各 90°）：用敌人身体最近点判定，
+        // 避免「同一行但敌人中心比玩家中心高 2px」这类贴边目标被判到背面
+        const nx = Math.max(enemy.x, Math.min(pcx, enemy.x + enemy.size));
+        const ny = Math.max(enemy.y, Math.min(pcy, enemy.y + enemy.size));
+        if ((nx - pcx) * ux + (ny - pcy) * uy < 0) continue;
+        if (!this.hasLineOfSight(mechanics, pcx, pcy, pcx + dx, pcy + dy)) continue;
+        if (dist < bestDist) { best = enemy; bestDist = dist; }
+      }
+      return best;
+    }
+
+    /**
+     * 单点视线遮挡：墙体 / 关闭的门 / 箱子会挡视线；水面与地面不挡。
+     * 有 tileType/entityAtTile 的 Mechanics 走精确判定，否则回退 blockedAt。
+     */
+    _sightBlockedAt(mechanics, px, py) {
+      if (typeof mechanics.tileType === 'function') {
+        const tx = Math.floor(px / TILE);
+        const ty = Math.floor(py / TILE);
+        if (mechanics.tileType(tx, ty) === 'wall') return true;
+        if (typeof mechanics.entityAtTile === 'function') {
+          const gate = mechanics.entityAtTile(tx, ty, 'gate');
+          if (gate && gate.open !== true) return true;
+          if (mechanics.entityAtTile(tx, ty, 'box')) return true;
+        }
+        return false;
+      }
+      return typeof mechanics.blockedAt === 'function'
+        ? mechanics.blockedAt(px, py, 1)
+        : false;
+    }
+
+    /**
+     * 视线判定：从 (x1,y1) 到 (x2,y2) 以约 3px 步长采样，
+     * 任一采样点落在墙体/关闭的门/箱子上即视为遮挡。
+     * mechanics 缺省时返回 true（保持纯数值单测可直接使用）。
+     */
+    hasLineOfSight(mechanics, x1, y1, x2, y2) {
+      if (!mechanics) return true;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= 0) return true;
+      const steps = Math.max(1, Math.ceil(dist / 3));
+      for (let i = 1; i < steps; i++) {
+        const t = i / steps;
+        if (this._sightBlockedAt(mechanics, x1 + dx * t, y1 + dy * t)) return false;
+      }
+      return true;
+    }
+
+    /**
+     * 攻击方向：优先指向锁定目标中心（八向/任意角度）；
+     * 正面无可用目标时沿最近一次移动方向（this.facing，支持八向）。
+     */
+    aimDir(player, target) {
+      const pcx = player.x + 8;
+      const pcy = player.y + 8;
+      if (target) {
+        const dx = (target.x + target.size / 2) - pcx;
+        const dy = (target.y + target.size / 2) - pcy;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0) return { x: dx / len, y: dy / len };
+      }
+      const fx = this.facing.x;
+      const fy = this.facing.y;
+      const len = Math.sqrt(fx * fx + fy * fy);
+      if (!len) return { x: 0, y: 1 };
+      return { x: fx / len, y: fy / len };
+    }
+
+    /**
+     * 旋转矩形命中：沿 dir 的前向距离 + 侧向距离，敌人身体按半径扩展；
+     * 墙体/关闭的门/箱子遮挡视线时不造成伤害。
+     */
+    _hitsEnemy(player, dir, range, width, enemy, mechanics) {
+      const pcx = player.x + 8;
+      const pcy = player.y + 8;
+      const ecx = enemy.x + enemy.size / 2;
+      const ecy = enemy.y + enemy.size / 2;
+      const dx = ecx - pcx;
+      const dy = ecy - pcy;
+      if (!this.hasLineOfSight(mechanics, pcx, pcy, ecx, ecy)) return false;
+      const forward = dx * dir.x + dy * dir.y;
+      const lateral = Math.abs(-dx * dir.y + dy * dir.x);
+      const radius = enemy.size / 2;
+      return forward >= -radius
+        && forward <= range + radius
+        && lateral <= width / 2 + radius;
+    }
+
+    /**
+     * 执行一次攻击。能量满时无视传入的 kind，统一释放能量炮（F/G 均可）。
+     * @param {'light'|'heavy'} kind
+     * @param {{x:number,y:number}} player 玩家 AABB 左上角
+     * @param {object} [mechanics] engine.Mechanics（用于击退碰撞）
+     * @returns {object|null} { kind, cannon, damage, range, dir, hits:[enemy], target, energy, energyFull }
+     */
+    attack(kind, player, mechanics) {
+      if (this.down || !player || this.cooldown > 0) return null;
+      const cannon = this.energy >= this.maxEnergy;
+      const spec = cannon
+        ? COMBAT_TUNING.cannon
+        : (kind === 'heavy' ? COMBAT_TUNING.heavy : COMBAT_TUNING.light);
+      const range = cannon ? this.cannonRange : this.attackRange;
+      const width = spec.width;
+      const target = this.findTarget(player, range, mechanics);
+      const dir = this.aimDir(player, target); // 优先锁敌，无目标时沿移动朝向
+      const origin = { x: player.x + 8, y: player.y + 8 };
+
+      this.cooldown = spec.cooldown;
+      this.swing = {
+        kind: cannon ? 'cannon' : (kind === 'heavy' ? 'heavy' : 'light'),
+        dir: dir, origin: origin, range: range, width: width,
+        t: 0, duration: spec.active,
+      };
+      if (cannon) this.energy = Math.max(0, this.energy - COMBAT_TUNING.cannon.energyCost);
+
+      const hits = [];
+      let energyFull = false;
+      for (let i = 0; i < this.enemies.length; i++) {
+        const enemy = this.enemies[i];
+        if (enemy.dead) continue;
+        if (!this._hitsEnemy(player, dir, range, width, enemy, mechanics)) continue;
+        enemy.hp -= spec.damage;
+        enemy.hurt = 0.2;
+        this._knockEnemy(enemy, dir, spec.knockback, mechanics);
+        const dead = enemy.hp <= 0;
+        if (dead) {
+          enemy.hp = 0;
+          enemy.dead = true;
+        }
+        const before = this.energy;
+        // 能量炮消耗全部能量后不再从击杀回能（保证「释放后清空」可预期）
+        if (!cannon) this.energy += dead ? COMBAT_TUNING.enemy.energyOnKill : spec.energyOnHit;
+        this.energy = Math.min(this.maxEnergy, this.energy);
+        if (before < this.maxEnergy && this.energy >= this.maxEnergy) energyFull = true;
+        hits.push({ enemy: enemy, damage: spec.damage, dead: dead });
+      }
+      return {
+        kind: this.swing.kind,
+        cannon: cannon,
+        damage: spec.damage,
+        range: range,
+        dir: dir,
+        hits: hits,
+        target: target ? target.id : null,
+        energy: this.energy,
+        energyFull: energyFull,
+      };
+    }
+
+    /** 击退敌人：逐轴检查地形/门/箱子，避免被推出地图或穿墙 */
+    _knockEnemy(enemy, dir, distance, mechanics) {
+      if (!distance) return;
+      const dx = dir.x * distance;
+      const dy = dir.y * distance;
+      if (!mechanics || !mechanics.blockedAt(enemy.x + dx, enemy.y, enemy.size)) enemy.x += dx;
+      if (!mechanics || !mechanics.blockedAt(enemy.x, enemy.y + dy, enemy.size)) enemy.y += dy;
+    }
+
+    /** 敌人朝玩家移动（轴分离 + 地形碰撞），进入接触距离后停下 */
+    _moveEnemy(enemy, dt, player, mechanics) {
+      const pcx = player.x + 8;
+      const pcy = player.y + 8;
+      const ecx = enemy.x + enemy.size / 2;
+      const ecy = enemy.y + enemy.size / 2;
+      const dx = pcx - ecx;
+      const dy = pcy - ecy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      enemy.moving = false;
+      if (dist === 0 || dist > enemy.aggro) return;
+      const stop = 11; // 玩家半宽 8 + 敌人半宽 6 - 3px 重叠，保证能接触
+      const step = Math.min(enemy.speed * dt, Math.max(0, dist - stop));
+      if (step <= 0) return;
+      const vx = (dx / dist) * step;
+      const vy = (dy / dist) * step;
+      if (!mechanics || !mechanics.blockedAt(enemy.x + vx, enemy.y, enemy.size)) {
+        enemy.x += vx;
+        enemy.moving = true;
+      }
+      if (!mechanics || !mechanics.blockedAt(enemy.x, enemy.y + vy, enemy.size)) {
+        enemy.y += vy;
+        enemy.moving = true;
+      }
+    }
+
+    _enemyTouchesPlayer(enemy, player) {
+      return enemy.x < player.x + 16 && enemy.x + enemy.size > player.x
+        && enemy.y < player.y + 16 && enemy.y + enemy.size > player.y;
+    }
+
+    /**
+     * 每帧推进：冷却/无敌帧/被动充能/敌人 AI/接触伤害。
+     * @returns {Array<object>} 事件：energy-full / player-hit / player-down
+     */
+    update(dt, player, mechanics) {
+      const d = clamp(Number(dt) || 0, 0, 0.05);
+      const events = [];
+      this.time += d;
+      if (this.cooldown > 0) this.cooldown = Math.max(0, this.cooldown - d);
+      if (this.invuln > 0) this.invuln = Math.max(0, this.invuln - d);
+      if (this.hurtFlash > 0) this.hurtFlash = Math.max(0, this.hurtFlash - d);
+      if (this.swing) {
+        this.swing.t += d;
+        if (this.swing.t >= this.swing.duration) this.swing = null;
+      }
+
+      // 能量炮演出期间暂停回能：保证「释放后清空」在当帧与 HUD 上都成立
+      const charging = !this.swing || this.swing.kind !== 'cannon';
+      if (!this.down && charging && this.energy < this.maxEnergy) {
+        const before = this.energy;
+        this.energy = Math.min(this.maxEnergy, this.energy + COMBAT_TUNING.energyRegen * d);
+        if (before < this.maxEnergy && this.energy >= this.maxEnergy) events.push({ type: 'energy-full' });
+      }
+      if (this.down || !player) return events;
+
+      for (let i = 0; i < this.enemies.length; i++) {
+        const enemy = this.enemies[i];
+        if (enemy.dead) continue;
+        if (enemy.hurt > 0) enemy.hurt = Math.max(0, enemy.hurt - d);
+        this._moveEnemy(enemy, d, player, mechanics);
+        if (this.invuln <= 0 && this._enemyTouchesPlayer(enemy, player)) {
+          const dx = (player.x + 8) - (enemy.x + enemy.size / 2);
+          const dy = (player.y + 8) - (enemy.y + enemy.size / 2);
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          this.hp = Math.max(0, this.hp - enemy.damage);
+          this.invuln = COMBAT_TUNING.invuln;
+          this.hurtFlash = 0.25;
+          events.push({
+            type: 'player-hit',
+            damage: enemy.damage,
+            hp: this.hp,
+            enemy: enemy,
+            dir: { x: dx / len, y: dy / len },
+            knockback: COMBAT_TUNING.playerKnockback,
+          });
+          if (this.hp <= 0) {
+            this.down = true;
+            events.push({ type: 'player-down' });
+            break;
+          }
+        }
+      }
+      return events;
+    }
+
+    /** 倒下后复位：满血 + 无敌帧 + 敌人回到出生点（星星等进度不变） */
+    revive() {
+      this.hp = this.maxHp;
+      this.down = false;
+      this.cooldown = 0;
+      this.swing = null;
+      this.invuln = COMBAT_TUNING.respawnInvuln;
+      this.hurtFlash = 0;
+      this.resetEnemies();
+      return this.hp;
+    }
+
+    /** 敌人复位（重开关卡 / 玩家倒下共用；能量与星星进度保留） */
+    resetEnemies() {
+      for (let i = 0; i < this.enemies.length; i++) {
+        const e = this.enemies[i];
+        e.x = e.spawnX;
+        e.y = e.spawnY;
+        e.hp = e.maxHp;
+        e.dead = false;
+        e.hurt = 0;
+        e.moving = false;
+      }
+    }
+
+    /** 存活敌人数量（测试/调试） */
+    aliveCount() {
+      let n = 0;
+      for (let i = 0; i < this.enemies.length; i++) if (!this.enemies[i].dead) n++;
+      return n;
+    }
+  }
+
   /* ════════════════════════ 输入系统（Issue #5） ════════════════════════ */
 
   /**
    * 键盘绑定：动作名 → 按键（e.key 小写）。
-   * 方向键/WASD 移动、E/空格确认、Esc 暂停、M 静音。
+   * 方向键/WASD 移动、E/空格确认、Esc 暂停、M 静音；
+   * Issue #18：F 轻击、G 重击（能量满时两者均释放能量炮）。
    */
   const KEY_BINDINGS = {
     up: ['arrowup', 'w'],
@@ -703,14 +1154,19 @@
     left: ['arrowleft', 'a'],
     right: ['arrowright', 'd'],
     confirm: ['e', ' ', 'enter'],
+    light: ['f'],
+    heavy: ['g'],
     pause: ['escape'],
     mute: ['m'],
   };
 
   const ACTION_LIST = Object.keys(KEY_BINDINGS);
 
-  /** 触屏按钮 data-key → 动作名（A 键 = 确认；B 键留给 #18 战斗） */
-  const TOUCH_ACTIONS = { up: 'up', down: 'down', left: 'left', right: 'right', action: 'confirm' };
+  /** 触屏按钮 data-key → 动作名（A 确认；B 轻击；C 重击；#18） */
+  const TOUCH_ACTIONS = {
+    up: 'up', down: 'down', left: 'left', right: 'right',
+    action: 'confirm', light: 'light', heavy: 'heavy',
+  };
 
   /** 粗指针（触屏）设备检测：pointer 媒体查询优先，触摸能力兜底 */
   function detectCoarsePointer() {
@@ -749,6 +1205,7 @@
       this.target = opts.target || root;
       this.enabled = true;
       this.coarse = detectCoarsePointer();       // 当前设备是否为触屏（粗指针）
+      this.touchMode = 'auto';                   // 虚拟按键显示偏好（#44）：'auto'|'on'|'off'
       this._keys = new Set();                    // 当前按住的物理键（小写 e.key）
       this._touchPtr = new Map();                // 动作 → 按住的 pointerId 集合
       this._pressed = new Set();                 // 自上次 endFrame 以来的按下边沿
@@ -773,6 +1230,7 @@
         }
       }
       if (opts.autoTouch !== false) this._setupTouch();
+      this._applyTouchMode(); // #44：恢复「触屏按键」显示偏好（auto/on/off）
     }
 
     /* ── 状态查询 ── */
@@ -854,6 +1312,32 @@
       if (el && el.classList) el.classList.toggle('touch-off', !v);
     }
 
+    /**
+     * 设置虚拟按键显示偏好（Issue #44）：'auto' 跟随设备粗指针检测；'on' 始终显示；
+     * 'off' 始终隐藏。与 setTouchVisible 正交——菜单界面仍可用 setTouchVisible(false)
+     * 临时隐藏，不会覆盖玩家偏好；非法值回退 'auto'。
+     * @param {'auto'|'on'|'off'} mode
+     * @returns {string} 实际生效的模式
+     */
+    setTouchMode(mode) {
+      this.touchMode = mode === 'on' || mode === 'off' ? mode : 'auto';
+      this._applyTouchMode();
+      return this.touchMode;
+    }
+
+    /** 当前虚拟按键显示偏好（'auto'|'on'|'off'） */
+    getTouchMode() {
+      return this.touchMode;
+    }
+
+    /** 把偏好落到 #touch-controls 的 .touch-pref-on / .touch-pref-off 类 */
+    _applyTouchMode() {
+      const el = this._touchEl();
+      if (!el || !el.classList) return;
+      el.classList.toggle('touch-pref-on', this.touchMode === 'on');
+      el.classList.toggle('touch-pref-off', this.touchMode === 'off');
+    }
+
     /** 解绑全部监听，释放后不再产生任何输入 */
     destroy() {
       const t = this.target;
@@ -877,6 +1361,13 @@
         if (btn && btn.classList) btn.classList.remove('pressed');
       }
       this._touchButtons = [];
+      // #44：销毁时清掉虚拟按键的偏好类（复用同一 DOM 时不残留）
+      const touchEl = this._touchEl();
+      if (touchEl && touchEl.classList) {
+        touchEl.classList.remove('touch-pref-on');
+        touchEl.classList.remove('touch-pref-off');
+        touchEl.classList.remove('touch-on');
+      }
       this._keys.clear();
       this._touchPtr.clear();
       this._pressed.clear();
@@ -1213,11 +1704,14 @@
     Input: Input,
     Particles: Particles,
     Mechanics: Mechanics,
+    Combat: Combat,
+    COMBAT_TUNING: COMBAT_TUNING,
     createRenderer: (canvas, opts) => new Renderer(canvas, opts),
     createCamera: () => new Camera(),
     createInput: (opts) => new Input(opts),
     createParticles: (opts) => new Particles(opts),
     createMechanics: (level) => new Mechanics(level),
+    createCombat: (level, opts) => new Combat(level, opts),
     KEY_BINDINGS: KEY_BINDINGS,
     detectCoarsePointer: detectCoarsePointer,
     registerTileset: registerTileset,

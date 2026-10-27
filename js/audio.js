@@ -62,6 +62,42 @@
       { f: 880, d: 0.08, at: 0.05, v: 0.07, type: 'square' },
       { f: 1319, d: 0.20, at: 0.10, v: 0.08, type: 'square' },
     ],
+    /* 战斗（Issue #18）：轻击 / 重击 / 能量炮 / 命中 / 敌人倒下 / 受伤 / 倒下 / 充满 */
+    light: [
+      { f: 880, d: 0.05, at: 0, v: 0.06, type: 'square' },
+      { f: 660, d: 0.06, at: 0.03, v: 0.05, type: 'square' },
+    ],
+    heavy: [
+      { f: 330, d: 0.08, at: 0, v: 0.08, type: 'sawtooth' },
+      { f: 196, d: 0.12, at: 0.04, v: 0.07, type: 'sawtooth' },
+    ],
+    cannon: [
+      { f: 262, d: 0.10, at: 0, v: 0.07, type: 'sawtooth' },
+      { f: 392, d: 0.10, at: 0.05, v: 0.07, type: 'sawtooth' },
+      { f: 523, d: 0.14, at: 0.10, v: 0.08, type: 'square' },
+      { f: 131, d: 0.16, at: 0.12, v: 0.08, type: 'triangle' },
+    ],
+    hit: [
+      { f: 156, d: 0.05, at: 0, v: 0.06, type: 'triangle' },
+    ],
+    'enemy-down': [
+      { f: 659, d: 0.06, at: 0, v: 0.06, type: 'square' },
+      { f: 392, d: 0.08, at: 0.05, v: 0.06, type: 'square' },
+      { f: 262, d: 0.14, at: 0.10, v: 0.06, type: 'square' },
+    ],
+    hurt: [
+      { f: 131, d: 0.10, at: 0, v: 0.07, type: 'sawtooth' },
+      { f: 87, d: 0.12, at: 0.05, v: 0.06, type: 'sawtooth' },
+    ],
+    'player-down': [
+      { f: 392, d: 0.12, at: 0, v: 0.07, type: 'triangle' },
+      { f: 262, d: 0.14, at: 0.10, v: 0.07, type: 'triangle' },
+      { f: 165, d: 0.24, at: 0.22, v: 0.07, type: 'triangle' },
+    ],
+    'energy-full': [
+      { f: 1047, d: 0.08, at: 0, v: 0.06, type: 'square' },
+      { f: 1319, d: 0.14, at: 0.07, v: 0.06, type: 'square' },
+    ],
   };
 
   let ctx = null;
@@ -138,6 +174,7 @@
     /**
      * 播放具名音效；未知音效/关闭/无 WebAudio 时安静返回 false。
      * @param {string} name star | box | switch | gate-open | gate-close | portal | portal-enter
+     *   | light | heavy | cannon | hit | enemy-down | hurt | player-down | energy-full（#18）
      */
     play(name) {
       if (!enabled) return false;
