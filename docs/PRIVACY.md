@@ -1,7 +1,7 @@
 # MIXXTOPIA 隐私说明
 
 > 适用：账户与云存档功能（Issue #22 / #42）上线后。
-> 设计依据：`docs/ACCOUNT_SYSTEM.md` §10；实现：`supabase/migrations/0001_init.sql` + `js/cloud-config.js`。
+> 设计依据：`docs/ACCOUNT_SYSTEM.md` §10；实现：`supabase/migrations/0001_init.sql` / `0002_stats.sql` + `js/cloud-config.js`。
 > 一句话：**不登录 = 零上传；登录只为把存档和偏好同步到你的其他设备。**
 
 ## 1. 我们收集什么
@@ -13,7 +13,7 @@
 | 头像 id（固定选项集的标识，如 `muse-1`；**不支持上传图片**） | 账户页展示 | 设置 | 否 |
 | 偏好（声音开关、触屏虚拟按键显示模式） | 跨设备同步设置（设备级：新设备首次登录采用一次） | 点击账户设置「保存设置」时同步云端；标题声音开关/设置页即时切换仅写本机 | 否 |
 | 存档进度（当前关、已收集星、已通关、黑羊计数、已播对话节点） | 换设备继续玩 | 保存并退出 / 通关自动存档 | 是（云存档的前提） |
-| 统计（游玩时长、成就、收集率） | 账户页展示 | 游玩过程中累计 | 否 |
+| 统计（游玩时长、成就、收集率） | 账户页展示 | 仅游玩时累计时长；登录、保存、回标题或查看账户时同步，离线下次补传。游客时长与成就仅存本机，不自动并入账号 | 否 |
 | 请求日志（IP、时间、状态码） | 故障排查与防滥用 | 每次请求 | 由后端自动产生 |
 
 ## 2. 我们不收集什么
@@ -26,7 +26,8 @@
 
 - **Supabase**（Postgres + Auth）作为数据处理方，数据库在你创建项目时选择的区域（Singapore 或 Tokyo）；
 - 所有请求走 **HTTPS**；
-- 本地 `localStorage`（`mixxtopia.save.v1`、`mixxtopia.settings.v1`、`mixxtopia.cloud.v1`）**只存在你自己设备上**；其中 `mixxtopia.cloud.v1` 只保存逐档同步版本与时间戳，不含存档内容；
+- 本地 `localStorage`（`mixxtopia.save.v1`、`mixxtopia.settings.v1`、`mixxtopia.cloud.v1`）**只存在你自己设备上**；其中 `mixxtopia.cloud.v1` 保存逐档同步基线和已授权存档快照；`mixxtopia.stats.v1.*` 保存按账号区分的统计待补传记录与云端统计缓存，beta/preview 使用各自通道键；
+- 统计使用每个页面随机生成的计数标识避免重复上传，不读取硬件、浏览器特征或设备指纹；云端仅保留这些计数与游戏所需统计；
 - 静态页面由 **GitHub Pages** 托管。
 
 ## 4. 未登录时

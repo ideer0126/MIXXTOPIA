@@ -90,7 +90,7 @@
 
 ## 8. 数据模型（已落地：#42）
 
-**可执行脚本是唯一事实源**：`supabase/migrations/0001_init.sql`（幂等，可在 Supabase SQL Editor 重复执行）。下面只摘录结构要点，与脚本冲突时**以脚本为准**。
+**可执行脚本是唯一事实源**：`supabase/migrations/0001_init.sql` + `0002_stats.sql`（幂等，可在 Supabase SQL Editor 重复执行）。下面只摘录结构要点，与脚本冲突时**以脚本为准**。
 
 关键设计：
 
@@ -129,11 +129,14 @@ create table public.saves (
   primary key (user_id, slot)
 );
 
--- 统计（#46，可后置）
+-- 统计（0001 基础结构；0002 追加计数与收集集合）
 create table public.stats (
   user_id      uuid primary key references auth.users on delete cascade,
   play_seconds bigint not null default 0,
   achievements jsonb not null default '[]'::jsonb,
+  device_millis jsonb not null default '{}'::jsonb, -- #46 每页面计数最大值
+  remainder_ms integer not null default 0,       -- #46 总时长不足一秒部分
+  collections jsonb not null default '{}'::jsonb, -- #46 云存档星 ID 按关并集
   updated_at   timestamptz not null default now()
 );
 
@@ -214,7 +217,7 @@ match /users/{uid} {
 | #43 | Auth | 注册/登录/登出/会话恢复/游客态、标题入口 | ✅ 已新增 `js/auth.js`（手写 GoTrue 封装）；改 `js/main.js`、`index.html`、`styles.css`、`tools/smoke-main.html`；新增 `tools/test-auth.js` | ✅ `fetch` 桩单测 19 项（注册 / 密码错 / 邮箱已注册 / token 过期自动续期 / 网络失败 / 登出不动存档）+ test-main 账户 UI 9 项 + 冒烟：打开/返回登录界面、游客零请求、刷新仍登录 |
 | #44 | 账户设置 UI | 昵称、固定头像集（前端白名单）、音效/操作偏好、删除账户申请（提交后人工处理） | ✅ 新增 `js/account.js`（profiles 读写/校验/中文错误映射）；`js/data.js` 增 `GAME.avatarPresets`；`js/engine.js` 增触屏按键偏好 `Input.setTouchMode`；改 `js/main.js`、`index.html`、`styles.css`、`tools/smoke-main.html`、`tools/test-main.js`、`tools/test-engine.js`；新增 `tools/test-account.js` | ✅ `fetch` 桩单测 21 项 + test-main 98 项 + test-engine 48 项 + `smoke-main.html` 84 项 + `smoke-input.html` 22 项检查通过（合入 #18 战斗系统后的当前计数）：昵称保存→重载往返一致、超长被拒且有中文提示、头像只认白名单（未知 id 回退 muse-1 且保存时不覆盖云端原值）、资料未就绪/失败时禁止保存并提供重试、切号/登出清空旧资料、偏好立即生效且以 `mixxtopia.settings.v1` 为唯一运行时来源、删除申请只跳 GitHub issue（不调 `auth.users`） |
 | #45 | 云存档同步 | 上传/下载/冲突三选一/离线降级、`mixxtopia.cloud.v1` 逐档同步基线 | ✅ 新增 `js/cloud.js`、`tools/test-cloud.js`；修改 `js/main.js`、`index.html`、`styles.css`、主流程测试与冒烟页 | 已实现（PR #56）；test-cloud 38 项 + test-main 106 项；桌面/触屏冒烟 96 项通过；两个隔离浏览器上下文上传/下载/继续通过（全为 fetch 桩）；真实后端验证留 #47 |
-| #46 | 统计 | 时长、成就、收集率 | 新增 `js/stats.js` | 云端累计与本地一致 |
+| #46 | 统计 | 时长、成就、收集率 | `js/stats.js`、`0002_stats.sql`；主流程/账户页接线；统计单测与浏览器脚本 | ✅ 本地实现；上线前须应用 0002 迁移，真实 Supabase 验收留 #47；口径见下文 |
 | #47 | 上线验证 | #17 扩展：线上注册/登录/同步冒烟 | `tools/smoke-main.html`（人工跑，不改 CI 配置） | 正式域名走通一遍 |
 
 依赖顺序：#42 → #43 → #44 / #45 → #46 → #47。**#43 起才动 `js/main.js`**，#42 只加新文件与文档，冲突面最小。
@@ -232,6 +235,7 @@ node tools/test-main.js
 node tools/test-auth.js   # 账户 Auth（#43）：全部走 fetch 桩
 node tools/test-account.js # 账户资料 profiles（#44）：全部走 fetch 桩
 node tools/test-cloud.js   # #45 云存档：fetch 桩 + 持久化/并发保护
+node tools/test-stats.js   # #46 统计：计数、归属、补传与接口桩
 node tools/test-channels.js
 # 无头浏览器跑 tools/smoke-main.html / tools/smoke-input.html，断言 data-smoke="ok"
 node tools/validate.js   # 已知红：levels 为空导致 91 条基线错误，不计回归
@@ -242,6 +246,31 @@ node tools/validate.js   # 已知红：levels 为空导致 91 条基线错误，
 ### #45 本地验收边界
 
 2026-10-26 的自动验证不访问真实 Supabase，也不创建真实账号或云存档。测试期 `/beta/` 与正式 `/`、预览 `/preview/` 的后端仍须按 §9 配置独立项目/schema；现有公开默认配置只有一个项目，**本地键隔离不等于云端隔离**。在 #17/#47 上线验收中核对通道后端隔离与真实 RLS（包括 A 不能读取 B），再进行正式跨设备验收。此次不修改数据库或 `.github/` 治理配置。
+
+### #46 统计口径与同步（本地实现，2026-10-27）
+
+- `js/stats.js` 与 `runTime` 在同一处接收 `dt`：仅 PLAYING 累计，标题、对话、暂停、结算与隐藏页面不计入。总时长独立于单关计时，不因重玩、倒下或「回到标题（不保存）」回退。
+- 每个页面实例有随机计数标识（不取设备信息），记录本次累计秒数；本机按账号、通道、计数标识分别存 journal（`mixxtopia.stats[.<channel>].v1.journal.<uid>.<writer>`）。每过整秒落盘；离开 PLAYING、页面隐藏/关闭和销毁时补存小数。正常关闭保留小数；浏览器进程被强杀时最多损失最近未落盘的一秒。存储被禁用或写满时显示错误，并保留当前页面内存数据。
+- 游客统计留本机，登录后单独累计该账号，**不自动并入游客时长或成就**；登出/换号不清除原账号待补传记录。收集率随已授权云存档同步，无须另行上传游客统计。跨标签页切号撤销旧页面的统计请求与计时；请求前后再次核对当前用户，旧回包不覆盖新用户缓存。
+- 上传调用 `POST /rest/v1/rpc/merge_stats`（`p_writer` / `p_millis` / `p_achievements`）。`0002_stats.sql` 在 stats 增加 `device_millis`、`remainder_ms`、`collections`：同一标识取累计毫秒最大值，只把增量加到 `play_seconds`，不足一秒部分留在 `remainder_ms`；并发设备相加、成就取并集。重复请求、响应丢失后的重传不会重复计时，也保留旧版已有总秒数。
+- 同步时机：登录恢复、成功本地存档后的云同步完成、确认并入/上传/载入云存档、回标题、打开账户设置、点击「同步统计」。没有定时器或后台轮询。失败不弹阻塞提示、不影响存档；journal 保留，下次同账号登录或手动同步补传。关闭页面仅落本地，避免依赖不可靠的卸载期请求。
+- 收集率 = 同关已保存星星 ID 的并集 / 该关地图星星数。同关跨三个存档去重，未知 ID 不计入，不同关同名 ID 分开计算；零星关显示 0/0（0%），序章 id=0 不列入。RPC 从本人当前三份**云存档**生成 `stats.collections`（星 ID 集合），各设备据同一地图计算百分比；本机未上传/冲突未解决时，账户页仍显示云端收集率并提示保存同步后更新。游客页按本机已保存存档展示。
+- 成就：`first_star` 首颗星、`first_clear` 首次通关、`wish_keeper` 一关全星、`journey_complete` 六关全部完成（占位地图不解锁终章）。时长与成就即时记录，即使随后放弃未保存的游戏进度也保留；不做排行榜或战斗统计。
+- RPC 使用 `security invoker`，归属仅取 `auth.uid()`，保留三表 RLS，不接收目标用户参数；只授 authenticated 执行，anon/public 无权调用。
+
+**迁移与验证**：先运行 `0001_init.sql`，再运行 `0002_stats.sql`（可重复执行）。本次只创建本地迁移文件，不连接或修改真实项目；未应用 0002 时前端仍保留本机统计并显示待补传。上线前按 #17/#47 分别在隔离的测试/正式后端应用迁移，并核对真实 PostgREST、RLS 与跨设备行为。
+
+零依赖的 Node 门禁之外，可选安装 PostgreSQL WASM 引擎与浏览器工具到仓库外运行本地 SQL / 完整页面检查，**不增加游戏运行依赖**：
+
+```bash
+npm install --prefix /tmp/mixx-db --no-save @electric-sql/pglite playwright
+MIXX_PGLITE_MODULE=/tmp/mixx-db/node_modules/@electric-sql/pglite node tools/test-stats-db.js
+MIXX_PGLITE_MODULE=/tmp/mixx-db/node_modules/@electric-sql/pglite \
+MIXX_PLAYWRIGHT_MODULE=/tmp/mixx-db/node_modules/playwright \
+MIXX_CHROME=/opt/google/chrome/chrome node tools/smoke-stats.js
+```
+
+浏览器脚本启动并关闭自己的本地静态服务器，以本地 PostgreSQL 引擎响应拦截的 REST 请求，不访问真实 Supabase。检查桌面/触屏页面、离线刷新补传、跨设备一致、切号和游客零请求；截图与结构化结果默认保存在 `/tmp/mixxtopia-stats-smoke/`（可用 `MIXX_STATS_OUTPUT` 更改）。
 
 ## 13. 影响下游
 

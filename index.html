@@ -175,6 +175,18 @@
       </div>
       <p id="settings-cloud-note" class="settings-hint">昵称与头像保存到云端；声音与操作偏好同时保存到本机并立即生效。</p>
       <p id="settings-msg" class="settings-msg" role="status" aria-live="polite"></p>
+      <section class="stats-panel" aria-labelledby="stats-heading">
+        <h3 id="stats-heading">梦境足迹</h3>
+        <p>游玩时长：<span id="stats-time">0 小时 0 分 0 秒</span></p>
+        <p class="settings-hint">仅游玩时计时，暂停和对话不计入。时长与成就独立记录，回标题也保留。</p>
+        <h4>愿望之星收集率</h4>
+        <p id="stats-collection" class="stats-lines"></p>
+        <p class="settings-hint">同关跨存档去重；账户收集率以云端存档为准，保存并同步后更新。</p>
+        <h4>成就</h4>
+        <p id="stats-achievements" class="stats-lines"></p>
+        <p id="stats-status" class="settings-hint" role="status" aria-live="polite"></p>
+        <button type="button" id="btn-stats-sync" class="menu-btn small">↻ 同步统计</button>
+      </section>
       <button type="button" id="btn-settings-retry" class="menu-btn small hidden">↻ 重试读取云端资料</button>
       <button type="button" id="btn-settings-save" class="menu-btn">💾 保存设置</button>
       <div class="settings-danger">
@@ -253,6 +265,7 @@
   <script src="js/auth.js"></script>
   <script src="js/account.js"></script>
   <script src="js/cloud.js"></script>
+  <script src="js/stats.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

@@ -83,7 +83,8 @@ MIXXTOPIA/
 │   ├── audio.js          # WebAudio 芯片音效 + 每关 BGM 循环
 │   ├── data.js           # 关卡数据：6 关地图 + 对话 + 谜题（数据驱动；含 GAME.avatarPresets）
 │   ├── engine.js         # 引擎：渲染、输入、碰撞、摄像机、粒子、战斗（Combat）
-│   └── main.js           # 状态机：标题/游玩/对话/暂停/结算/结局 + 存档 + 账户设置 + 战斗接线
+│   ├── main.js           # 状态机：标题/游玩/对话/暂停/结算/结局 + 存档 + 账户设置 + 战斗接线
+│   └── stats.js          # 游玩统计：独立本机 journal + 幂等云端累加（#46）
 ├── tools/validate.js     # 地图/数据校验脚本（node 运行）
 ├── tools/test-auth.js    # 账户 Auth 单测（fetch 桩，不连真实后端）
 ├── tools/test-account.js # 账户资料（profiles）单测（fetch 桩，不连真实后端）（#44）
@@ -110,7 +111,7 @@ MIXXTOPIA/
   3. 本地静态服务器冒烟测试（页面可加载、无控制台报错）。
 - **已知红门禁（2026-10-24）**：`js/data.js` 的 `levels` 仍为空（#11 未开始），
   `node tools/validate.js` 必然报错（91 项，全部由空关卡/对话引用触发），**不视为回归**；
-  期间以 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` + `node tools/test-auth.js` + `node tools/test-account.js` + `node tools/test-cloud.js` + `node tools/test-channels.js` + 浏览器冒烟为准，
+  期间以 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` + `node tools/test-auth.js` + `node tools/test-account.js` + `node tools/test-cloud.js` + `node tools/test-stats.js` + `node tools/test-channels.js` + 浏览器冒烟为准，
   #11 落地后恢复 validate 门禁。
 - **发布**：测试期（无稳定 tag）`/` 与 `/preview/` 占位，`/beta/` 用 beta/rc tag 或 `main`；
   首个 `vX.Y.Z` 后 `/` 用 stable tag、`/preview/` 用 `main`、`/beta/` 停用（占位页，不再看 beta tag）。
@@ -155,7 +156,7 @@ MIXXTOPIA/
 | 16 | QA：地图校验、浏览器冒烟测试、移动端适配 | QA | 测试报告 | M5 | #11–15 | ⚪ 未开始 |
 | 17 | 发布：Pages 上线验证、README 图文 | 发布 | 线上可玩 + README | M5 | #16 | ⚪ 未开始 |
 | 18 | 战斗系统：二代应援棒（F 轻击 / G 重击 / 被动能量条 / 2.2 倍射程能量炮 / 敌人 HP 与倒下复位） | 策划+程序 | `engine.Combat` + main 接线 + GAME_DESIGN §12 + 测试 | M2 | #3 #9 | ✅ 已合并（PR #54） |
-| 19 | 账户与云存档：注册/登录、账户设置、云同步、统计（**选型已定 A2：Supabase + 手写 REST，2026-10-24**；立项稿 `docs/ACCOUNT_SYSTEM.md`，Issue #22，子任务 #42–#47） | 策划+程序 | 设计文档（已并入 GAME_DESIGN.md §10） | M2（立项） | #6 #8 | 🔵 #42 建表+RLS、#43 Auth、#44 账户设置已实现（分支 feat/43-auth、feat/44-account-settings）；#45 云存档同步已本地实现；下一步 #46 统计 |
+| 19 | 账户与云存档：注册/登录、账户设置、云同步、统计（**选型已定 A2：Supabase + 手写 REST，2026-10-24**；立项稿 `docs/ACCOUNT_SYSTEM.md`，Issue #22，子任务 #42–#47） | 策划+程序 | 设计文档（已并入 GAME_DESIGN.md §10） | M2（立项） | #6 #8 | 🔵 #42 建表+RLS、#43 Auth、#44 账户设置已实现（分支 feat/43-auth、feat/44-account-settings）；#45 云存档同步已本地实现；#46 统计已本地实现；下一步 #47 上线验证 |
 
 ---
 
@@ -170,7 +171,7 @@ MIXXTOPIA/
 
 ## 8. 当前进度与后续节奏
 
-**已完成（截至 2026-10-26）**
+**已完成（截至 2026-10-27）**
 - [x] M0 项目基建：仓库、CI（pages.yml）、README/LICENSE/.gitignore、Milestones/Labels/Issues 落地
 - [x] #3 游戏设计文档 docs/GAME_DESIGN.md（PR #19）
 - [x] #4 Canvas 渲染引擎：瓦片图集、调色板、摄像机、整数缩放（PR #20）
@@ -190,10 +191,12 @@ MIXXTOPIA/
 
 - [x] #45 评审修复（2026-10-26，PR #56）：修正非 JSON 错误响应的状态处理、离线时并入按钮/同步器守卫、开场对话测试助手；补跨标签页归属 binding 与已授权快照校验，阻止旧页面把另一账号或未知来源的本机进度自动补传。新增 10 项回归用例；六组 Node 测试共 261 项通过。独立通道后端与真实 RLS 仍属 #17/#47 上线验收前置条件。
 
+- [x] #46 游玩统计（2026-10-27，本地实现，分支 `feat/46-play-stats`）：`js/stats.js` + 账户页「梦境足迹」展示时长、成就、逐关收集率；按账号/通道/页面独立落盘，离线登录补传；`0002_stats.sql` 提供毫秒增量幂等 RPC 与云存档星 ID 去重。真实迁移应用及 Supabase 跨设备验收留 #47；详细口径与本地检查见 `docs/ACCOUNT_SYSTEM.md` §12。
+
 **下一步**
 - [ ] M2：#11 先拆出「关 1 地图」子任务落地，让 `validate.js` 转绿并跑通真正的一关闭环
 - [ ] M2：#10 已取消（不做选关；选存档并入 #8；GitHub Issue #10 文案待人工同步/关闭）
-- [ ] #19 账户系统：**选型已定（A2：Supabase + 手写 REST）**，子任务 #42–#47 已建；#42 建表 + RLS、#43 Auth、#44 账户设置已完成，#45 云存档同步已本地实现；下一步 #46 统计（依赖 #45 的同步时机与离线补传）
+- [ ] #19 账户系统：**选型已定（A2：Supabase + 手写 REST）**，子任务 #42–#47 已建；#42 建表 + RLS、#43 Auth、#44 账户设置已完成，#45 云存档同步已本地实现；#46 统计已本地实现；下一步 #47 上线验证（应用 0002 迁移、真实后端及通道隔离验收）
 
 **节奏**：每个任务一条分支、一个 PR、一次冒烟测试；里程碑完成即向用户演示。
 

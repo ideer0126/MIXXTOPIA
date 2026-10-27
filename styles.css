@@ -744,6 +744,27 @@ body {
 }
 
 /* 矮屏 / 手机横屏：登录/账户设置内容可能超出可视高度，允许界面自身滚动，避免按钮被裁掉 */
+.stats-panel {
+  width: min(360px, 100%);
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid #6f5f95;
+  background: rgba(26, 16, 51, 0.65);
+  text-align: left;
+  font-size: 10px;
+  line-height: 1.8;
+  flex-shrink: 0;
+}
+.stats-panel h3, .stats-panel h4 { margin: 4px 0; color: #FFC857; }
+.stats-panel p { margin: 6px 0; }
+.stats-lines { white-space: pre-line; overflow-wrap: anywhere; }
+#settings-screen {
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding-top: 16px;
+  padding-bottom: 24px;
+}
+
 @media (max-height: 560px) {
   #login-screen,
   #settings-screen {
