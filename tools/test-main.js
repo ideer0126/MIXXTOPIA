@@ -38,7 +38,7 @@ const { FakeCanvas } = require('./stub-canvas.js');
 
 /** main.js _cacheUI 需要的全部 id（与 index.html 一致） */
 const UI_IDS = [
-  'hud', 'hud-level', 'hud-shards', 'hud-hp',
+  'hud', 'hud-level', 'hud-shards', 'hud-hp', 'hud-objective', 'tbtn-b', 'tbtn-c',
   'hud-energy', 'hud-energy-fill', 'hud-energy-label',
   'title-screen', 'btn-start', 'btn-continue', 'btn-saves', 'btn-help', 'btn-sound',
   'save-screen', 'save-note', 'cloud-status', 'title-cloud-status', 'cloud-merge',
@@ -2436,13 +2436,38 @@ test('场景素材：按源路径缓存、加载失败降级，礼物盒和星�
   } finally { if (prevImage === undefined) delete sandbox.Image; else sandbox.Image = prevImage; }
 });
 
-test('唱片播放后上台右转往返化妆间：普通门往返不丢星星与剧情进度', () => {
+test('舞台三格阶梯与乐器碰撞：播放后经右侧幕布渐亮进入后台，往返保留进度', () => {
   withGAME(prologueData(), () => {
     const game = makeGame();
     try {
       elt('btn-start').click();
       level1Run.playLevel1(game, {
+        onMusic(g) {
+          assert.ok(g._objectiveText().includes('右侧'));
+          for (const x of [18,19,20]) {
+            level1Run.walkTo(g,x,11);
+            level1Run.stepTo(g,x,10); level1Run.stepTo(g,x,9);
+          }
+          for (const x of [13,18,22,25]) {
+            level1Run.walkTo(g,x,8);
+            const before={...g.player};
+            assert.strictEqual(g._moveAxis(0,-4),false,'乐器完整占地应阻挡玩家');
+            assert.deepStrictEqual([g.player.x,g.player.y],[before.x,before.y]);
+          }
+          level1Run.walkTo(g,27,8); level1Run.walkTo(g,11,8);
+          level1Run.walkTo(g,27,9); // 乐器前两格通道可通行。
+        },
         onBackstage(g) {
+          assert.strictEqual(g._entryFade,g.level.entryFade);
+          const position=[g.player.x,g.player.y], initialStars=g.stars;
+          for(let i=0;i<14;i++) g._update(0.05);
+          assert.ok(g._entryFade>0 && g._entryFade<g.level.entryFade);
+          for(let i=0;i<15;i++) g._update(0.05);
+          assert.strictEqual(g._entryFade,0);
+          assert.deepStrictEqual([g.player.x,g.player.y],position);
+          assert.strictEqual(g.stars,initialStars);
+          assert.ok(g._playedNodes.has('l1.music.play'));
+          assert.strictEqual(g._checkRoomDoors(),false,'落点不应重复触发渐亮');
           assert.strictEqual(g._resolveNpcNode(g._entitiesOf('npc').find(e => e.id === 'lily' && e.room === 'backstage')), 'l1.backstage.lily');
           const bounds=g._currentArea().rect;
           assert.ok(g.camera.x>=bounds.x*16 && g.camera.x+320<=(bounds.x+bounds.w)*16);
@@ -2525,7 +2550,7 @@ test('唱片拾取后保存继续：携带记录保留，回舞台可播放，�
   });
 });
 
-test('第一关合并接线：序章不计时、后台战斗更新保留房间摄像机、通关统计后返回标题', () => {
+test('第一关合并接线：序章不计时、无战斗的后台保留摄像机与统计、通关后返回标题', () => {
   withGAME(prologueData(), () => {
     const game = makeGame({ enableStats: true });
     try {
@@ -2535,10 +2560,9 @@ test('第一关合并接线：序章不计时、后台战斗更新保留房间�
       assert.strictEqual(game.combat, null, '序章尚未创建关卡战斗');
       level1Run.playLevel1(game, {
         onBackstage(g) {
-          const before = g.combat.time;
           const elapsed = g.runTime;
           g._update(0.05);
-          assert.ok(g.combat.time > before, '后台游玩继续推进战斗');
+          assert.strictEqual(g.combat, null, '第一关后台也不启用战斗');
           assert.ok(Math.abs(g.runTime - elapsed - 0.05) < 1e-8);
           assert.ok(Math.abs(g.stats.record.seconds - g.runTime) < 1e-8);
           const r = g._currentArea().rect;
@@ -2558,6 +2582,95 @@ test('第一关合并接线：序章不计时、后台战斗更新保留房间�
       assert.strictEqual(game.state, STATE.TITLE);
       assert.strictEqual(game.combat, null);
       assert.strictEqual(game.stats.dirty, false, '通关返回标题保留统计落盘');
+    } finally { game.destroy(); }
+  });
+});
+
+test('第一关目标与标记：Lily 开场不冒充自我介绍，完成对话后计数，取唱片/后台/结算按进度更新', () => {
+  withGAME(prologueData(), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game);
+      assert.ok(text('hud-objective').includes('0/6'));
+      const lily = game._entitiesOf('npc').find(e => e.id === 'lily' && e.room === 'hall');
+      assert.ok(game._npcNeedsTalk(lily));
+      level1Run.walkTo(game, lily.x, lily.y);
+      const targets = JSON.stringify(game._npcTarget);
+      game._nearInteractable(); game._nearInteractable();
+      assert.strictEqual(JSON.stringify(game._npcTarget), targets, '提示预览不改变剧情游标');
+      game._interact(); level1Run.finishDialogue(game);
+      assert.ok(game._npcNeedsTalk(lily), '开场后仍提示补听自我介绍');
+      game._interact();
+      assert.ok(game._npcNeedsTalk(lily), '台词未结束前不能提前清除标记');
+      level1Run.finishDialogue(game);
+      assert.ok(!game._npcNeedsTalk(lily));
+      assert.ok(text('hud-objective').includes('1/6'));
+      // 重新开局，通过真实路线验证其余阶段。
+      game._setState(STATE.PAUSED); game._quitToTitle(); game._startNewGame();
+      level1Run.playLevel1(game, {
+        onRecord(g) {
+          assert.ok(text('hud-objective').includes('回舞台播放唱片'));
+          assert.ok(g._entitiesOf('npc').filter(e => e.room === 'hall').every(e => !g._npcNeedsTalk(e)));
+        },
+        onBackstage(g) {
+          assert.ok(text('hud-objective').includes('0/3'));
+          const actors = g._entitiesOf('npc').filter(e => e.room === 'backstage' && g._npcNeedsTalk(e));
+          assert.deepStrictEqual(Array.from(actors, e => e.id).sort(), ['byeori', 'lily', 'sullyoon']);
+        },
+        beforePortal(g) {
+          assert.ok(text('hud-objective').includes('走进左侧星光门'));
+          assert.ok(g._entitiesOf('npc').every(e => !g._npcNeedsTalk(e)));
+        },
+      });
+    } finally { game.destroy(); }
+  });
+});
+
+test('第一关禁用战斗：按 F/G 无攻击，无 HP/能量/B/C；保存恢复、重玩与换关正确', () => {
+  const data = prologueData();
+  data.levels.push(main.buildBootLevels()[1]);
+  withGAME(data, () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game);
+      const checkPeaceful = () => {
+        assert.strictEqual(game.combat, null);
+        assert.strictEqual(game._playerAttack('light'), null);
+        assert.strictEqual(game._playerAttack('heavy'), null);
+        for (const id of ['hud-hp', 'hud-energy', 'tbtn-b', 'tbtn-c']) assert.ok(hidden(id), id);
+        assert.ok(elt('tbtn-b').disabled && elt('tbtn-c').disabled);
+      };
+      checkPeaceful();
+      game._setState(STATE.PAUSED); game._saveAndQuit(); elt('btn-continue').click(); checkPeaceful();
+      game._setState(STATE.PAUSED); game._restartLevel(); checkPeaceful();
+      game._loadLevel(1);
+      assert.ok(game.combat);
+      for (const id of ['hud-hp', 'hud-energy', 'tbtn-b', 'tbtn-c']) assert.ok(!hidden(id), id);
+      assert.ok(!elt('tbtn-b').disabled && !elt('tbtn-c').disabled);
+      assert.strictEqual(text('hud-objective'), '');
+      game._loadLevel(0); checkPeaceful();
+    } finally { game.destroy(); }
+  });
+});
+
+test('第一关互动：已开门与已读黑羊不抢目标，墙体/家具阻断互动线', () => {
+  withGAME(prologueData(), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game);
+      level1Run.walkTo(game, 5, 8);
+      assert.strictEqual(game._nearInteractable().id, 'gift-door');
+      assert.ok(game._interact());
+      assert.notStrictEqual((game._nearInteractable() || {}).id, 'gift-door');
+      level1Run.talkTo(game, 'sheep1');
+      assert.notStrictEqual((game._nearInteractable() || {}).id, 'sheep1');
+      // 杂物间外侧到室内唱片的射线穿过 x=2 墙，走到门内才可互动。
+      game.player = { x: 16, y: 4 * 16 };
+      const record = game._entitiesOf('record')[0];
+      assert.strictEqual(game._interactionVisible(record), false);
+      game.player = { x: 4 * 16, y: 4 * 16 };
+      assert.strictEqual(game._interactionVisible(record), true);
+      assert.strictEqual(game._nearInteractable().id, record.id);
     } finally { game.destroy(); }
   });
 });

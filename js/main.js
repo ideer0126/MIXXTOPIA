@@ -111,8 +111,8 @@
   const PORTRAIT_NO_ART = { nar: true, all: true }; // 伪说话人无立绘（GAME_DESIGN §3）
 
   /* HUD 带：位于游戏画面上方（styles.css #stage 竖排），渲染器缩放时
-     预留这 24px 高度，保证 HUD 与画布整体不超出窗口、HUD 不压进游戏画面 */
-  const HUD_RESERVE = 24;
+     预留状态与目标两行共 44px，保证 HUD 不压进游戏画面 */
+  const HUD_RESERVE = 44;
 
   // ── 对话系统（Issue #7，规格 GAME_DESIGN.md §7）──
   const DIALOG_MS = 25;           // 打字机逐字间隔（25ms/字）
@@ -1096,19 +1096,35 @@
     _nearInteractable() {
       const cx = this.player.x + PLAYER_SIZE / 2;
       const cy = this.player.y + PLAYER_SIZE / 2;
+      const area = this._currentArea();
       let nearest = null;
       let distance = Infinity;
       for (const type of ['door', 'record', 'gramophone', 'npc', 'sheep', 'sign', 'box']) {
         for (const e of this._entitiesOf(type)) {
+          if (area && e.room && e.room !== area.id) continue;
           if (e.carried || e.taken || (type === 'door' && e.open) || (type === 'box' && !e.carryable)) continue;
-          if (type === 'npc' && this._resolveNpcNode(e) === null) continue;
+          if (type === 'npc' && this._resolveNpcNode(e, true) === null) continue;
+          if (type === 'sheep' && (!this.dialogue[e.dialogue] || this._playedNodes.has(e.dialogue))) continue;
           const ex = e.x * TILE + TILE / 2;
           const ey = e.y * TILE + TILE / 2;
           const d = Math.abs(cx - ex) + Math.abs(cy - ey);
-          if (d <= INTERACT_RANGE && d < distance) { nearest = e; distance = d; }
+          if (d <= INTERACT_RANGE && d < distance && this._interactionVisible(e)) { nearest = e; distance = d; }
         }
       }
       return nearest;
+    }
+
+    /** 互动线不能穿过墙、家具或其他关闭的门；目标本身可以是门或箱子。 */
+    _interactionVisible(entity) {
+      const cx = this.player.x + PLAYER_SIZE / 2, cy = this.player.y + PLAYER_SIZE / 2;
+      const dx = (entity.x + 0.5) * TILE - cx, dy = (entity.y + 0.5) * TILE - cy;
+      const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy)));
+      for (let i = 1; i < steps; i++) {
+        const x = cx + dx * i / steps, y = cy + dy * i / steps;
+        if (Math.floor(x / TILE) === entity.x && Math.floor(y / TILE) === entity.y) continue;
+        if (this.mechanics.blockedAt(Math.floor(x), Math.floor(y), 1)) return false;
+      }
+      return true;
     }
 
     /** 确认键互动：NPC → 对话；黑羊 → 彩蛋谜语（首次计数 sheep +1）。返回是否触发了状态切换 */
@@ -1273,8 +1289,11 @@
 
     _checkRoomDoors() {
       for (const e of this._entitiesOf('roomdoor')) {
+        const gate = this._entitiesOf('gate').find(g => g.x === e.x && g.y === e.y);
+        if (gate && !gate.open) continue;
         if (this.mechanics.overlapsTile(this.player.x, this.player.y, PLAYER_SIZE, e.x, e.y)) {
           this.player.x = e.to.x * TILE; this.player.y = e.to.y * TILE;
+          if (e.fadeIn) this._entryFade = Number(this.level.entryFade) || 0;
           this._followCamera(); this._refreshHud();
           this._emit('room', { id: e.id }); return true;
         }
@@ -2681,7 +2700,7 @@
         entities: (lv.entities || []).map((e) => Object.assign({}, e)),
       });
       this.mechanics = engine.createMechanics(this.level); // #9 碰撞/推箱/开关门
-      this.combat = engine.createCombat(this.level);       // #18 HP/能量/敌人
+      this.combat = this.level.combat === false ? null : engine.createCombat(this.level);
       this._hudEnergyPct = -1;
       this._hudHp = -1;
       this._hudEnergyReady = false;
@@ -2911,7 +2930,7 @@
      *   2. 否则按 trigger 解析：首次 intro（once，记录 next 目标）→
      *      npc 自我介绍（once）→ intro.next 指向的 hint（repeat）→ check（repeat）。
      */
-    _resolveNpcNode(ent) {
+    _resolveNpcNode(ent, preview) {
       const explicit = ent.dialogue;
       if (explicit && this.dialogue[explicit]) {
         const node = this.dialogue[explicit];
@@ -2939,7 +2958,7 @@
       // 候选筛选也会解析节点；缓存 next 不能跳过尚未播放的 intro。
       const intro = unplayed('intro');
       if (intro) {
-        if (intro.node.next) this._npcTarget[targetKey] = intro.node.next;
+        if (intro.node.next && !preview) this._npcTarget[targetKey] = intro.node.next;
         return intro.id;
       }
       const target = this._npcTarget[targetKey];
@@ -3229,7 +3248,56 @@
 
     /* ── HUD ── */
 
+    _dialogueComplete(id) {
+      return this._playedNodes.has(id) && (!this._dialog || this._dialog.nodeId !== id);
+    }
+
+    /** 关键对话标记直接读取机关/星星的前置条件，与实际通关条件保持一致。 */
+    _npcNeedsTalk(npc) {
+      return this.level.entities.some(e => (e.requiresDialogue || []).some(id => {
+        const node = this.dialogue[id];
+        return node && node.type === 'npc' && node.trigger === 'npc:' + npc.id
+          && (node.room || 'hall') === (npc.room || 'hall') && !this._dialogueComplete(id);
+      }));
+    }
+
+    _objectiveText() {
+      if (this.scene || !this.level || this.level.id !== 1) return '';
+      const record = this._entitiesOf('record')[0];
+      const music = this._entitiesOf('gramophone')[0];
+      const star = this._entitiesOf('star').find(e => e.requiresDialogue);
+      if (!record || !music || !star) return '';
+      const intros = record.requiresDialogue || [];
+      const missing = intros.filter(id => !this._dialogueComplete(id));
+      const stars = record.requiresStars || [];
+      const found = stars.filter(id => this.collected.includes(id)).length;
+      if (missing.length) {
+        if (missing.length === 1) {
+          const name = (this.characters[this.dialogue[missing[0]].trigger.slice(4)] || {}).name;
+          return '再和 ' + name + ' 聊聊 · ' + (intros.length - 1) + '/' + intros.length;
+        }
+        return '认识 Muse · ' + (intros.length - missing.length) + '/' + intros.length
+          + '　寻找星星 · ' + found + '/' + stars.length;
+      }
+      if (found < stars.length) return this.collected.includes('s1')
+        ? '去左上杂物间找星星 · E / A 开门' : '到入口气球拱门下找星星';
+      if (!this._dialogueComplete(record.dialogue)) return '到左上杂物间取唱片 · E / A';
+      if (!this._dialogueComplete(music.dialogue)) return '回舞台播放唱片 · E / A';
+      const area = this._currentArea();
+      if (!area || area.id !== 'backstage') return '从舞台右侧帘幕进入化妆间';
+      const blessings = star.requiresDialogue || [];
+      const left = blessings.filter(id => !this._dialogueComplete(id));
+      if (left.length === 1) {
+        const name = (this.characters[this.dialogue[left[0]].trigger.slice(4)] || {}).name;
+        return '听听 ' + name + ' 的祝福 · ' + (blessings.length - 1) + '/' + blessings.length;
+      }
+      if (left.length) return '听后台的祝福 · ' + (blessings.length - left.length) + '/' + blessings.length;
+      return star.collected ? '走进左侧星光门，完成生日会' : '收下化妆台左侧的最后一颗星';
+    }
+
     _refreshHud() {
+      this._text(this._ui.hudObjective, this._objectiveText());
+      this._refreshCombatHud(true);
       if (this.scene) {
         this._text(this._ui.hudLevel, '序章 · ' + this.scene.title);
         this._text(this._ui.hudShards, '');
@@ -3239,7 +3307,6 @@
       const area = this.player && this._currentArea();
       this._text(this._ui.hudLevel, area && area.id === 'backstage' ? area.title : this.level.title);
       this._text(this._ui.hudShards, '★ ' + this.stars + '/' + this._starCount());
-      this._refreshCombatHud(true);
       // 注：关 6 总进度「★ x/25」等 HUD 扩展随 #11 接入
     }
 
@@ -3250,6 +3317,14 @@
      */
     _refreshCombatHud(force) {
       const c = this.combat;
+      if (force) {
+        if (this._ui.hud && this._ui.hud.classList) this._ui.hud.classList.toggle('peaceful', !c);
+        for (const el of [this._ui.hudHp, this._ui.hudEnergy, this._ui.touchLight, this._ui.touchHeavy]) {
+          if (c) this._show(el); else this._hide(el);
+        }
+        if (this._ui.touchLight) this._ui.touchLight.disabled = !c;
+        if (this._ui.touchHeavy) this._ui.touchHeavy.disabled = !c;
+      }
       if (!c) return;
       const pct = Math.round((c.energy / c.maxEnergy) * 100);
       const ready = c.energy >= c.maxEnergy;
@@ -3348,6 +3423,9 @@
         'hud': 'hud',
         'hud-level': 'hudLevel',
         'hud-shards': 'hudShards',
+        'hud-objective': 'hudObjective',
+        'tbtn-b': 'touchLight',
+        'tbtn-c': 'touchHeavy',
         'hud-hp': 'hudHp',
         'hud-energy': 'hudEnergy',
         'hud-energy-fill': 'hudEnergyFill',
@@ -3559,6 +3637,7 @@
       this._drawEntities();
       this._drawCombat();  // #18 敌人（在玩家/攻击特效之下）
       this._drawPlayer();
+      this._drawForegroundDecorations();
       if (this.carriedBox) this._drawGift(this.player.x / TILE - 0.2, this.player.y / TILE - 1.1);
       if (this._playedNodes.has('l1.record.take') && !this._playedNodes.has('l1.music.play')) {
         this._drawRecord(this.camera.x / TILE + 0.4, this.camera.y / TILE + 0.5, 1.6);
@@ -3566,6 +3645,7 @@
       this._drawAttack();  // #18 挥击/能量炮（覆盖在角色之上）
       this.particles.draw(ctx, this.camera); // #9 拾取/开门/传送门粒子（画在角色之上）
       this._drawExterior();
+      this._drawInteractionPrompt();
       if (this.level.sceneryAssets && typeof ctx.createRadialGradient === 'function') {
         const shade = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, 70, VIEW_W / 2, VIEW_H / 2, 210);
         shade.addColorStop(0, 'rgba(18,29,50,0)');
@@ -3614,6 +3694,12 @@
             ctx.fillStyle = 'rgb(255,255,255)';
             ctx.fillRect(sx + 5, sy + 6, 2, 2);
             ctx.fillRect(sx + 9, sy + 6, 2, 2);
+            if (this._npcNeedsTalk(e)) {
+              ctx.fillStyle = 'rgb(43,33,64)'; ctx.fillRect(sx + 5, sy - 8, 7, 9);
+              ctx.fillStyle = 'rgb(255,209,102)';
+              ctx.fillRect(sx + 8, sy - 7, 1, 4);
+              ctx.fillRect(sx + 8, sy - 2, 1, 1);
+            }
             break;
           }
           case 'sheep': {
@@ -3653,7 +3739,9 @@
             break;
           }
           case 'gramophone': {
-            this._drawSceneryAsset({ art: 'fitting', frame: [0, 512, 512, 512], x: e.x - 1, y: e.y - 2.6, w: 3, h: 3.6 });
+            if (!(this.level.decorations || []).some(d => d.kind === 'gramophone')) {
+              this._drawSceneryAsset({ art: 'fitting', frame: [0, 512, 512, 512], x: e.x - 1, y: e.y - 2.6, w: 3, h: 3.6 });
+            }
             if (this._playedNodes.has(e.dialogue) && typeof ctx.fillText === 'function') {
               ctx.fillStyle = 'rgb(255,220,137)'; ctx.font = '10px serif'; ctx.fillText('♪ ♫', sx + 5, sy - 27);
             }
@@ -3718,6 +3806,7 @@
           case 'roomdoor':
           case 'portal': {
             if (e.type === 'roomdoor') {
+              if (e.visual === 'curtain') break; // 直接走入前景幕布后的入口，不绘制门框或门板。
               const gate = this._entitiesOf('gate').find(g => g.x === e.x && g.y === e.y);
               const locked = gate && !gate.open;
               ctx.fillStyle = 'rgb(101,77,56)'; ctx.fillRect(sx - 5, sy - 21, 26, 39);
@@ -3775,6 +3864,12 @@
             break; // 其余实体（NPC 精灵、告示牌等）由 #13 渲染
         }
       }
+    }
+
+    /** 提示最后绘制，避免被人物和前景幕布挡住。 */
+    _drawInteractionPrompt() {
+      if (this.state !== STATE.PLAYING) return;
+      const ctx = this.renderer.ctx, camX = this.camera.x, camY = this.camera.y;
       const nearby = this.player && this._nearInteractable();
       if ((nearby || this.carriedBox) && typeof ctx.fillText === 'function') {
         const actor = nearby || this.carriedBox;
@@ -3786,7 +3881,7 @@
         const px = this.carriedBox ? this.player.x : actor.x * TILE;
         const py = this.carriedBox ? this.player.y - 12 : actor.y * TILE;
         const x = Math.max(4, Math.min(VIEW_W - 100, px - camX - 24));
-        const y = Math.max(12, py - camY - 4);
+        const y = Math.max(12, Math.min(VIEW_H - 4, py - camY - 4));
         ctx.fillStyle = 'rgb(43,33,64)';
         ctx.fillRect(x - 2, y - 10, 100, 13);
         ctx.fillStyle = 'rgb(255,243,196)';
@@ -3822,6 +3917,13 @@
         Math.round(d.x * TILE - this.camera.x), Math.round(d.y * TILE - this.camera.y),
         Math.round(d.w * TILE), Math.round(d.h * TILE));
       return true;
+    }
+
+    /** 前景帘幕在人物之后绘制，使人物走入幕后时自然被遮挡。 */
+    _drawForegroundDecorations() {
+      for (const d of this.level.decorations || []) {
+        if (d.foreground) this._drawSceneryAsset(d);
+      }
     }
 
     /** 场景地面与家具；尚未加载的图片可降级，不阻塞移动或剧情。 */
@@ -3872,14 +3974,16 @@
       const decorations = (this.level.decorations || []).slice().sort((a, b) =>
         (a.kind === 'rug' ? -1 : 0) - (b.kind === 'rug' ? -1 : 0));
       for (const d of decorations) {
+        if (d.foreground) continue;
         const x = Math.round(d.x * TILE - this.camera.x);
         const y = Math.round(d.y * TILE - this.camera.y);
         if (x + (d.w || 2) * TILE < 0 || y + (d.h || 2) * TILE < 0 || x > VIEW_W || y > VIEW_H) continue;
         if (d.art && this._drawSceneryAsset(d)) continue;
         if (d.kind === 'stageSteps') {
-          ctx.fillStyle = 'rgb(92,64,49)'; ctx.fillRect(x - 3, y, 22, 16);
+          const width = (d.w || 1) * TILE;
+          ctx.fillStyle = 'rgb(92,64,49)'; ctx.fillRect(x, y, width, 16);
           ctx.fillStyle = 'rgb(224,185,126)';
-          for (let i = 0; i < 3; i++) ctx.fillRect(x - 3, y + 2 + i * 5, 22, 2);
+          for (let i = 0; i < 3; i++) ctx.fillRect(x, y + 2 + i * 5, width, 2);
         } else if (d.kind === 'chair') {
           ctx.fillStyle = 'rgb(184,224,210)';
           ctx.fillRect(x + 3, y + 2, 10, 5);

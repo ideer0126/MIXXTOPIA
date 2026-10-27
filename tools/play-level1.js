@@ -98,10 +98,12 @@
     if (options.onRecord) options.onRecord(game);
     talkTo(game, music.id);
     check(gate.open && game._playedNodes.has(music.dialogue), '播放唱片没有开启后台入口');
+    if (options.onMusic) options.onMusic(game);
     walkTo(game, 19, 9);
     check(game._currentArea().id === 'hall', '尚未进入幕后');
     walkTo(game, 28, 5);
     check(game._currentArea().id === 'backstage', '上台右转未进入化妆间');
+    check(game._entryFade === game.level.entryFade, '进入后台应使用与关卡入场一致的渐亮');
     check(game.stars === 2 && !game._starAvailable(star3), '后台对话未完成不能提前出星');
     check(game._entitiesOf('npc').filter(e => e.room === 'backstage').length === 7, '化妆间须有六位 Muse 与精灵');
     if (options.onBackstage) options.onBackstage(game);

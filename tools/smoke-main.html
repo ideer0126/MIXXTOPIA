@@ -20,13 +20,16 @@
   <canvas id="game" width="320" height="224"></canvas>
 
   <div id="hud" class="hidden">
-    <span id="hud-level"></span>
-    <span id="hud-shards"></span>
-    <span id="hud-hp"></span>
-    <span id="hud-energy">
-      <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
-      <span id="hud-energy-label"></span>
-    </span>
+    <div id="hud-status">
+      <span id="hud-level"></span>
+      <span id="hud-shards"></span>
+      <span id="hud-hp"></span>
+      <span id="hud-energy">
+        <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
+        <span id="hud-energy-label"></span>
+      </span>
+    </div>
+    <span id="hud-objective" role="status" aria-live="polite"></span>
   </div>
 
   <div id="title-screen" class="screen">

@@ -17,13 +17,16 @@
     <div id="stage">
       <!-- 顶部 HUD：位于游戏画面上方、左缘对齐，不压画面 -->
       <div id="hud" class="hidden">
-        <span id="hud-level"></span>
-        <span id="hud-shards"></span>
-        <span id="hud-hp">♥ 10/10</span>
-        <span id="hud-energy" aria-label="能量炮能量">
-          <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
-          <span id="hud-energy-label">0%</span>
-        </span>
+        <div id="hud-status">
+          <span id="hud-level"></span>
+          <span id="hud-shards"></span>
+          <span id="hud-hp">♥ 10/10</span>
+          <span id="hud-energy" aria-label="能量炮能量">
+            <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
+            <span id="hud-energy-label">0%</span>
+          </span>
+        </div>
+        <span id="hud-objective" role="status" aria-live="polite"></span>
       </div>
 
       <!-- 游戏画布 -->
