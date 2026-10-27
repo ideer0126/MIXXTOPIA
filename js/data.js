@@ -2165,6 +2165,7 @@
       },
       'l1.byeori.hint': {
         type: 'hint', trigger: 'npc:byeori', once: false,
+        room: 'backstage',
         lines: [{ s: 'byeori', t: '딩동댕！三颗愿望之星会点亮这扇星光门。生日会的下一站，是 Jiwoo 的灯油长廊！' }],
       },
       "l1.music.ready": {
