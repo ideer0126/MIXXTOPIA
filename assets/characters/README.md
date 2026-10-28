@@ -1,7 +1,7 @@
 # assets/characters · 角色绘画素材
 
 > 存放**我们自己画的**角色绘画素材（原创，非官方图源）。
-> 两种用途：① `art/` 原画 → 用于聊天框（对话框）**右上方**的角色头像；
+> 两种用途：① `art/` 原画 → 用于聊天框（对话框）**右上方**的角色立绘；
 > ② `pixel/` 由原画衍生的**像素游戏角色**（供 `js/sprites.js` 接入，对应 Issue #13）。
 
 ## 目录结构
@@ -10,7 +10,7 @@
 assets/characters/
 ├── README.md          # 本文件：命名与规格规范
 ├── nswer/             # NSWER（玩家，全程）
-│   ├── art/           # 原画 + 聊天框头像成品
+│   ├── art/           # 原画（直接用作对话立绘）
 │   └── pixel/         # 像素角色衍生
 ├── lily/              # Lily
 ├── haewon/            # Haewon
@@ -31,24 +31,26 @@ assets/characters/
 |---|---|---|---|---|
 | `nswer/` | NSWER（玩家） | —（旁白用 `nar`） | `#FFFFFF` | ⬜ 未开始 |
 | `lily/` | Lily | `lily` | `#7FB8E6` | ⬜ 未开始 |
-| `haewon/` | Haewon | `haewon` | `#FFB14E` | ⬜ 未开始 |
+| `haewon/` | Haewon | `haewon` | `#FFB14E` | 已接入 `art/haewon-1.png` |
 | `sullyoon/` | Sullyoon | `sullyoon` | `#B49BFF` | ⬜ 未开始 |
 | `bae/` | Bae | `bae` | `#FF7BA9` | ⬜ 未开始 |
 | `jiwoo/` | Jiwoo | `jiwoo` | `#FFE066` | ⬜ 未开始 |
 | `kyujin/` | Kyujin | `kyujin` | `#5EE6B8` | ⬜ 未开始 |
-| `byeori/` | Byeori | `byeori` | `#FFD700` | ⬜ 未开始 |
+| `byeori/` | Byeori | `byeori` | `#FFD700` | 已接入 `art/byeori.png` |
 | `dj/` | 街头DJ | `dj` | `#FF5D8F` | ⬜ 未开始 |
 | `sheep/` | 黑羊 | `sheep` | `#B8A8E0` | ⬜ 未开始 |
 
 > 另有两位对话专用伪说话人「旁白 `nar`」「全员合唱 `all`」不单独建目录（无立绘需求）。
 
-## art/ —— 聊天框头像原画
+## art/ —— 对话立绘原图
 
-- **用途**：`index.html` 对话框 `#dialog` 右上方框外的说话人头像位（**UI 已由 Issue #28 接线**：按 speaker 自动加载 `<speaker>-portrait.png`，`nar`/`all` 无立绘、缺图自动隐藏）。
-- **格式**：PNG、透明背景、**3:4 竖版**（宽:高 = 3:4），角色**半身照**构图。
-- **尺寸建议**：原画/源文件（PSD、AI、大图）随意放；**交付头像成品建议 768×1024**（头像位显示宽 = 对话框宽 × 2/6，高 = 宽 × 4/3，4x 缩放时约 420×560px，768×1024 可覆盖 2x 高 DPI）。
-- **命名**：`<speaker>-portrait.png`，如 `lily-portrait.png`；过程稿自由命名，如 `lily-sketch.png`。
-- **要求**：同一角色的头像与原画保持同一配色，方便像素化时取色。
+- **用途**：对话框 `#dialog` 右上方框外的说话人立绘，底边贴框顶、向上延伸。背景游戏场景压暗虚化（含序章），透明区域直接透出场景；不加画框、底板或装饰边缘。
+- **接入**：在 `js/data.js` 的 `characters[speaker].portrait` 配置原图路径。当前使用 `haewon/art/haewon-1.png` 和 `byeori/art/byeori.png`，无需重命名、复制或另做头像成品。
+- **底边对齐**：`portraitBottom` 记录原图底部透明留白占整图高度的比例（Haewon 修订版为 55/1448，Byeori 为 212/1448）；显示时裁去底部留白与零散残线，再按比例下移，使人物主体底边贴住对话框顶边，不修改原图文件。
+- **格式**：使用带透明背景的 PNG 原图，保持原比例与完整内容，不强制 3:4、不裁切；使用平滑缩放，不作像素化处理。
+- **显示尺寸**：默认宽度为对话框宽的 2/6，高度最多 45vh；手机矮横屏进一步缩小，避免超出画面。
+- **缺图**：未配置素材的角色、`nar` / `all` 隐藏立绘；图片加载失败也隐藏，不影响台词和选项。
+- **配色**：同一角色的原图与后续像素角色保持一致，方便取色。
 
 ## pixel/ —— 像素游戏角色衍生
 
@@ -61,9 +63,9 @@ assets/characters/
 - **命名**：单帧 `<speaker>-<方向>-<帧号>.png`（如 `nswer-down-1.png`）；也欢迎直接出精灵表 `<speaker>-sheet.png`。
 - **交付**：最终像素数据接入 `js/sprites.js`；每关调色板主题色参考 GAME_DESIGN §14，角色主体色建议保持全关一致（识别度优先）。
 
-## 工作流（原画 → 头像 → 像素）
+## 工作流（原画 → 对话立绘 / 像素角色）
 
 1. 在 `<角色>/art/` 放入自己画的原画；
-2. 由原画裁切/处理出 3:4 竖版半身照透明 PNG 头像（建议 768×1024），存同目录（供聊天框右上方框外头像位使用）；
-3. 以头像配色为基准，绘制 16px 像素角色，存 `<角色>/pixel/`；
+2. 在 `characters[speaker].portrait` 配置原图路径，直接用于对话框右上方立绘；
+3. 以原图配色为基准，绘制 16px 像素角色，存 `<角色>/pixel/`；
 4. Issue #13 开工时，把 `pixel/` 素材转录进 `js/sprites.js`，并把本表「素材状态」改为 ✅。

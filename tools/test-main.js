@@ -556,6 +556,7 @@ test('对话往返：打字机进入/快进/翻页/旁白样式/退出清空无�
 
 test('对话头像位（#28）：按说话人加载立绘、nar 隐藏、退出清空', () => {
   const game = makeGame();
+  Object.assign(game.characters, prologueData().characters);
   elt('btn-start').click();
   teleport(game, 10, 15);
   tick(game);
@@ -565,11 +566,13 @@ test('对话头像位（#28）：按说话人加载立绘、nar 隐藏、退出�
   // Byeori 有立绘：src 指向素材目录、头像显示、对话框挂 has-portrait
   assert.strictEqual(
     elt('dialog-portrait').src,
-    'assets/characters/byeori/art/byeori-portrait.png'
+    'assets/characters/byeori/art/byeori.png'
   );
   assert.ok(shown('dialog-portrait'));
   assert.ok(elt('dialog').classList.contains('has-portrait'));
   // 同一说话人连续两行：src 缓存不重复赋值（防闪动）
+  assert.strictEqual(elt('dialog-portrait').style.transform, 'translateY(' + (212 / 1448 * 100) + '%)');
+  assert.strictEqual(elt('dialog-portrait').style.clipPath, 'inset(0 0 ' + (212 / 1448 * 100) + '% 0)');
   const firstSrc = elt('dialog-portrait').src;
   press('e'); tick(game); // 快进第 1 行
   press('e'); tick(game);
@@ -592,9 +595,10 @@ test('对话头像位（#28）：按说话人加载立绘、nar 隐藏、退出�
 
 test('对话头像加载失败：同路径换行保持隐藏、切换其他路径正常显示', () => {
   const game = makeGame();
+  Object.assign(game.characters, prologueData().characters);
   game.dialogue = {
     'test.portrait-error': {
-      lines: ['byeori', 'byeori', 'nar', 'byeori', 'lily', 'byeori'].map(
+      lines: ['byeori', 'byeori', 'nar', 'lily', 'haewon', 'byeori'].map(
         (s) => ({ s, t: '头像加载失败测试' })
       ),
     },
@@ -614,7 +618,8 @@ test('对话头像加载失败：同路径换行保持隐藏、切换其他路�
     press('e'); tick(game);
     assert.strictEqual(game._dialog.idx, i, '翻页进入预期行');
     if (i === 4) {
-      assert.strictEqual(img.src, 'assets/characters/lily/art/lily-portrait.png');
+      assert.strictEqual(img.src, 'assets/characters/haewon/art/haewon-1.png');
+      assert.strictEqual(img.style.transform, 'translateY(' + (55 / 1448 * 100) + '%)');
       assert.ok(shown('dialog-portrait'), '其他头像路径仍正常显示');
       assert.ok(elt('dialog').classList.contains('has-portrait'));
     } else {

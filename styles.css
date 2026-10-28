@@ -1032,27 +1032,18 @@ body.recovery-page {
   pointer-events: none; /* 点击穿透，不影响游戏区（对话页由对话框处理） */
 }
 
-/* 序章以场景插画承载叙事，保留画面清晰度与烛光。 */
-#dialog-backdrop.scene-art {
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-/* 说话人头像位（Issue #28）：贴在对话框右上方、底边压在框顶上沿向上延伸；
-   3:4 竖版半身照，宽 = 对话框宽 × 2/6；缺图时由 main.js 挂 .hidden 隐藏（nar/all 无立绘） */
+/* 透明原图直接叠在虚化场景上：底边贴对话框顶边，不加底板与画框。
+   完整保留原图比例；限制高度，为矮窗口与长对话留出空间。 */
 #dialog-portrait {
   position: absolute;
-  right: -2px;           /* 外边框与对话框右边框对齐 */
-  bottom: 100%;          /* 底边贴对话框上边沿，向上延伸 */
-  width: 33.333%;        /* 对话框宽 × 2/6 */
-  aspect-ratio: 3 / 4;   /* 宽:高 = 3:4 竖版半身照 */
-  box-sizing: border-box;
-  image-rendering: pixelated;
-  object-fit: cover;
-  background: #1a1033;
-  border: 2px solid #ffc857;
-  border-radius: 6px;
+  right: -2px;
+  bottom: calc(100% + 2px); /* 对齐对话框外边沿 */
+  width: 33.333%;
+  height: auto;
+  max-height: 45vh;
+  object-fit: contain;
+  object-position: right bottom;
+  image-rendering: auto;
   pointer-events: none;
 }
 
@@ -1123,7 +1114,7 @@ body.recovery-page {
     }
   }
 
-  /* 矮横屏为抬高的对话框上方留出空间，头像保留 3:4 比例。 */
+  /* 矮横屏缩小立绘，为选项留出纵向空间。 */
   @media (orientation: landscape) and (max-height: 450px) {
     #dialog-portrait {
       width: min(33.333%, 12vh);

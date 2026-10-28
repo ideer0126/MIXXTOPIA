@@ -283,7 +283,11 @@
   <script src="../js/data.js"></script>
   <script>
     // 本页验证占位关状态机；真实序章 / 关 1 另由 play-level1.js 验证。
-    window.GAME = { avatarPresets: window.GAME.avatarPresets };
+    window.GAME = { avatarPresets: window.GAME.avatarPresets, characters: {
+      byeori: Object.assign({}, window.GAME.characters.byeori, {
+        portrait: '../' + window.GAME.characters.byeori.portrait
+      })
+    } };
   </script>
   <script src="../js/cloud-config.js"></script>
   <script src="../js/engine.js"></script>
@@ -415,7 +419,7 @@
       ok('→ dialogue', game.state === 'dialogue' && shown('dialog') && text('dialog-name') === 'Byeori');
       ok('对话背景虚化层显示', shown('dialog-backdrop'));
       var portrait = document.getElementById('dialog-portrait');
-      ok('头像 src 指向素材', portrait.getAttribute('src') === 'assets/characters/byeori/art/byeori-portrait.png');
+      ok('头像 src 指向素材', portrait.getAttribute('src') === '../assets/characters/byeori/art/byeori.png');
       ok('头像显示 + has-portrait', !portrait.classList.contains('hidden')
         && document.getElementById('dialog').classList.contains('has-portrait'));
       var fullLine = 'NSWER！欢迎来到 MIXXTOPIA！我是星星精灵 Byeori。';

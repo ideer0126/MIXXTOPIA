@@ -35,7 +35,6 @@
       p0: {
         title: '生日夜的房间',
         background: 'assets/scenes/p0-bedroom.png',
-        portraits: false, // 序章聚焦场景；Byeori 立绘尚未制作
       },
     },
 
@@ -56,12 +55,12 @@
     /* 说话人字典（GAME_DESIGN.md §3：姓名框色与显示名） */
     characters: {
       lily: { name: 'Lily', color: '#7FB8E6' },
-      haewon: { name: 'Haewon', color: '#FFB14E' },
+      haewon: { name: 'Haewon', color: '#FFB14E', portrait: 'assets/characters/haewon/art/haewon-1.png', portraitBottom: 55 / 1448 },
       sullyoon: { name: 'Sullyoon', color: '#B49BFF' },
       bae: { name: 'Bae', color: '#FF7BA9' },
       jiwoo: { name: 'Jiwoo', color: '#FFE066' },
       kyujin: { name: 'Kyujin', color: '#5EE6B8' },
-      byeori: { name: 'Byeori', color: '#FFD700' },
+      byeori: { name: 'Byeori', color: '#FFD700', portrait: 'assets/characters/byeori/art/byeori.png', portraitBottom: 212 / 1448 },
       dj: { name: '街头DJ', color: '#FF5D8F' },
       sheep: { name: '黑羊', color: '#B8A8E0' },
       nar: { name: '', color: '#C0C0C0' },       // 旁白：隐藏姓名标签
@@ -83,7 +82,6 @@
           "gold": "#E4BD8B"
         },
         "bgm": "l1_candle",
-        "portraits": false,
         "starCount": 3,
         "combat": false,
         "map": {
