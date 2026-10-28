@@ -2305,7 +2305,7 @@ test('序章：缺少场景或入口台词时直接进入第一关', () => {
 
 const level1Run = require('./play-level1.js');
 
-test('第一关：序章 → 开门/找唱片/舞台播放/后台对话/三星/黑羊 → 过关保存 → 返回标题（真实地图）', () => {
+test('第一关：序章 → 敞口杂物间/找唱片/舞台播放/后台对话/三星/黑羊 → 过关保存 → 返回标题（真实地图）', () => {
   withGAME(prologueData(), () => {
     const game = makeGame();
     try {
@@ -2448,13 +2448,17 @@ test('舞台阶梯与乐器碰撞：向右穿过幕布渐亮进入后台，不�
             level1Run.walkTo(g,x,11);
             level1Run.stepTo(g,x,10); level1Run.stepTo(g,x,9);
           }
-          for (const x of [13,18,24,28]) {
-            level1Run.walkTo(g,x,7);
+          const resume={...g.player};
+          for (const kind of ['piano','drums','guitars','gramophone']) {
+            const r=g.level.decorations.find(d=>d.room==='hall'&&d.kind===kind).collision;
+            g.player={x:(r.x+r.w/2)*16-8,y:(r.y+r.h)*16-9+.01};
+            assert.strictEqual(g.birthday.blockedAt(g.player.x,g.player.y),false,kind+' 前沿地面可站立');
             const before={...g.player};
-            assert.strictEqual(g._moveAxis(0,-4),false,'乐器完整占地应阻挡玩家');
+            assert.strictEqual(g._moveAxis(0,-4),false,kind+' 的真实占地应阻挡脚底');
             assert.deepStrictEqual([g.player.x,g.player.y],[before.x,before.y]);
           }
-          level1Run.walkTo(g,27,8); level1Run.walkTo(g,11,8);
+          g.player=resume;
+          level1Run.walkTo(g,29,7); level1Run.walkTo(g,11,7);
           level1Run.walkTo(g,19,9); // 乐器前通道与阶梯可通行。
         },
         onBackstage(g) {
@@ -2652,15 +2656,49 @@ test('第一关禁用战斗：按 F/G 无攻击，无 HP/能量/B/C；保存恢�
   });
 });
 
-test('第一关互动：已开门与已读黑羊不抢目标，墙体/家具阻断互动线', () => {
+test('礼堂脚底碰撞：椅前横道、列间通道和杂物间开口可走；椅脚与柱基不可穿过', () => {
+  withGAME(prologueData(),()=>{
+    const game=makeGame();try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      for(const [x,y] of [[9,20.5],[10,20.5],[12,21],[13,18],[16,18],[5,7],[6,7],[4,6],[36,7]])
+        assert.strictEqual(game.birthday.blockedAt(x*16,y*16),false,'应可走 '+x+','+y);
+      for(const kind of ['chair','entryPostLeft','entryPostRight','recordCabinet']){
+        const r=game.level.decorations.find(d=>d.room==='hall'&&d.kind===kind).collision;
+        assert.strictEqual(game.birthday.blockedAt((r.x+r.w/2)*16-8,(r.y+r.h/2)*16-11.5),true,kind+' 应阻挡脚底');
+      }
+      assert.ok(game.level.party.footprint.h<game.level.party.footprint.w);
+    }finally{game.destroy()}
+  });
+});
+
+test('普通儿童完整往返：路径始终在地面，避开入口柱子，六位 Muse 不随路线移动',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();try{
+      game._startNewGame();level1Run.finishDialogue(game);game.player={x:20*16,y:15*16};
+      const children=game._entitiesOf('guest').filter(e=>e.path),ends=new Map(children.map(e=>[e.id,new Set()]));
+      const muses=game.level.entities.filter(e=>e.museStyle),fixed=JSON.stringify(muses.map(e=>[e.x,e.y]));
+      for(let i=0;i<1000;i++){
+        game.birthday.update(.05);
+        for(const e of children){
+          assert.strictEqual(game.birthday.blockedAt(e.x*16,e.y*16,true),false,e.id+' 不能站进障碍');
+          for(let j=0;j<e.path.length;j++)if(Math.hypot(e.x-e.path[j][0],e.y-e.path[j][1])<.02)ends.get(e.id).add(j);
+          if(e.id==='child-walk')assert.ok(e.y<=21&&e.x<=15,'入口儿童不能走到门框柱上');
+        }
+      }
+      for(const e of children)assert.strictEqual(ends.get(e.id).size,e.path.length,e.id+' 应完整往返');
+      assert.strictEqual(JSON.stringify(muses.map(e=>[e.x,e.y])),fixed);
+    }finally{game.destroy()}
+  });
+});
+
+test('第一关互动：杂物间直接进入、已读黑羊不抢目标，墙体/家具阻断互动线', () => {
   withGAME(prologueData(), () => {
     const game = makeGame();
     try {
       game._startNewGame(); level1Run.finishDialogue(game);
       level1Run.walkTo(game, 6, 8);
-      assert.strictEqual(game._nearInteractable().id, 'gift-door');
-      assert.ok(game._interact());
-      assert.notStrictEqual((game._nearInteractable() || {}).id, 'gift-door');
+      assert.strictEqual(game._entitiesOf('door').length, 0);
+      assert.ok(level1Run.pathTo(game,4,6), '杂物间开口应当始终可通行');
       level1Run.talkTo(game, 'sheep1');
       assert.notStrictEqual((game._nearInteractable() || {}).id, 'sheep1');
       // 杂物间外侧到室内唱片的射线穿过 x=2 墙，走到门内才可互动。

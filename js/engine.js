@@ -590,10 +590,19 @@
      */
     blockedAt(px, py, size, opts) {
       const ignore = opts && opts.ignoreBox;
+      if (this.level.party && this.level.party.preciseCollision) {
+        const height = opts && opts.height > 0 ? opts.height : size;
+        const rects = (this.level.party.colliders || []).concat((this.level.decorations || [])
+          .filter(d => d.room === 'hall' && d.collision).map(d => d.collision));
+        for (const r of rects) if (px < (r.x + r.w) * TILE && px + size > r.x * TILE
+          && py < (r.y + r.h) * TILE && py + height > r.y * TILE) return true;
+      }
+      const height = opts && opts.height > 0 ? opts.height : size;
+      const inset = this.level.party && this.level.party.preciseCollision ? .001 : 1;
       const x0 = Math.floor(px / TILE);
-      const x1 = Math.floor((px + size - 1) / TILE);
+      const x1 = Math.floor((px + size - inset) / TILE);
       const y0 = Math.floor(py / TILE);
-      const y1 = Math.floor((py + size - 1) / TILE);
+      const y1 = Math.floor((py + height - inset) / TILE);
       for (let ty = y0; ty <= y1; ty++) {
         for (let tx = x0; tx <= x1; tx++) {
           if (this.isSolidTile(tx, ty)) return true;

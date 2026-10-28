@@ -284,6 +284,17 @@ test('合并瓦片后刷新所有渲染器和调色板的缓存，保留未覆�
   assert.strictEqual(renderers[0].getTileAtlas('builtin', palettes[0]), builtin);
 });
 
+test('精确家具矩形与矮脚底：小数边界和接触边缘不产生整格误挡，旧关卡保持原判定',()=>{
+  const level={map:{w:3,h:3,rows:['...','...','...'],legend:{'.':'floor'}},entities:[],party:{preciseCollision:true,colliders:[]},decorations:[{room:'hall',collision:{x:1,y:1,w:1.5,h:.25}}]};
+  const m=engine.createMechanics(level);
+  assert.strictEqual(m.blockedAt(16,12,4,{height:3}),false);
+  assert.strictEqual(m.blockedAt(16,12,4,{height:5}),true);
+  assert.strictEqual(m.blockedAt(38,16,4,{height:2}),true);
+  assert.strictEqual(m.blockedAt(40,16,4,{height:2}),false,'脚底仅接触家具外边缘时可走');
+  level.party.preciseCollision=false;
+  assert.strictEqual(m.blockedAt(16,16,4),false,'未启用的关卡继续只按瓦片/机关碰撞');
+});
+
 test('缺失瓦片集复用 builtin；随后注册时不得复用兜底图集或模板', () => {
   const renderer = engine.createRenderer(new FakeCanvas());
   const palette = engine.resolvePalette();
