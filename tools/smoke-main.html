@@ -15,7 +15,8 @@
     通关自动存档、继续冒险读档（Issue #8），以及关门阻挡/推箱压开关/开门通行、
     星星粒子、传送门激活与踩入结算（Issue #9），以及 HUD/敌人/F 轻击（#18）。
     账户部分用 fetch 桩切「在线/离线」：游客态零上传、登录后拉取 profile、设置保存 PATCH、
-    偏好即时生效、删除账户只跳 GitHub issue（Issue #44）。UI 骨架与 index.html 一致（main.js 按 id 接线）。
+    偏好即时生效、删除账户只跳 GitHub issue（Issue #44），注册与统计接线（#46/#47）。
+    UI 骨架与 index.html 一致（main.js 按 id 接线）。
   -->
   <canvas id="game" width="320" height="224"></canvas>
 
@@ -59,6 +60,7 @@
       <button type="button" id="btn-logout" class="menu-btn small">↩ 登出</button>
     </div>
     <p id="login-msg" class="login-msg" role="status"></p>
+    <p class="login-privacy">未登录时零上传，进度只存在本机。<a href="https://github.com/ideer0126/MIXXTOPIA/blob/main/docs/PRIVACY.md" target="_blank" rel="noopener">隐私说明</a>。</p>
     <button type="button" id="btn-login-back" class="menu-btn small">← 返回</button>
   </div>
 
@@ -84,6 +86,14 @@
     </div>
     <p id="settings-cloud-note" class="settings-hint"></p>
     <p id="settings-msg" class="settings-msg" role="status"></p>
+    <section class="stats-panel" aria-labelledby="stats-heading">
+      <h3 id="stats-heading">梦境足迹</h3>
+      <p>游玩时长：<span id="stats-time"></span></p>
+      <p id="stats-collection" class="stats-lines"></p>
+      <p id="stats-achievements" class="stats-lines"></p>
+      <p id="stats-status" class="settings-hint" role="status"></p>
+      <button type="button" id="btn-stats-sync" class="menu-btn small">↻ 同步统计</button>
+    </section>
     <button type="button" id="btn-settings-retry" class="menu-btn small hidden">↻ 重试读取云端资料</button>
     <button type="button" id="btn-settings-save" class="menu-btn">💾 保存设置</button>
     <div class="settings-danger">
@@ -202,6 +212,8 @@
     window.__smokeOnline = false;
     window.__fetchCalls = [];
     window.__cloudRows = [null, null, null];
+    window.__statsRow = { user_id: 'u-smoke', play_seconds: 0, remainder_ms: 0,
+      device_millis: {}, achievements: [], collections: {} };
     window.__profileRow = { nickname: '小星', avatar: 'muse-3', prefs: { sound: true, touch: 'auto' } };
     function jsonResponse(status, body) {
       return {
@@ -220,7 +232,7 @@
       }
       window.__fetchCalls.push(call);
       if (!window.__smokeOnline) return Promise.reject(new TypeError('smoke: offline'));
-      if (u.indexOf('/auth/v1/token?grant_type=password') >= 0) {
+      if (u.indexOf('/auth/v1/token?grant_type=') >= 0 || u.indexOf('/auth/v1/signup') >= 0) {
         return Promise.resolve(jsonResponse(200, {
           access_token: 'smoke-access',
           token_type: 'bearer',
@@ -228,6 +240,15 @@
           refresh_token: 'smoke-refresh',
           user: { id: 'u-smoke', email: 'smoke@example.com' }
         }));
+      }
+      if (u.indexOf('/rest/v1/rpc/merge_stats') >= 0) {
+        var stats = window.__statsRow, b = call.body;
+        stats.device_millis[b.p_writer] = Math.max(stats.device_millis[b.p_writer] || 0, b.p_millis);
+        var ms = Object.values(stats.device_millis).reduce(function (sum, n) { return sum + n; }, 0);
+        stats.play_seconds = Math.floor(ms / 1000); stats.remainder_ms = ms % 1000;
+        stats.achievements = Array.from(new Set(stats.achievements.concat(b.p_achievements)));
+        stats.collections = window.MIXX.stats.localCollections(window.__cloudRows.map(function (row) { return row && row.data; }));
+        return Promise.resolve(jsonResponse(200, [JSON.parse(JSON.stringify(stats))]));
       }
       if (u.indexOf('/rest/v1/saves') >= 0) {
         var params = new URL(u).searchParams;
@@ -266,6 +287,7 @@
   <script src="../js/auth.js"></script>
   <script src="../js/account.js"></script>
   <script src="../js/cloud.js"></script>
+  <script src="../js/stats.js"></script>
   <script src="../js/main.js"></script>
   <script>
     (async function () {
@@ -279,8 +301,10 @@
       function nextTick() { return new Promise(function (resolve) { setTimeout(resolve, 0); }); }
       async function settle() {
         await nextTick();
-        if (game && game._profileTask) {
-          try { await game._profileTask; } catch (e) { /* 用例自行断言错误提示 */ }
+        if (game) {
+          for (var i = 0; i < 3; i++) {
+            await Promise.all([game._authReady, game._profileTask, game._cloudTask, game._statsTask, game.stats && game.stats.task]);
+          }
         }
         await nextTick();
       }
@@ -290,18 +314,22 @@
         });
       }
 
-      // 清掉历史存档，保证冒烟页面每次运行起点一致
+      // 冒烟数据使用独立的 sessionStorage，避免读写或清理 stable localStorage。
+      var smokeStorage = window.sessionStorage;
+      // 清掉历史冒烟数据，保证每次运行起点一致。
       try {
-        localStorage.removeItem('mixxtopia.save.v1');
-        localStorage.removeItem('mixxtopia.settings.v1');
-        localStorage.removeItem('mixxtopia.account.v1');
-        localStorage.removeItem('mixxtopia.cloud.v1');
+        smokeStorage.removeItem('mixxtopia.save.v1');
+        smokeStorage.removeItem('mixxtopia.settings.v1');
+        smokeStorage.removeItem('mixxtopia.account.v1');
+        smokeStorage.removeItem('mixxtopia.cloud.v1');
+        Object.keys(smokeStorage).filter(function (key) { return key.indexOf('mixxtopia.stats.v1.') === 0; })
+          .forEach(function (key) { smokeStorage.removeItem(key); });
       } catch (e) { /* 存储不可用时仍可验证游戏流程 */ }
 
       var main = window.MIXX.main;
       try {
       ok('main 就绪', !!main && typeof main.Game === 'function');
-      var game = main.boot();
+      var game = main.boot({ storage: smokeStorage });
       ok('boot 成功', !!game);
       if (!game) {
         document.body.setAttribute('data-smoke', 'fail');
@@ -344,6 +372,9 @@
       document.getElementById('btn-account').click();
       ok('登录界面打开', shown('login-screen') && !shown('title-screen'));
       ok('登录表单可见', shown('login-form') && !shown('login-account'));
+      var privacy = document.querySelector('#login-screen .login-privacy a');
+      ok('登录页隐私入口', !!privacy && /\/docs\/PRIVACY\.md$/.test(privacy.getAttribute('href'))
+        && privacy.getAttribute('rel') === 'noopener');
       document.getElementById('btn-login-back').click();
       ok('登录界面返回', shown('title-screen') && !shown('login-screen'));
       ok('游客态零上传', window.__authFetchCalls === 0);
@@ -448,7 +479,7 @@
       frame();
       ok('→ clear', game.state === 'clear' && shown('clear-screen') && /星星 3\/3/.test(text('clear-text')));
       ok('进入传送门音效', sfx.indexOf('portal-enter') >= 0);
-      var saveRaw = JSON.parse(localStorage.getItem('mixxtopia.save.v1'));
+      var saveRaw = JSON.parse(smokeStorage.getItem('mixxtopia.save.v1'));
       ok('通关自动存档', !!saveRaw && !!saveRaw.slots[0]
         && saveRaw.slots[0].current === 2 && saveRaw.slots[0].cleared.indexOf(1) >= 0);
 
@@ -487,6 +518,8 @@
       ok('游客昵称与头像禁用', document.getElementById('settings-nickname').disabled
         && Array.from(document.querySelectorAll('#avatar-options button')).every(btn => btn.disabled));
       ok('游客触屏偏好可用', !document.getElementById('btn-pref-touch').disabled);
+      ok('游客统计接线且不可上传', !!game.stats && /游客统计/.test(text('stats-status'))
+        && document.getElementById('btn-stats-sync').disabled);
       document.getElementById('btn-settings-back').click();
       ok('游客设置返回标题', shown('title-screen') && !shown('settings-screen'));
       window.__smokeOnline = true;
@@ -532,7 +565,7 @@
         && patch.body.prefs.sound === false && patch.body.prefs.touch === 'on');
       ok('保存成功提示', text('settings-msg') === '设置已保存。');
       ok('标题显示新昵称', text('btn-account') === '☁ 账户 · 冒烟小星');
-      var localSettings = JSON.parse(localStorage.getItem('mixxtopia.settings.v1'));
+      var localSettings = JSON.parse(smokeStorage.getItem('mixxtopia.settings.v1'));
       ok('偏好写入本地 settings', !!localSettings
         && localSettings.sound === false && localSettings.touch === 'on');
 
@@ -577,6 +610,12 @@
       document.getElementById('btn-cloud-download-1').click(); await game._cloudTask;
       ok('确认后载入云端', game.store.readSlot(0).sheep === 6 && game.cloud.state(0) === 'synced');
       game._closeSaveScreen(); game._openSettingsScreen();
+      await settle();
+      ok('账户统计接线且同步成功', /已同步/.test(text('stats-status')) && /小时/.test(text('stats-time'))
+        && /%/.test(text('stats-collection')));
+      var rpcBefore = window.__fetchCalls.filter(function (c) { return c.url.indexOf('/rpc/merge_stats') >= 0; }).length;
+      document.getElementById('btn-stats-sync').click(); await settle();
+      ok('手动同步统计按钮', window.__fetchCalls.filter(function (c) { return c.url.indexOf('/rpc/merge_stats') >= 0; }).length > rpcBefore);
 
       // 返回登录面板 → 登出回游客
       document.getElementById('btn-settings-back').click();
@@ -588,6 +627,14 @@
       ok('登出后设置入口隐藏', !shown('btn-settings'));
       document.getElementById('btn-login-back').click();
       ok('返回标题（冒烟）', shown('title-screen'));
+
+      document.getElementById('btn-account').click();
+      document.getElementById('login-email').value = 'smoke@example.com';
+      document.getElementById('login-password').value = 'secret123';
+      document.getElementById('btn-register').click(); await game._authPromise; await settle();
+      ok('注册自动登录（fetch 桩）', !!game.auth.getSession() && shown('login-account')
+        && window.__fetchCalls.some(function (c) { return c.url.indexOf('/auth/v1/signup') >= 0; }));
+      ok('注册登出不清本地存档', game.store.readSlot(0).sheep === 6);
 
       ok('无运行时错误', errors.length === 0);
       } catch (e) {
