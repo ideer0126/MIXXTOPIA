@@ -2358,9 +2358,9 @@
         once: true,
         lines: [
           { s: 'kyujin', t: '来了啊。欢迎来到我的街区。规则只有一条——别怂。' },
-          { s: 'kyujin', t: '这里的门都是「单向门」，走进去就回不了头。看地上的霓虹箭头，那是指路牌。' },
-          { s: 'kyujin', t: '说出口的话没有回头路，就像这门。所以，对那些乱嚼舌根的人，我从来只回一句——So what? ' },
-          { s: 'kyujin', t: '想抄近路？先过「态度检查」再说。答对了走捷径，答错了……绕远路慢慢磨吧。' },
+          { s: 'kyujin', t: '这里的门都是「单向门」，只能顺着箭头穿过。想回来，就找环线。看地上的霓虹箭头，那是指路牌。' },
+          { s: 'kyujin', t: '敢说出自己的态度，就够酷。对那些乱嚼舌根的人，我从来只回一句——So what?' },
+          { s: 'kyujin', t: '前面的 DJ 会问你一个「态度检查」。信任我，就走我推荐的捷径；相信自己，就去霓虹小巷亮一手。两种自信，我都欣赏。' },
         ],
         next: 'l3.hint',
       },
@@ -2368,23 +2368,33 @@
         type: 'check',
         trigger: 'npc:dj',
         once: false,
-        lines: [{ s: 'dj', t: '哟，新来的。想从这条捷径过？回答我——这条街最酷的人是谁？' }],
+        lines: [
+          { s: 'dj', t: '哟，新来的。亮出你的态度——这条街最酷的人是谁？' },
+          { s: 'dj', t: '两条路都值得探索，之后可以回来重新选择。顺着霓虹箭头走完环线，就能回到我这儿。' },
+        ],
         options: [
           { label: '「Kyujin。」', goto: 'l3.dj.right' },
           { label: '「我自己。」', goto: 'l3.dj.wrong' },
         ],
       },
+      // 保留既有分支 ID 以兼容引用；right / wrong 不再表示答案对错。
       'l3.dj.right': {
         type: 'check', trigger: 'npc:dj', once: false,
-        lines: [{ s: 'dj', t: '会说话。过吧，捷径为你开。' }],
+        lines: [
+          { s: 'dj', t: '很会说话嘛！既然这么信任她，就走她推荐的捷径吧。' },
+          { s: 'dj', t: '两条路都值得探索，之后可以回来重新选择。小巷里也藏着星星，记得来看看！' },
+        ],
       },
       'l3.dj.wrong': {
         type: 'check', trigger: 'npc:dj', once: false,
-        lines: [{ s: 'dj', t: '哈！有胆量，但没门。远路在那边，跑起来！' }],
+        lines: [
+          { s: 'dj', t: '哦？敢这么说，有点意思！那就让我看看你自己的本事。霓虹小巷等你来探索！' },
+          { s: 'dj', t: '两条路都值得探索，之后可以回来重新选择。捷径里也有星星，记得来看看！' },
+        ],
       },
       'l3.hint': {
         type: 'hint', trigger: 'npc:kyujin', once: false,
-        lines: [{ s: 'kyujin', t: '箭头不会骗人。看不懂的时候，就顺着箭头走一遍。' }],
+        lines: [{ s: 'kyujin', t: '顺着箭头走，环线会带你回到 DJ 那儿。捷径和小巷各藏着星星，两条都去看看吧。' }],
       },
       'l3.clear': {
         type: 'clear', trigger: 'clear:3', scopeId: 3, entry: true, once: true,
@@ -2441,26 +2451,27 @@
       },
 
       /* ── 关 5 · Hot 'n Unbothered（小分队：Sullyoon + Bae） ── */
+      // HEAT/OASIS 尚未接入；绿洲布点与耗尽事件稿见 GAME_DESIGN.md §5.5 / §8.6。
       'l5.intro': {
         type: 'intro',
         trigger: 'npc:bae',
         once: true,
         lines: [
           { s: 'bae', t: '好——热——！这里本来该是丰收的田野，愿望之星一散，大地就荒成沙漠了。' },
-          { s: 'bae', t: '不过没关系，绿洲就是大地的笑意。看右上角那条「清凉条」！它一直在往下掉。' },
+          { s: 'bae', t: '不过没关系，绿洲就是大地的笑意。右上角的「清凉条」从 100 秒开始，离开绿洲才会慢慢下降。' },
           { s: 'sullyoon', t: '绿洲能恢复清凉；对话的时候计时会暂停，放心聊天。' },
-          { s: 'sullyoon', t: '五颗星星藏在迷宫深处。清凉条见底前找到它们，冲进传送门。' },
-          { s: 'bae', t: '仙人掌的影子下面，也稍微凉快一点哦——沙漠里每一片荫凉都是礼物！' },
+          { s: 'sullyoon', t: '五颗星星藏在迷宫深处，不用一口气找齐。清凉耗尽就回最近到访的绿洲休息，找到的星星会一直陪着你。' },
+          { s: 'bae', t: '在绿洲歇一会儿，周围的植物也会慢慢恢复颜色。大地在陪你一起缓过来！' },
         ],
         next: 'l5.bae.hint',
       },
       'l5.sullyoon.hint': {
         type: 'hint', trigger: 'npc:sullyoon', once: false,
-        lines: [{ s: 'sullyoon', t: '心里不慌，汗就白流一半。先找绿洲，再找星星。' }],
+        lines: [{ s: 'sullyoon', t: '先找绿洲，再找星星。清凉耗尽也不会丢掉星星，按自己的节奏走就好。' }],
       },
       'l5.bae.hint': {
         type: 'hint', trigger: 'npc:bae', once: false,
-        lines: [{ s: 'bae', t: '玫瑰能在最干的地方开花，你也能找到路。冲就完了！' }],
+        lines: [{ s: 'bae', t: '玫瑰能在最干的地方开花，你也能找到路。累了就回绿洲歇歇，我陪你看大地重新变绿！' }],
       },
       'l5.npc.lily': {
         type: 'npc', trigger: 'npc:lily', once: true,
@@ -2481,8 +2492,8 @@
       'l5.clear': {
         type: 'clear', trigger: 'clear:5', scopeId: 5, entry: true, once: true,
         lines: [
-          { s: 'sullyoon', t: '周遭再喧闹，我们从头到尾都没被打扰呢。Hot \'n unbothered，就是这个意思。' },
-          { s: 'bae', t: '五颗星星到手！大地又开花了——看，玫瑰。开玩笑啦，传送门在滴水，快出发！' },
+          { s: 'sullyoon', t: '外面再热，也挡不住我们按自己的节奏走到这里。Hot \'n unbothered，就是这份从容。' },
+          { s: 'bae', t: '五颗星星到手！大地又开花了——看，玫瑰。歇好了，我们就从传送门出发！' },
           { s: 'byeori', t: '最后一站：疾风终章。Jiwoo 和 Kyujin 在山顶等你。' },
         ],
       },
@@ -2529,7 +2540,7 @@
       },
       'l3.sheep': {
         type: 'sheep', trigger: 'sheep:sheep3', once: true,
-        lines: [{ s: 'sheep', t: '最酷的态度，是敢承认自己走错了路。' }],
+        lines: [{ s: 'sheep', t: '最酷的态度，是欣赏别人的光，也敢亮出自己的光。' }],
       },
       'l4.sheep': {
         type: 'sheep', trigger: 'sheep:sheep4', once: true,
