@@ -2358,9 +2358,9 @@
         once: true,
         lines: [
           { s: 'kyujin', t: '来了啊。欢迎来到我的街区。规则只有一条——别怂。' },
-          { s: 'kyujin', t: '这里的门都是「单向门」，走进去就回不了头。看地上的霓虹箭头，那是指路牌。' },
-          { s: 'kyujin', t: '说出口的话没有回头路，就像这门。所以，对那些乱嚼舌根的人，我从来只回一句——So what? ' },
-          { s: 'kyujin', t: '想抄近路？先过「态度检查」再说。答对了走捷径，答错了……绕远路慢慢磨吧。' },
+          { s: 'kyujin', t: '这里的门都是「单向门」，只能顺着箭头穿过。想回来，就找环线。看地上的霓虹箭头，那是指路牌。' },
+          { s: 'kyujin', t: '敢说出自己的态度，就够酷。对那些乱嚼舌根的人，我从来只回一句——So what?' },
+          { s: 'kyujin', t: '前面的 DJ 会问你一个「态度检查」。信任我，就走我推荐的捷径；相信自己，就去霓虹小巷亮一手。两种自信，我都欣赏。' },
         ],
         next: 'l3.hint',
       },
@@ -2368,23 +2368,33 @@
         type: 'check',
         trigger: 'npc:dj',
         once: false,
-        lines: [{ s: 'dj', t: '哟，新来的。想从这条捷径过？回答我——这条街最酷的人是谁？' }],
+        lines: [
+          { s: 'dj', t: '哟，新来的。亮出你的态度——这条街最酷的人是谁？' },
+          { s: 'dj', t: '两条路都值得探索，之后可以回来重新选择。顺着霓虹箭头走完环线，就能回到我这儿。' },
+        ],
         options: [
           { label: '「Kyujin。」', goto: 'l3.dj.right' },
           { label: '「我自己。」', goto: 'l3.dj.wrong' },
         ],
       },
+      // 保留既有分支 ID 以兼容引用；right / wrong 不再表示答案对错。
       'l3.dj.right': {
         type: 'check', trigger: 'npc:dj', once: false,
-        lines: [{ s: 'dj', t: '会说话。过吧，捷径为你开。' }],
+        lines: [
+          { s: 'dj', t: '很会说话嘛！既然这么信任她，就走她推荐的捷径吧。' },
+          { s: 'dj', t: '两条路都值得探索，之后可以回来重新选择。小巷里也藏着星星，记得来看看！' },
+        ],
       },
       'l3.dj.wrong': {
         type: 'check', trigger: 'npc:dj', once: false,
-        lines: [{ s: 'dj', t: '哈！有胆量，但没门。远路在那边，跑起来！' }],
+        lines: [
+          { s: 'dj', t: '哦？敢这么说，有点意思！那就让我看看你自己的本事。霓虹小巷等你来探索！' },
+          { s: 'dj', t: '两条路都值得探索，之后可以回来重新选择。捷径里也有星星，记得来看看！' },
+        ],
       },
       'l3.hint': {
         type: 'hint', trigger: 'npc:kyujin', once: false,
-        lines: [{ s: 'kyujin', t: '箭头不会骗人。看不懂的时候，就顺着箭头走一遍。' }],
+        lines: [{ s: 'kyujin', t: '顺着箭头走，环线会带你回到 DJ 那儿。捷径和小巷各藏着星星，两条都去看看吧。' }],
       },
       'l3.clear': {
         type: 'clear', trigger: 'clear:3', scopeId: 3, entry: true, once: true,
@@ -2529,7 +2539,7 @@
       },
       'l3.sheep': {
         type: 'sheep', trigger: 'sheep:sheep3', once: true,
-        lines: [{ s: 'sheep', t: '最酷的态度，是敢承认自己走错了路。' }],
+        lines: [{ s: 'sheep', t: '最酷的态度，是欣赏别人的光，也敢亮出自己的光。' }],
       },
       'l4.sheep': {
         type: 'sheep', trigger: 'sheep:sheep4', once: true,
