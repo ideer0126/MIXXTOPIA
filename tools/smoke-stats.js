@@ -16,6 +16,7 @@ const B = '22222222-2222-2222-2222-222222222222';
   fs.mkdirSync(output, { recursive: true });
   const db = new PGlite(), errors = [], requests = [];
   let browser, server, queue = Promise.resolve(), offline = false;
+  let fixturePassword = 'release-test-password';
   try {
     await db.exec(`create role anon; create role authenticated; create schema auth;
       create table auth.users(id uuid primary key);
@@ -23,7 +24,7 @@ const B = '22222222-2222-2222-2222-222222222222';
         $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
       grant usage on schema auth to authenticated, anon;`);
     for (const file of ['0001_init.sql', '0002_stats.sql']) await db.exec(fs.readFileSync(path.join(repo, 'supabase/migrations', file), 'utf8'));
-    await db.query('insert into auth.users values ($1),($2)', [A, B]);
+    await db.query('insert into auth.users values ($1)', [B]);
     server = http.createServer((req, res) => {
       const name = path.resolve(repo, '.' + new URL(req.url, 'http://local').pathname.replace(/\/$/, '/index.html'));
       if (!name.startsWith(repo + path.sep)) { res.writeHead(403).end(); return; }
@@ -36,18 +37,50 @@ const B = '22222222-2222-2222-2222-222222222222';
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const url = 'http://127.0.0.1:' + server.address().port;
     browser = await chromium.launch({ executablePath: process.env.MIXX_CHROME || '/opt/google/chrome/chrome', headless: true, args: ['--no-sandbox'] });
-    async function context(uid, mobile) {
+    async function context(uid, mobile, seedSession = true) {
       const ctx = await browser.newContext(mobile ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 900 } });
-      await ctx.addInitScript(({ uid }) => {
+      await ctx.addInitScript(({ uid, seedSession }) => {
         window.MIXX_NO_BOOT = true;
         window.MIXX_CLOUD_CONFIG = { url: 'https://stats.supabase.co', anonKey: 'sb_publishable_test', timeoutMs: 3000 };
-        if (uid) localStorage.setItem('mixxtopia.account.v1', JSON.stringify({ v: 1, accessToken: uid,
-          refreshToken: 'unused', expiresAt: Date.now() + 3600000, user: { id: uid, email: 'test@example.com' } }));
-      }, { uid });
+        if (uid && seedSession && !localStorage.getItem('mixxtopia.account.v1')) localStorage.setItem('mixxtopia.account.v1', JSON.stringify({ v: 1, accessToken: uid,
+          refreshToken: 'refresh-' + uid, expiresAt: Date.now() + 3600000, user: { id: uid, email: 'test@example.com' } }));
+      }, { uid, seedSession });
+      // No browser request can reach a real account service or send a real deletion request.
+      await ctx.route('**/*', route => {
+        if (route.request().url().startsWith(url + '/')) return route.continue();
+        errors.push('unexpected external request: ' + route.request().url());
+        return route.abort();
+      });
       await ctx.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
       await ctx.route('https://stats.supabase.co/**', async route => {
         if (offline) { await route.abort(); return; }
         const req = route.request(), u = new URL(req.url()), body = req.postDataJSON();
+        if (u.pathname.startsWith('/auth/v1/')) {
+          requests.push({ path: u.pathname, method: req.method() });
+          if (u.pathname.endsWith('/logout')) { await route.fulfill({ status: 204 }); return; }
+          if (u.pathname.endsWith('/user')) {
+            assert.equal(req.method(), 'PUT');
+            assert.equal(req.headers().authorization, 'Bearer ' + A);
+            assert.equal(body.current_password, fixturePassword);
+            fixturePassword = body.password;
+            await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: A, email: 'release-a@example.com' }) });
+            return;
+          }
+          assert.equal(req.method(), 'POST');
+          assert.ok(u.pathname.endsWith('/signup') || u.pathname.endsWith('/token'), 'unexpected auth endpoint');
+          const who = u.searchParams.get('grant_type') === 'refresh_token' ? body.refresh_token.slice(8)
+            : body.email === 'release-a@example.com' && body.password === fixturePassword ? A : '';
+          if (!who) {
+            await route.fulfill({ status: 400, contentType: 'application/json', body: '{"error_code":"invalid_credentials"}' });
+            return;
+          }
+          assert.ok([A, B].includes(who), 'unexpected auth credentials');
+          if (u.pathname.endsWith('/signup')) await db.query('insert into auth.users values ($1)', [who]);
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+            access_token: who, refresh_token: 'refresh-' + who, expires_in: 3600,
+            user: { id: who, email: 'release-a@example.com' }
+          }) }); return;
+        }
         const owner = req.headers().authorization && req.headers().authorization.replace('Bearer ', '');
         assert.ok([A, B].includes(owner), 'unexpected unauthenticated network request');
         requests.push({ path: u.pathname, method: req.method(), owner });
@@ -57,7 +90,11 @@ const B = '22222222-2222-2222-2222-222222222222';
           try {
             if (u.pathname.endsWith('/rpc/merge_stats')) return (await db.query('select * from public.merge_stats($1,$2,$3)',
               [body.p_writer, body.p_millis, JSON.stringify(body.p_achievements)])).rows;
-            if (u.pathname.endsWith('/profiles')) return (await db.query('select nickname,avatar,prefs from public.profiles where id=$1', [owner])).rows;
+            if (u.pathname.endsWith('/profiles')) {
+              if (req.method() === 'PATCH') return (await db.query('update public.profiles set nickname=$1,avatar=$2,prefs=$3 where id=$4 returning nickname,avatar,prefs',
+                [body.nickname, body.avatar, JSON.stringify(body.prefs), owner])).rows;
+              return (await db.query('select nickname,avatar,prefs from public.profiles where id=$1', [owner])).rows;
+            }
             if (u.pathname.endsWith('/saves')) {
               if (req.method() === 'GET') {
                 const slot = u.searchParams.get('slot');
@@ -80,6 +117,7 @@ const B = '22222222-2222-2222-2222-222222222222';
     async function open(ctx) {
       const page = await ctx.newPage(); page.on('pageerror', err => errors.push(err.message));
       await page.goto(url); await page.evaluate(() => { window.game = MIXX.main.boot(); game.stop(); });
+      await page.addScriptTag({ url: url + '/tools/play-level1.js' });
       await settle(page); return page;
     }
     async function settle(page) {
@@ -90,17 +128,59 @@ const B = '22222222-2222-2222-2222-222222222222';
         }
       });
     }
-    const desktop = await context(A), page = await open(desktop);
+    async function login(page, register) {
+      await page.locator('#btn-account').click();
+      const privacy = page.locator('.login-privacy a');
+      assert.equal(await privacy.isVisible(), true);
+      assert.equal(await privacy.getAttribute('href'), 'https://github.com/ideer0126/MIXXTOPIA/blob/main/docs/PRIVACY.md');
+      await page.locator('#login-email').fill('release-a@example.com');
+      await page.locator('#login-password').fill(fixturePassword);
+      await page.locator(register ? '#btn-register' : '#btn-login').click();
+      await page.evaluate(() => game._authPromise); await settle(page);
+      assert.equal(await page.evaluate(() => game.auth.getSession().user.id), A);
+      await page.locator('#btn-login-back').click();
+    }
+    async function reload(page) {
+      await page.reload(); await page.evaluate(() => { window.game = MIXX.main.boot(); game.stop(); }); await settle(page);
+      await page.addScriptTag({ url: url + '/tools/play-level1.js' });
+    }
+    const desktop = await context(A, false, false), page = await open(desktop);
+    assert.equal(requests.length, 0, 'guest boot must not request account services');
+    await login(page, true);
+    await page.locator('#btn-title-settings').click(); await settle(page);
+    await page.locator('#settings-nickname').fill('验收小星');
+    await page.locator('[data-avatar="muse-5"]').click();
+    await page.locator('#btn-settings-save').click(); await page.evaluate(() => game._accountPromise); await settle(page);
+    assert.match(await page.locator('#settings-msg').innerText(), /设置已保存/);
+    const deletion = page.locator('#link-delete-account');
+    assert.equal(await deletion.isVisible(), true);
+    const deletionURL = new URL(await deletion.getAttribute('href'));
+    assert.equal(deletionURL.origin + deletionURL.pathname, 'https://github.com/ideer0126/MIXXTOPIA/issues/new');
+    assert.equal(deletionURL.searchParams.get('title'), '申请删除账户');
+    assert.ok(!deletionURL.searchParams.get('body').includes('release-a@example.com'));
+    await reload(page);
+    assert.match(await page.locator('#btn-account').innerText(), /验收小星/);
+    assert.equal(await page.evaluate(() => game.profile.avatar), 'muse-5');
+    await page.evaluate(() => {
+      const session = JSON.parse(localStorage.getItem('mixxtopia.account.v1'));
+      session.expiresAt = 1; localStorage.setItem('mixxtopia.account.v1', JSON.stringify(session));
+    });
+    const authBefore = requests.filter(r => r.path.endsWith('/token')).length;
+    await reload(page);
+    assert.equal(requests.filter(r => r.path.endsWith('/token')).length, authBefore + 1);
+    assert.equal(await page.evaluate(() => game.auth.getSession().user.id), A);
+    console.log('  ✓ release: register / profile round trip / privacy and deletion links / reload session / expired-token refresh');
     await page.locator('#btn-start').click();
     const measured = await page.evaluate(() => {
-      while (game.state === 'dialogue') game._tapDialog();
+      level1Playthrough.finishDialogue(game);
+      if (game.level.id !== 1 || game.dataSource !== 'data') throw Error('Expected the real first level');
       game._update(1.25); game._update(1.25);
       const time = game.stats.record.seconds;
       game._setState('paused'); game._update(3);
       game._setState('dialogue'); game._update(3);
       game._setState('playing');
       const star = game.level.entities.find(e => e.type === 'star');
-      game.player.x = star.x * 16; game.player.y = star.y * 16; game._checkPickups();
+      level1Playthrough.walkTo(game, star.x, star.y);
       game._setState('paused'); return { time, after: game.stats.record.seconds };
     });
     assert.equal(measured.time, 2.5); assert.equal(measured.after, 2.5);
@@ -114,7 +194,15 @@ const B = '22222222-2222-2222-2222-222222222222';
     await page.locator('.stats-panel').screenshot({ path: path.join(output, 'desktop.png') });
     console.log('  ✓ desktop: PLAYING-only time / save consent / 33% collection / achievement / UI sync');
 
-    const mobile = await context(A, true), phone = await open(mobile);
+    const mobile = await context(A, true, false), phone = await open(mobile);
+    await login(phone, false);
+    await phone.locator('#btn-saves').click(); await settle(phone);
+    await phone.locator('#btn-cloud-download-1').click();
+    assert.equal(await phone.evaluate(() => game.store.readSlot(0)), null, 'first click cannot overwrite');
+    await phone.locator('#btn-cloud-download-1').click(); await settle(phone);
+    await phone.locator('#btn-slot-1').click();
+    assert.equal(await phone.evaluate(() => game.stars), 1);
+    await phone.evaluate(() => { game._setState('paused'); game._quitToTitle(); });
     await phone.locator('#btn-title-settings').click(); await settle(phone);
     assert.equal(await phone.locator('#stats-time').innerText(), await page.locator('#stats-time').innerText());
     assert.equal(await phone.locator('#stats-collection').innerText(), await page.locator('#stats-collection').innerText());
@@ -127,22 +215,67 @@ const B = '22222222-2222-2222-2222-222222222222';
     offline = true;
     await page.evaluate(() => {
       game._closeSettingsScreen(); game._startNewGame();
-      while (game.state === 'dialogue') game._tapDialog();
+      level1Playthrough.finishDialogue(game);
       game._update(4.75); game._setState('paused'); game._saveAndQuit();
     });
     await settle(page);
     assert.equal(await page.evaluate(() => game.state), 'title');
     assert.ok(await page.evaluate(() => game.stats.view().pending));
-    await page.reload(); await page.evaluate(() => { window.game = MIXX.main.boot(); game.stop(); }); await settle(page);
+    await reload(page);
     assert.ok(await page.evaluate(() => game.stats.view().pending));
     offline = false;
-    await page.reload(); await page.evaluate(() => { window.game = MIXX.main.boot(); game.stop(); }); await settle(page);
+    await reload(page);
     await page.locator('#btn-title-settings').click(); await settle(page);
     assert.match(await page.locator('#stats-time').innerText(), /7 秒/);
     assert.equal(await page.evaluate(() => game.stats.view().pending), false);
     await phone.locator('#btn-stats-sync').scrollIntoViewIfNeeded(); await phone.locator('#btn-stats-sync').click(); await settle(phone);
     assert.equal(await phone.locator('#stats-time').innerText(), await page.locator('#stats-time').innerText());
     console.log('  ✓ offline save / reload / next-login retry / idempotent cross-device update');
+
+    for (const [device, target] of [['desktop', page], ['touch', phone]]) {
+      const oldPassword = fixturePassword, nextPassword = 'changed-password-' + device;
+      const writesBefore = requests.filter(r => r.path.endsWith('/user')).length;
+      await target.locator('#password-current').fill(oldPassword);
+      await target.locator('#password-new').fill(nextPassword);
+      await target.locator('#password-confirm').fill('different-password');
+      await target.locator('#btn-password-save').click();
+      assert.match(await target.locator('#password-msg').innerText(), /不一致/);
+      assert.equal(requests.filter(r => r.path.endsWith('/user')).length, writesBefore);
+      await target.locator('#password-current').fill('wrong-current-password');
+      await target.locator('#password-new').fill(nextPassword);
+      await target.locator('#password-confirm').fill(nextPassword);
+      await target.locator('#btn-password-save').click(); await target.evaluate(() => game._passwordPromise);
+      assert.match(await target.locator('#password-msg').innerText(), /当前密码不正确/);
+      assert.equal(requests.filter(r => r.path.endsWith('/user')).length, writesBefore);
+      await target.locator('#password-current').fill(oldPassword);
+      await target.locator('#password-new').fill(nextPassword);
+      await target.locator('#password-confirm').fill(nextPassword);
+      await target.locator('#btn-password-save').click(); await target.evaluate(() => game._passwordPromise); await settle(target);
+      assert.match(await target.locator('#password-msg').innerText(), /密码已修改/);
+      assert.equal(requests.filter(r => r.path.endsWith('/user')).length, writesBefore + 1);
+      for (const id of ['password-current', 'password-new', 'password-confirm']) assert.equal(await target.locator('#' + id).inputValue(), '');
+      assert.ok(await target.evaluate(() => {
+        const panel = document.getElementById('settings-password').getBoundingClientRect();
+        return [...document.querySelectorAll('#password-form input')].every(el => {
+          const box = el.getBoundingClientRect(); return box.left > panel.left && box.right < panel.right;
+        });
+      }), 'password fields must fit the panel on both devices');
+      await target.locator('#settings-password').screenshot({ path: path.join(output, 'password-' + device + '.png') });
+      const saved = await target.evaluate(() => localStorage.getItem(MIXX.main.SAVE_KEY));
+      await target.locator('#btn-settings-back').click();
+      await target.locator('#btn-logout').click(); await target.evaluate(() => game._authPromise); await settle(target);
+      assert.equal(await target.evaluate(() => localStorage.getItem(MIXX.main.SAVE_KEY)), saved);
+      await target.locator('#login-email').fill('release-a@example.com');
+      await target.locator('#login-password').fill(oldPassword);
+      await target.locator('#btn-login').click(); await target.evaluate(() => game._authPromise);
+      assert.equal(await target.evaluate(() => game.auth.getSession()), null);
+      await target.locator('#login-email').fill('release-a@example.com');
+      await target.locator('#login-password').fill(nextPassword);
+      await target.locator('#btn-login').click(); await target.evaluate(() => game._authPromise); await settle(target);
+      assert.equal(await target.evaluate(() => game.auth.getSession().user.id), A);
+      await target.locator('#btn-login-back').click();
+      console.log('  ✓ ' + device + ': password mismatch / wrong current / change / old rejected / new login / local save preserved');
+    }
 
     const other = await context(B), second = await open(other);
     await second.locator('#btn-title-settings').click(); await settle(second);
@@ -164,12 +297,16 @@ const B = '22222222-2222-2222-2222-222222222222';
     console.log('  ✓ guest: zero cloud requests');
 
     // Existing browser smoke suites remain independent of the new stats fixture.
-    for (const name of ['smoke-main.html', 'smoke-input.html']) {
-      const smoke = await desktop.newPage(); await smoke.goto(url + '/tools/' + name);
-      await smoke.waitForFunction(() => document.body.getAttribute('data-smoke'));
-      const result = await smoke.evaluate(() => ({ state: document.body.getAttribute('data-smoke'), text: document.body.innerText }));
-      assert.equal(result.state, 'ok', result.text);
-      console.log('  ✓ existing ' + name + ': ' + (result.text.match(/PASS /g) || []).length + ' PASS');
+    for (const [device, ctx] of [['desktop', desktop], ['touch', mobile]]) {
+      for (const name of ['smoke-main.html', 'smoke-input.html']) {
+        const smoke = await ctx.newPage(); smoke.on('pageerror', err => errors.push(err.message));
+        await smoke.goto(url + '/tools/' + name);
+        await smoke.waitForFunction(() => document.body.getAttribute('data-smoke'));
+        const result = await smoke.evaluate(() => ({ state: document.body.getAttribute('data-smoke'), text: document.body.innerText }));
+        assert.equal(result.state, 'ok', result.text);
+        console.log('  ✓ ' + device + ' ' + name + ': ' + (result.text.match(/PASS /g) || []).length + ' PASS');
+        await smoke.close();
+      }
     }
     assert.deepEqual(errors, []);
     fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify({ passed: true, errors, requests: requests.length, measured, screenshots: ['desktop.png', 'mobile.png'] }, null, 2));

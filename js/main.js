@@ -596,6 +596,10 @@
       this._authBusy = false;
       this._authUnsubscribe = null;
       this._authOffline = false;  // restore 遇到网络/服务端失败：标题提示「云端暂不可用」
+      this._passwordPromise = null;
+      this._passwordBusy = false;
+      this._passwordEpoch = 0;
+      this._passwordUserId = '';
       this._destroyed = false;   // destroy() 后异步 auth 回调不再动 DOM
 
       // 账户资料 / 设置（Issue #44）：profiles 表读写由 js/account.js 负责；
@@ -701,6 +705,7 @@
     destroy() {
       this.stop();
       this._destroyed = true;
+      this._resetPasswordForm();
       // 对话态下销毁时，对话框与背景虚化层只在 _leaveState(DIALOGUE) 隐藏；
       // 这里显式清理，避免复用同一 DOM 时残留暗化/模糊遮罩（PR #33 评审）
       this._hide(this._ui.dialog);
@@ -732,6 +737,7 @@
     /** 唯一状态切换入口：先清理旧态、再初始化新态 */
     _setState(next) {
       if (next === this.state) return;
+      if (next !== STATE.TITLE) this._resetPasswordForm();
       const prev = this.state;
       if (this.stats && prev === STATE.PLAYING) this.stats.flush();
       this._leaveState(prev);
@@ -1614,6 +1620,7 @@
     /** 打开登录 / 账户界面（仅标题态；沿用 _show/_hide，不新增游戏状态） */
     _openLoginScreen() {
       if (this.state !== STATE.TITLE) return;
+      this._resetPasswordForm();
       this._hide(this._ui.titleScreen);
       this._hide(this._ui.helpScreen);
       this._hide(this._ui.settingsScreen);
@@ -1648,6 +1655,12 @@
     _refreshAuthUI() {
       const session = this._currentSession();
       const signedIn = !!(session && session.user);
+      const passwordUid = signedIn ? session.user.id : '';
+      if (this._passwordUserId !== passwordUid) {
+        this._passwordUserId = passwordUid;
+        this._resetPasswordForm();
+      }
+      this._refreshPasswordUI();
       this._toggleHidden(this._ui.loginForm, signedIn);
       this._toggleHidden(this._ui.loginAccount, !signedIn);
       this._toggleHidden(this._ui.btnSettings, !signedIn);
@@ -1682,8 +1695,76 @@
       this._authBusy = !!busy;
       const buttons = [this._ui.btnLogin, this._ui.btnRegister, this._ui.btnLogout];
       for (let i = 0; i < buttons.length; i++) {
-        if (buttons[i]) buttons[i].disabled = !!busy;
+        if (buttons[i]) buttons[i].disabled = !!busy || this._passwordBusy;
       }
+    }
+
+    _refreshPasswordUI() {
+      const enabled = !!this._currentUserId() && this.auth && typeof this.auth.changePassword === 'function';
+      this._toggleHidden(this._ui.settingsPassword, !enabled);
+      for (const el of [this._ui.passwordCurrent, this._ui.passwordNew, this._ui.passwordConfirm,
+        this._ui.btnPasswordSave, this._ui.btnPasswordClear]) {
+        if (el) el.disabled = !enabled || this._passwordBusy;
+      }
+    }
+
+    _clearPasswordFields() {
+      for (const el of [this._ui.passwordCurrent, this._ui.passwordNew, this._ui.passwordConfirm]) {
+        if (el) el.value = '';
+      }
+    }
+
+    _setPasswordMessage(text, error) {
+      const el = this._ui.passwordMsg;
+      this._text(el, text || '');
+      if (el && el.classList) {
+        el.classList.toggle('settings-msg-error', !!text && !!error);
+        el.classList.toggle('settings-msg-ok', !!text && !error);
+      }
+    }
+
+    _resetPasswordForm() {
+      this._passwordEpoch++;
+      this._clearPasswordFields();
+      this._setPasswordMessage('', false);
+    }
+
+    _onPasswordSubmit() {
+      if (this.state !== STATE.TITLE || !this._settingsVisible() || !this._currentUserId()
+        || !this.auth || typeof this.auth.changePassword !== 'function') return null;
+      if (this._passwordBusy) return this._passwordPromise;
+      const current = this._ui.passwordCurrent && this._ui.passwordCurrent.value || '';
+      const password = this._ui.passwordNew && this._ui.passwordNew.value || '';
+      const confirmation = this._ui.passwordConfirm && this._ui.passwordConfirm.value || '';
+      this._clearPasswordFields();
+      if (password !== confirmation) {
+        this._setPasswordMessage('两次输入的新密码不一致', true);
+        return null;
+      }
+      const uid = this._currentUserId(), epoch = this._passwordEpoch;
+      const active = () => !this._destroyed && this._settingsVisible()
+        && this._currentUserId() === uid && this._passwordEpoch === epoch;
+      this._passwordBusy = true;
+      this._refreshPasswordUI();
+      this._setLoginBusy(this._authBusy);
+      this._setPasswordMessage('正在验证身份并修改密码…', false);
+      this._passwordPromise = Promise.resolve().then(() => {
+        if (!active()) return;
+        return this.auth.changePassword(current, password);
+      }).then(result => {
+        if (active() && result) this._setPasswordMessage('密码已修改，后续登录请使用新密码。', false);
+        return result;
+      }).catch(err => {
+        if (active()) this._setPasswordMessage(err && err.message || '修改失败，请稍后重试', true);
+        return null;
+      }).finally(() => {
+        this._passwordBusy = false;
+        if (!this._destroyed) {
+          this._refreshPasswordUI();
+          this._setLoginBusy(this._authBusy);
+        }
+      });
+      return this._passwordPromise;
     }
 
     /** 登录界面提示：kind = '' | 'ok' | 'error' */
@@ -2027,6 +2108,8 @@
     /** 从标题或登录面板打开设置（游客或云端资料功能未就绪时仅可调整本机偏好） */
     _openSettingsScreen() {
       if (this.state !== STATE.TITLE) return false;
+      this._resetPasswordForm();
+      this._refreshPasswordUI();
       const signedIn = !!this._currentSession();
       this._hide(this._ui.loginScreen);
       this._hide(this._ui.titleScreen);
@@ -2048,6 +2131,7 @@
     /** 关闭账户设置：回到登录面板（仍登录）或标题（已登出） */
     _closeSettingsScreen() {
       if (this.state !== STATE.TITLE || !this._settingsVisible()) return false;
+      this._resetPasswordForm();
       this._hide(this._ui.settingsScreen);
       this._selectedAvatar = '';
       this._setSettingsMessage('', '');
@@ -3548,6 +3632,14 @@
         'btn-pref-touch': 'btnPrefTouch',
         'settings-cloud-note': 'settingsCloudNote',
         'settings-msg': 'settingsMsg',
+        'settings-password': 'settingsPassword',
+        'password-form': 'passwordForm',
+        'password-current': 'passwordCurrent',
+        'password-new': 'passwordNew',
+        'password-confirm': 'passwordConfirm',
+        'password-msg': 'passwordMsg',
+        'btn-password-save': 'btnPasswordSave',
+        'btn-password-clear': 'btnPasswordClear',
         'stats-time': 'statsTime',
         'stats-collection': 'statsCollection',
         'stats-achievements': 'statsAchievements',
@@ -3619,12 +3711,19 @@
       this._on(ui.btnSettings, 'click', () => { this._openSettingsScreen(); });
       this._on(ui.btnTitleSettings, 'click', () => { this._openSettingsScreen(); });
       this._on(ui.btnSettingsBack, 'click', () => { this._closeSettingsScreen(); });
+      this._on(ui.passwordForm, 'submit', ev => {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        this._onPasswordSubmit();
+      });
+      this._on(ui.btnPasswordClear, 'click', () => { if (!this._passwordBusy) this._resetPasswordForm(); });
       this._on(ui.btnStatsSync, 'click', () => { if (this._settingsVisible()) this._syncStats(); });
       this._on(this.root, 'pagehide', () => { if (this.stats) this.stats.flush(); });
+      this._on(this.root, 'pagehide', () => this._resetPasswordForm());
       this._on(this.doc, 'visibilitychange', () => {
         if (this.doc.hidden && this.stats) this.stats.flush();
       });
       this._on(this.root, 'storage', ev => {
+        if (ev.key === ACCOUNT_KEY || ev.key === null) this._resetPasswordForm();
         if (this.stats && this.auth && (ev.key === ACCOUNT_KEY || ev.key === null)) {
           let uid = '';
           try { uid = JSON.parse(ev.newValue).user.id; } catch (err) { /* Logout or damaged session. */ }
