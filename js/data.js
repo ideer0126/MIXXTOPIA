@@ -2451,26 +2451,27 @@
       },
 
       /* ── 关 5 · Hot 'n Unbothered（小分队：Sullyoon + Bae） ── */
+      // HEAT/OASIS 尚未接入；绿洲布点与耗尽事件稿见 GAME_DESIGN.md §5.5 / §8.6。
       'l5.intro': {
         type: 'intro',
         trigger: 'npc:bae',
         once: true,
         lines: [
           { s: 'bae', t: '好——热——！这里本来该是丰收的田野，愿望之星一散，大地就荒成沙漠了。' },
-          { s: 'bae', t: '不过没关系，绿洲就是大地的笑意。看右上角那条「清凉条」！它一直在往下掉。' },
+          { s: 'bae', t: '不过没关系，绿洲就是大地的笑意。右上角的「清凉条」从 100 秒开始，离开绿洲才会慢慢下降。' },
           { s: 'sullyoon', t: '绿洲能恢复清凉；对话的时候计时会暂停，放心聊天。' },
-          { s: 'sullyoon', t: '五颗星星藏在迷宫深处。清凉条见底前找到它们，冲进传送门。' },
-          { s: 'bae', t: '仙人掌的影子下面，也稍微凉快一点哦——沙漠里每一片荫凉都是礼物！' },
+          { s: 'sullyoon', t: '五颗星星藏在迷宫深处，不用一口气找齐。清凉耗尽就回最近到访的绿洲休息，找到的星星会一直陪着你。' },
+          { s: 'bae', t: '在绿洲歇一会儿，周围的植物也会慢慢恢复颜色。大地在陪你一起缓过来！' },
         ],
         next: 'l5.bae.hint',
       },
       'l5.sullyoon.hint': {
         type: 'hint', trigger: 'npc:sullyoon', once: false,
-        lines: [{ s: 'sullyoon', t: '心里不慌，汗就白流一半。先找绿洲，再找星星。' }],
+        lines: [{ s: 'sullyoon', t: '先找绿洲，再找星星。清凉耗尽也不会丢掉星星，按自己的节奏走就好。' }],
       },
       'l5.bae.hint': {
         type: 'hint', trigger: 'npc:bae', once: false,
-        lines: [{ s: 'bae', t: '玫瑰能在最干的地方开花，你也能找到路。冲就完了！' }],
+        lines: [{ s: 'bae', t: '玫瑰能在最干的地方开花，你也能找到路。累了就回绿洲歇歇，我陪你看大地重新变绿！' }],
       },
       'l5.npc.lily': {
         type: 'npc', trigger: 'npc:lily', once: true,
@@ -2491,8 +2492,8 @@
       'l5.clear': {
         type: 'clear', trigger: 'clear:5', scopeId: 5, entry: true, once: true,
         lines: [
-          { s: 'sullyoon', t: '周遭再喧闹，我们从头到尾都没被打扰呢。Hot \'n unbothered，就是这个意思。' },
-          { s: 'bae', t: '五颗星星到手！大地又开花了——看，玫瑰。开玩笑啦，传送门在滴水，快出发！' },
+          { s: 'sullyoon', t: '外面再热，也挡不住我们按自己的节奏走到这里。Hot \'n unbothered，就是这份从容。' },
+          { s: 'bae', t: '五颗星星到手！大地又开花了——看，玫瑰。歇好了，我们就从传送门出发！' },
           { s: 'byeori', t: '最后一站：疾风终章。Jiwoo 和 Kyujin 在山顶等你。' },
         ],
       },
