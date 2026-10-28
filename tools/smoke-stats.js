@@ -182,9 +182,9 @@ const B = '22222222-2222-2222-2222-222222222222';
       // The first star may be a locked minigame reward. Use an actually available
       // pickup so this account/statistics check preserves the level's progression.
       const star = game.level.entities.find(e => e.type === 'star' && game._starAvailable(e));
-      if (!star) throw Error('Expected an unlocked star in the real first level');
+      if (!star) throw Error(`Expected an unlocked star in level ${game.level.id}; star IDs: ${JSON.stringify(game.level.entities.filter(e => e.type === 'star').map(e => e.id))}`);
       level1Playthrough.walkTo(game, star.x, star.y);
-      if (!game.collected.includes(star.id)) throw Error('Expected the walked-to star to be collected');
+      if (!game.collected.includes(star.id)) throw Error(`Expected star ${star.id} in level ${game.level.id} to be collected after walking to it`);
       game._setState('paused'); return { time, after: game.stats.record.seconds };
     });
     assert.equal(measured.time, 2.5); assert.equal(measured.after, 2.5);

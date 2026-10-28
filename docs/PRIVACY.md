@@ -25,6 +25,7 @@
 ## 3. 存在哪里、经过谁
 
 - **Supabase**（Postgres + Auth）作为数据处理方，数据库在你创建项目时选择的区域（Singapore 或 Tokyo）；
+- 密码重置邮件通过部署配置的自定义 SMTP 或 Send Email Hook 发送，邮箱地址和一次性重置链接会经过配置的邮件服务；正式通道的邮件服务商以部署配置为准；
 - 所有请求走 **HTTPS**；
 - 本地 `localStorage`（`mixxtopia.save.v1`、`mixxtopia.settings.v1`、`mixxtopia.cloud.v1`）**只存在你自己设备上**；其中 `mixxtopia.cloud.v1` 保存逐档同步基线和已授权存档快照；`mixxtopia.stats.v1.*` 保存按账号区分的统计待补传记录与云端统计缓存，beta/preview 使用各自通道键；
 - 统计使用每个页面随机生成的计数标识避免重复上传，不读取硬件、浏览器特征或设备指纹；云端仅保留这些计数与游戏所需统计；
