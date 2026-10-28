@@ -4058,12 +4058,13 @@ testAsync('修改密码 UI：当前密码错误有中文提示，可重试且不
     fillPassword(); await game._onPasswordSubmit();
     assert.match(text('password-msg'), /当前密码不正确/);
     assert.ok(!elt('btn-password-save').disabled); passwordsEmpty();
+    assert.ok(!elt('btn-settings-back').disabled);
     assert.ok(!fetch.calls.some(call => call.url.endsWith('/user')));
     assert.strictEqual(game._currentUserId(), ACCOUNT_USER.id);
   } finally { game.destroy(); }
 });
 
-testAsync('修改密码 UI：离开设置页后旧回包不显示成功，销毁也清空密码', async () => {
+testAsync('修改密码 UI：请求期间不能返回，收到成功提示后恢复返回且清空字段', async () => {
   let release, started;
   const gate = new Promise(resolve => { release = resolve; });
   const entered = new Promise(resolve => { started = resolve; });
@@ -4071,11 +4072,48 @@ testAsync('修改密码 UI：离开设置页后旧回包不显示成功，销毁
     if (call.url.endsWith('/user')) { started(); return gate; }
     return authResponse(200, accountPayload());
   });
-  fillPassword(); const task = game._onPasswordSubmit(); await entered;
-  game._closeSettingsScreen(); game._openSettingsScreen();
-  release(authResponse(200, ACCOUNT_USER)); await task;
-  assert.strictEqual(text('password-msg'), ''); passwordsEmpty();
-  fillPassword(); game.destroy(); passwordsEmpty();
+  try {
+    fillPassword(); const task = game._onPasswordSubmit();
+    assert.ok(elt('btn-settings-back').disabled);
+    assert.strictEqual(game._closeSettingsScreen(), false);
+    await entered;
+    game._refreshSettingsUI(); // 资料刷新也不能重新启用返回按钮。
+    assert.ok(elt('btn-settings-back').disabled);
+    elt('btn-settings-back').click();
+    assert.ok(game._settingsVisible());
+    assert.strictEqual(game._closeSettingsScreen(), false);
+    release(authResponse(200, ACCOUNT_USER)); await task;
+    assert.match(text('password-msg'), /密码已修改/); passwordsEmpty();
+    assert.ok(!elt('btn-settings-back').disabled);
+    assert.strictEqual(game._closeSettingsScreen(), true);
+    game._openSettingsScreen();
+    assert.strictEqual(text('password-msg'), '');
+    fillPassword();
+  } finally {
+    release(authResponse(200, ACCOUNT_USER));
+    game.destroy(); passwordsEmpty();
+  }
+});
+
+testAsync('修改密码 UI：请求期间登出仍关闭设置，迟到结果不显示成功', async () => {
+  let release, started;
+  const gate = new Promise(resolve => { release = resolve; });
+  const entered = new Promise(resolve => { started = resolve; });
+  const { game } = await passwordGame(call => {
+    if (call.url.endsWith('/user')) { started(); return gate; }
+    return authResponse(200, accountPayload());
+  });
+  try {
+    fillPassword(); const task = game._onPasswordSubmit(); await entered;
+    await game.auth.signOut();
+    assert.ok(!game._settingsVisible());
+    assert.strictEqual(game._currentUserId(), '');
+    release(authResponse(200, ACCOUNT_USER)); await task;
+    assert.strictEqual(text('password-msg'), ''); passwordsEmpty();
+  } finally {
+    release(authResponse(200, ACCOUNT_USER));
+    game.destroy();
+  }
 });
 
 testAsync('修改密码 UI：跨标签页切号清空密码，撤销尚未发起的操作', async () => {

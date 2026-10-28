@@ -1702,6 +1702,7 @@
     _refreshPasswordUI() {
       const enabled = !!this._currentUserId() && this.auth && typeof this.auth.changePassword === 'function';
       this._toggleHidden(this._ui.settingsPassword, !enabled);
+      if (this._ui.btnSettingsBack) this._ui.btnSettingsBack.disabled = this._accountBusy || this._passwordBusy;
       for (const el of [this._ui.passwordCurrent, this._ui.passwordNew, this._ui.passwordConfirm,
         this._ui.btnPasswordSave, this._ui.btnPasswordClear]) {
         if (el) el.disabled = !enabled || this._passwordBusy;
@@ -2131,6 +2132,7 @@
     /** 关闭账户设置：回到登录面板（仍登录）或标题（已登出） */
     _closeSettingsScreen() {
       if (this.state !== STATE.TITLE || !this._settingsVisible()) return false;
+      if (this._passwordBusy && this._currentUserId()) return false;
       this._resetPasswordForm();
       this._hide(this._ui.settingsScreen);
       this._selectedAvatar = '';
@@ -2225,7 +2227,7 @@
         saveBtn.disabled = formDisabled;
         this._text(saveBtn, busy ? '正在保存…' : '💾 保存设置');
       }
-      if (this._ui.btnSettingsBack) this._ui.btnSettingsBack.disabled = busy;
+      if (this._ui.btnSettingsBack) this._ui.btnSettingsBack.disabled = busy || this._passwordBusy;
       // 保存期间冻结偏好按钮，避免 PATCH 快照与界面显示不一致
       if (this._ui.btnPrefSound) this._ui.btnPrefSound.disabled = busy;
       if (this._ui.btnPrefTouch) this._ui.btnPrefTouch.disabled = busy;
