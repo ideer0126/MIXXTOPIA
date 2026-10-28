@@ -128,6 +128,20 @@ function isWall(level, x, y) {
   return ch === '#' || legendName(level, ch) === 'wall';
 }
 
+/** 每次校验/搜索只构建一次静态家具列表；下次调用重新读取关卡数据。 */
+function furnitureBlocker(level) {
+  const party = level.party;
+  if (!party || !party.preciseCollision) return () => false;
+  const f = party.footprint;
+  if (!f || ![f.x, f.y, f.w, f.h].every(Number.isFinite)) return () => true;
+  const rects = (party.colliders || []).concat((level.decorations || [])
+    .filter(d => d.room === 'hall' && d.collision).map(d => d.collision));
+  return (x, y) => {
+    const px = x + f.x / 16, py = y + f.y / 16, w = f.w / 16, h = f.h / 16;
+    return rects.some(r => px < r.x + r.w && px + w > r.x && py < r.y + r.h && py + h > r.y);
+  };
+}
+
 function isWater(level, x, y) {
   return legendName(level, tileAt(level, x, y)) === 'water';
 }
@@ -296,14 +310,23 @@ function rule2(game, R) {
         R.err('规则 2', tag + ' ' + label(e) + ' 叠放在水域上，仅允许 WATER/STEPSTONE/浅滩星');
       }
     }
+    if(lv.party && lv.party.preciseCollision){
+      const f=lv.party.footprint;
+      if(!f || ![f.x,f.y,f.w,f.h].every(Number.isFinite) || f.x<0 || f.y<0 || f.w<=0 || f.h<=0 || f.x+f.w>16 || f.y+f.h>16)
+        R.err('规则 2',tag+' 脚底范围必须是人物瓦片内的有效矩形');
+      for(const r of lv.party.colliders||[])if(![r.x,r.y,r.w,r.h].every(Number.isFinite)||r.x<0||r.y<0||r.w<=0||r.h<=0||r.x+r.w>lv.map.w||r.y+r.h>lv.map.h)
+        R.err('规则 2',tag+' 精确墙脚碰撞必须在地图范围内');
+    }
     for (const d of lv.decorations || []) {
       if (!d.collision) continue;
       const r = d.collision;
-      if (![r.x, r.y, r.w, r.h].every(Number.isInteger) || r.w <= 0 || r.h <= 0
+      const precise = lv.party && lv.party.preciseCollision && d.room === 'hall';
+      if (![r.x, r.y, r.w, r.h].every(precise ? Number.isFinite : Number.isInteger) || r.w <= 0 || r.h <= 0
         || r.x < 0 || r.y < 0 || r.x + r.w > lv.map.w || r.y + r.h > lv.map.h) {
-        R.err('规则 2', tag + ' 家具 ' + d.kind + ' collision 必须是地图内的整数矩形');
+        R.err('规则 2', tag + ' 家具 ' + d.kind + (precise ? ' collision 必须是地图内的有限数值矩形' : ' collision 必须是地图内的整数矩形'));
         continue;
       }
+      if (precise) continue;
       let missing = false;
       for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
         if (!isWall(lv, x, y)) missing = true;
@@ -392,6 +415,7 @@ function rule4(game, R) {
 function rule5(game, R) {
   for (const lv of game.levels || []) {
     if (!lv || !lv.map || !Array.isArray(lv.entities)) continue;
+    const furnitureBlocks = furnitureBlocker(lv);
     const tag = '关 ' + lv.id;
     const gateIds = new Set();
     for (const e of lv.entities) {
@@ -422,7 +446,7 @@ function rule5(game, R) {
         const p = e.to;
         if (!p || !Number.isInteger(p.x) || !Number.isInteger(p.y)
           || p.x < 0 || p.y < 0 || p.x >= lv.map.w || p.y >= lv.map.h
-          || isWall(lv, p.x, p.y) || isWater(lv, p.x, p.y)
+          || isWall(lv, p.x, p.y) || furnitureBlocks(p.x, p.y) || isWater(lv, p.x, p.y)
           || (p.x === e.x && p.y === e.y)) {
           R.err('规则 5', tag + ' roomdoor "' + e.id + '" 的落点必须是有效地面，且不能指回自身');
         }
@@ -522,7 +546,7 @@ function rule7(game, R) {
       else if (e.type === 'sheep') sheepById.set(e.id, { entity: e, level: lv });
       else if (e.type === 'star') starById.set(e.id, { entity: e, level: lv });
       else if (e.type === 'trigger') triggerById.set(e.id, { entity: e, level: lv });
-      else if (e.type === 'record' || e.type === 'gramophone') interactById.set(e.id, { entity: e, level: lv });
+      else if (e.type === 'record' || e.type === 'gramophone' || e.type === 'minigame') interactById.set(e.id, { entity: e, level: lv });
     }
   }
 
@@ -546,7 +570,7 @@ function rule7(game, R) {
             const node = dialogue[id];
             const npcId = node && String(node.trigger).replace(/^npc:/, '');
             const action = node && String(node.trigger).startsWith('interact:')
-              && lv.entities.some(e => ['record', 'gramophone'].includes(e.type)
+              && lv.entities.some(e => ['record', 'gramophone', 'minigame'].includes(e.type)
                 && node.trigger === 'interact:' + e.id && e.dialogue === id);
             const actor = node && node.type === 'npc' && lv.entities.some(n => n.type === 'npc' && n.id === npcId
               && (n.room || 'hall') === (node.room || 'hall'));
@@ -558,7 +582,7 @@ function rule7(game, R) {
           }
         }
       }
-      if (e.type === 'record' || e.type === 'gramophone') {
+      if (e.type === 'record' || e.type === 'gramophone' || e.type === 'minigame') {
         const node = dialogue[e.dialogue];
         if (!node || node.type !== 'cutscene' || node.once !== true || node.trigger !== 'interact:' + e.id) {
           R.err('规则 7', tag + ' 道具 "' + e.id + '" 的 dialogue 必须指向自身的 once interact 节点');
@@ -729,7 +753,7 @@ function rule7(game, R) {
     } else if (node.trigger.startsWith('interact:')) {
       const hit = interactById.get(node.trigger.slice(9));
       if (!hit || hit.entity.dialogue !== nodeId || (scope && hit.level.id !== scope.key)) {
-        R.err('规则 7', '道具节点 "' + nodeId + '" 必须与同关 record/gramophone 实体互相引用');
+        R.err('规则 7', '道具节点 "' + nodeId + '" 必须与同关 record/gramophone/minigame 实体互相引用');
       }
     } else if (node.trigger.startsWith('trigger:')) {
       const tid = node.trigger.slice(8);
@@ -916,6 +940,7 @@ const WIND_CYCLE = ['N', 'E', 'S', 'W'];
  * @returns {{stars: string[], goal: string|null, spawnBlocked: boolean}}
  */
 function staticReachability(lv) {
+  const furnitureBlocks = furnitureBlocker(lv);
   const spawn = entitiesOf(lv, 'spawn')[0];
   const waters = entitiesOf(lv, 'water');
   const stones = new Set(entitiesOf(lv, 'stepstone').map(s => s.x + ',' + s.y));
@@ -923,7 +948,7 @@ function staticReachability(lv) {
 
   const passable = (x, y) => {
     if (x < 0 || y < 0 || x >= lv.map.w || y >= lv.map.h) return false;
-    if (isWall(lv, x, y)) return false;
+    if (isWall(lv, x, y) || furnitureBlocks(x, y)) return false;
     if (isWater(lv, x, y)) {
       const w = waters.find(w => w.x === x && w.y === y);
       return stones.has(x + ',' + y) || !!(w && w.shallow === true); // high/low 并集
@@ -986,6 +1011,7 @@ function stateSearch(lv, dialogue = {}) {
     return { status: 'fail', msg: '条件星 requiresDialogue 必须是节点数组' };
   }
 
+  const furnitureBlocks = furnitureBlocker(lv);
   const starIds = stars.map(s => s.id);
   const required = [...new Set(lv.entities.flatMap(s =>
     (Array.isArray(s.requiresDialogue) ? s.requiresDialogue : []).concat(s.recordNode || [])))];
@@ -994,7 +1020,7 @@ function stateSearch(lv, dialogue = {}) {
     const node = dialogue[id];
     const npc = node && lv.entities.find(n =>
       ((n.type === 'npc' && node.trigger === 'npc:' + n.id)
-        || (['record', 'gramophone'].includes(n.type) && node.trigger === 'interact:' + n.id))
+        || (['record', 'gramophone', 'minigame'].includes(n.type) && node.trigger === 'interact:' + n.id))
       && (n.room || 'hall') === (node.room || 'hall'));
     if (!npc) return { status: 'fail', msg: '剧情条件 "' + id + '" 无法由本关 NPC / 道具触发' };
     const intro = Object.entries(dialogue).find(([key, n]) => key.startsWith('l' + lv.id + '.')
@@ -1041,7 +1067,7 @@ function stateSearch(lv, dialogue = {}) {
   /** 动态可站立判定（st = {pos, boxesSet, lit, waterLevel, windOffset}） */
   const standable = (x, y, st) => {
     if (x < 0 || y < 0 || x >= lv.map.w || y >= lv.map.h) return false;
-    if (isWall(lv, x, y)) return false;
+    if (isWall(lv, x, y) || furnitureBlocks(x, y)) return false;
     const k = x + ',' + y;
     if (st.boxesSet.has(k)) return false;
     if (doorAt.has(k) && !st.openDoors.includes(doorAt.get(k).id)) return false;
@@ -1228,7 +1254,7 @@ function stateSearch(lv, dialogue = {}) {
       if (onewayAt.get(nk) && onewayAt.get(nk) !== dirName) continue;
       let [fx, fy] = resolveWind(px + dx, py + dy, st);
       const room = roomAt.get(fx + ',' + fy);
-      if (room) { fx = room.to.x; fy = room.to.y; }
+      if (room && (!room.enterFrom || (room.enterFrom === 'west' && dx > 0))) { fx = room.to.x; fy = room.to.y; }
       const ns = applyCell(fx, fy, st);
       ns.pos = fx + ',' + fy;
       push(ns);

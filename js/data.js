@@ -45,12 +45,12 @@
        账户设置界面按本数组动态渲染选项，未知 id 在渲染时回退默认头像 muse-1。
        美术素材（#13）就位后，可给每条追加 art 字段并在渲染时换用图片。 */
     avatarPresets: [
-      { id: 'muse-1', name: 'Lily', color: '#7FB8E6' },
-      { id: 'muse-2', name: 'Haewon', color: '#FFB14E' },
-      { id: 'muse-3', name: 'Sullyoon', color: '#B49BFF' },
-      { id: 'muse-4', name: 'Bae', color: '#FF7BA9' },
-      { id: 'muse-5', name: 'Jiwoo', color: '#FFE066' },
-      { id: 'muse-6', name: 'Kyujin', color: '#5EE6B8' },
+      { id: 'muse-1', name: 'Lily', color: '#7FB8E6', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [0, 0] },
+      { id: 'muse-2', name: 'Haewon', color: '#FFB14E', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [1, 0] },
+      { id: 'muse-3', name: 'Sullyoon', color: '#B49BFF', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [2, 0] },
+      { id: 'muse-4', name: 'Bae', color: '#FF7BA9', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [0, 1] },
+      { id: 'muse-5', name: 'Jiwoo', color: '#FFE066', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [1, 1] },
+      { id: 'muse-6', name: 'Kyujin', color: '#5EE6B8', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [2, 1] },
     ],
 
     /* 说话人字典（GAME_DESIGN.md §3：姓名框色与显示名） */
@@ -85,37 +85,38 @@
         "bgm": "l1_candle",
         "portraits": false,
         "starCount": 3,
+        "combat": false,
         "map": {
           "w": 68,
           "h": 28,
           "rows": [
             "####################################################################",
-            "##########MMMMMMMMMMMMMMMMMMM#######################################",
-            "#·#FFFFF##MMMMMMMMMMMMMMMMMMM#######################################",
-            "#·#·····##MMMMMMMMMMMMMMMMMMM#######################################",
-            "#·#·····##MMMMMMMMMMMMMMMMMMM#######################################",
-            "#·#·····##···················#######################################",
-            "#·#·····##···················############········FFFFFFFFFFFFFFF···#",
-            "#·###·####··FFF······FF······############·FF·FF··FFFFFFFFFFFFFFF···#",
-            "#········#·······FFF·········############·FF·····FFFFFFFFFFFFFFF···#",
-            "#········#···················############·········F··F··F··F··F····#",
-            "#········##########·#####################·FF·F·····················#",
+            "#········###########################################################",
+            "#········###########################################################",
+            "#········###########################################################",
+            "#········#······················####################################",
+            "#········#·····························#############################",
+            "#········#·····························##········FFFFFFFFFFFFFFF···#",
+            "#####····#·····························##·FF·FF··FFFFFFFFFFFFFFF···#",
+            "#······································##·FF·····FFFFFFFFFFFFFFF···#",
+            "#······································##·········F··F··F··F··F····#",
+            "#······································##·FF·F·····················#",
             "#······································##··························#",
             "#······································##·········F··F··F··F··F····#",
             "#······································##········FFFFFFFFFFFFFFF···#",
-            "#···FFF·························FFFF···##········FFFFFFFFFFFFFFF···#",
-            "#············F··F··F··F··F·············##········FFFFFFFFFFFFFFF···#",
             "#······································##········FFFFFFFFFFFFFFF···#",
             "#······································##········FFFFFFFFFFFFFFF···#",
-            "#············F··F··F··F··F·············##········FFFFFFFFFFFFFFF···#",
-            "#···FFF································##·········F··F··F··F··F····#",
-            "#·······························FFFF···##··························#",
-            "#············F··F··F··F··F·············##··························#",
+            "#······································##········FFFFFFFFFFFFFFF···#",
+            "#······································##········FFFFFFFFFFFFFFF···#",
+            "#······································##········FFFFFFFFFFFFFFF···#",
+            "#······································##·········F··F··F··F··F····#",
+            "#······································##··························#",
+            "#······································##··························#",
             "#······································##·········F··F··F··F··F····#",
             "#······································##·FFFFF··FFFFFFFFFFFFFFF···#",
-            "#······F·····F··F··F··F··F·············##·FFFFF··FFFFFFFFFFFFFFF···#",
-            "#······FF·······················FFFF···##·FFF····FFFFFFFFFFFFFFF···#",
-            "#······································##··························#",
+            "##################····#··################·FFFFF··FFFFFFFFFFFFFFF···#",
+            "##################····###################·FFF····FFFFFFFFFFFFFFF···#",
+            "##################····###################··························#",
             "####################################################################"
           ],
           "legend": {
@@ -132,105 +133,120 @@
         "entities": [
           {
             "type": "spawn",
-            "x": 2,
+            "x": 19,
             "y": 25
           },
           {
             "type": "npc",
             "id": "lily",
-            "x": 5,
-            "y": 24,
+            "x": 21,
+            "y": 22,
             "room": "hall",
-            "dialogue": "l1.intro"
+            "dialogue": "l1.intro",
+            "sprite": 0,
+            "age": "adult",
+            "museStyle": "lily",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "haewon",
-            "x": 10,
-            "y": 21,
+            "x": 18,
+            "y": 7,
             "room": "hall",
-            "dialogue": "l1.npc.haewon"
+            "dialogue": "l1.npc.haewon",
+            "spriteOffsetY": -1.6,
+            "sprite": 0,
+            "age": "adult",
+            "museStyle": "haewon",
+            "fixed": true,
+            "performance": "drums"
           },
           {
             "type": "npc",
             "id": "sullyoon",
-            "x": 24,
+            "x": 32,
             "y": 12,
             "room": "hall",
-            "dialogue": "l1.npc.sullyoon"
+            "dialogue": "l1.npc.sullyoon",
+            "sprite": 3,
+            "age": "adult",
+            "museStyle": "sullyoon",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "bae",
             "x": 8,
-            "y": 12,
+            "y": 20,
             "room": "hall",
-            "dialogue": "l1.npc.bae"
+            "dialogue": "l1.npc.bae",
+            "sprite": 2,
+            "age": "adult",
+            "museStyle": "bae",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "jiwoo",
-            "x": 18,
-            "y": 14,
+            "x": 30,
+            "y": 16,
             "room": "hall",
-            "dialogue": "l1.npc.jiwoo"
+            "dialogue": "l1.npc.jiwoo",
+            "sprite": 1,
+            "age": "adult",
+            "museStyle": "jiwoo",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "kyujin",
-            "x": 27,
-            "y": 14,
+            "x": 23,
+            "y": 7,
             "room": "hall",
-            "dialogue": "l1.npc.kyujin"
+            "dialogue": "l1.npc.kyujin",
+            "sprite": 1,
+            "age": "adult",
+            "museStyle": "kyujin",
+            "fixed": true,
+            "performance": "guitar"
           },
           {
             "type": "sheep",
             "id": "sheep1",
-            "x": 3,
-            "y": 20,
+            "x": 9,
+            "y": 22,
             "dialogue": "l1.sheep"
           },
           {
             "type": "star",
             "id": "s1",
-            "x": 10,
-            "y": 24
+            "x": 7,
+            "y": 21,
+            "requiresDialogue": [
+              "l1.rings.complete"
+            ]
           },
           {
             "type": "star",
             "id": "s2",
             "x": 4,
-            "y": 4
-          },
-          {
-            "type": "door",
-            "id": "gift-door",
-            "x": 5,
-            "y": 7,
-            "open": false,
-            "label": "杂物间 · E 开门"
+            "y": 6
           },
           {
             "type": "roomdoor",
             "id": "to-backstage",
-            "x": 28,
+            "x": 34,
             "y": 5,
             "to": {
               "x": 65,
               "y": 20
             },
-            "label": "后台化妆间"
-          },
-          {
-            "type": "roomdoor",
-            "id": "to-hall",
-            "x": 66,
-            "y": 20,
-            "to": {
-              "x": 27,
-              "y": 8
-            },
-            "label": "返回舞台"
+            "label": "右侧幕布后 · 化妆间",
+            "visual": "curtain",
+            "fadeIn": true,
+            "enterFrom": "west",
+            "arrivalNode": "l1.backstage.arrived"
           },
           {
             "type": "star",
@@ -256,42 +272,40 @@
             "facing": "east"
           },
           {
-            "type": "sign",
-            "id": "party-plan",
-            "x": 3,
-            "y": 23,
-            "text": "生日会：和六位 Muse 聊聊，收集气球下与杂物间的两颗星。杂物间按 E 开门。准备好后，上舞台看看唱片机。"
-          },
-          {
-            "type": "sign",
-            "id": "backstage",
-            "x": 30,
-            "y": 11,
-            "text": "舞台上的唱片机正在等一张唱片。完成六位 Muse 的自我介绍、找到两颗星后，靠近它看看。舞台右侧的帷幕后通往化妆间。"
-          },
-          {
             "type": "npc",
             "id": "lily",
             "x": 43,
             "y": 12,
             "room": "backstage",
-            "dialogue": "l1.backstage.lily"
+            "dialogue": "l1.backstage.lily",
+            "sprite": 0,
+            "age": "adult",
+            "museStyle": "lily",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "haewon",
-            "x": 44,
+            "x": 45,
             "y": 12,
             "room": "backstage",
-            "dialogue": "l1.backstage.haewon"
+            "dialogue": "l1.backstage.haewon",
+            "sprite": 0,
+            "age": "adult",
+            "museStyle": "haewon",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "sullyoon",
-            "x": 45,
+            "x": 47,
             "y": 12,
             "room": "backstage",
-            "dialogue": "l1.backstage.sullyoon"
+            "dialogue": "l1.backstage.sullyoon",
+            "sprite": 3,
+            "age": "adult",
+            "museStyle": "sullyoon",
+            "fixed": true
           },
           {
             "type": "npc",
@@ -299,23 +313,35 @@
             "x": 43,
             "y": 19,
             "room": "backstage",
-            "dialogue": "l1.backstage.bae"
+            "dialogue": "l1.backstage.bae",
+            "sprite": 2,
+            "age": "adult",
+            "museStyle": "bae",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "jiwoo",
-            "x": 44,
+            "x": 45,
             "y": 19,
             "room": "backstage",
-            "dialogue": "l1.backstage.jiwoo"
+            "dialogue": "l1.backstage.jiwoo",
+            "sprite": 1,
+            "age": "adult",
+            "museStyle": "jiwoo",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "kyujin",
-            "x": 45,
+            "x": 47,
             "y": 19,
             "room": "backstage",
-            "dialogue": "l1.backstage.kyujin"
+            "dialogue": "l1.backstage.kyujin",
+            "sprite": 1,
+            "age": "adult",
+            "museStyle": "kyujin",
+            "fixed": true
           },
           {
             "type": "npc",
@@ -323,13 +349,15 @@
             "x": 45,
             "y": 16,
             "room": "backstage",
-            "dialogue": "l1.backstage.byeori"
+            "dialogue": "l1.backstage.byeori",
+            "sprite": 0,
+            "age": "adult"
           },
           {
             "type": "record",
             "id": "birthday-record",
-            "x": 5,
-            "y": 4,
+            "x": 6,
+            "y": 6,
             "dialogue": "l1.record.take",
             "requiresStars": [
               "s1",
@@ -347,8 +375,8 @@
           {
             "type": "gramophone",
             "id": "stage-music",
-            "x": 25,
-            "y": 8,
+            "x": 28,
+            "y": 7,
             "dialogue": "l1.music.play",
             "recordNode": "l1.record.take",
             "requiresStars": [
@@ -371,7 +399,7 @@
               "s1",
               "s2"
             ],
-            "x": 28,
+            "x": 34,
             "y": 5,
             "open": false,
             "requiresDialogue": [
@@ -389,10 +417,10 @@
             "x": 25,
             "y": 8,
             "rect": {
-              "x": 23,
+              "x": 27,
               "y": 7,
-              "w": 4,
-              "h": 3
+              "w": 3,
+              "h": 2
             },
             "dialogue": "l1.music.ready",
             "requiresStars": [
@@ -406,6 +434,157 @@
               "l1.npc.bae",
               "l1.npc.jiwoo",
               "l1.npc.kyujin"
+            ]
+          },
+          {
+            "type": "minigame",
+            "id": "ring-toss",
+            "x": 6,
+            "y": 21,
+            "room": "hall",
+            "dialogue": "l1.rings.complete"
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "child",
+            "id": "child-blue",
+            "x": 9,
+            "y": 17,
+            "sprite": 4,
+            "path": [
+              [
+                9,
+                17
+              ],
+              [
+                9,
+                20
+              ]
+            ],
+            "lines": [
+              "我想把圈圈套到小鲸鱼上！"
+            ],
+            "motionStyle": "childBlue"
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "child",
+            "id": "child-pink",
+            "x": 8,
+            "y": 22,
+            "sprite": 5,
+            "lines": [
+              "套中月亮以后，再试试星星吧。"
+            ]
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "child",
+            "id": "child-yellow",
+            "x": 32,
+            "y": 17,
+            "sprite": 6,
+            "path": [
+              [
+                32,
+                17
+              ],
+              [
+                32,
+                20
+              ]
+            ],
+            "lines": [
+              "钓到的鱼像糖果一样！"
+            ],
+            "motionStyle": "childYellow"
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "child",
+            "id": "child-mint",
+            "x": 34,
+            "y": 22,
+            "sprite": 7,
+            "lines": [
+              "老师说，今天谁都可以许愿。"
+            ]
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "child",
+            "id": "child-walk",
+            "x": 13,
+            "y": 21,
+            "sprite": 5,
+            "path": [
+              [
+                13,
+                21
+              ],
+              [
+                15,
+                21
+              ]
+            ],
+            "lines": [
+              "地上的彩带像小小的海浪。"
+            ],
+            "motionStyle": "childPink"
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "adult",
+            "id": "teacher",
+            "x": 31,
+            "y": 13,
+            "sprite": 3,
+            "lines": [
+              "慢慢玩就好，小朋友们都会给你加油。"
+            ]
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "adult",
+            "id": "teacher-blue",
+            "x": 27,
+            "y": 22,
+            "sprite": 0,
+            "motionStyle": "adultBlue",
+            "lines": [
+              "欢迎来玩！慢慢走，别踩到散落的彩带啦。"
+            ]
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "adult",
+            "id": "parent-mustard",
+            "x": 9,
+            "y": 12,
+            "sprite": 2,
+            "motionStyle": "parent",
+            "lines": [
+              "小朋友们都在等生日会开始。先去和台上的姐姐们打个招呼吧。"
+            ]
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "adult",
+            "id": "parent-violet",
+            "x": 30,
+            "y": 22,
+            "sprite": 1,
+            "lines": [
+              "每次听见生日歌，我也会想起小时候。"
             ]
           }
         ],
@@ -422,557 +601,18 @@
           "instruments": "assets/scenes/level1/stage-instruments-v1.png",
           "cover": "assets/scenes/level1/strange-muse-cover.jpg",
           "vanityModules": "assets/scenes/level1/vanity-modules-v1.png",
-          "portalEast": "assets/scenes/level1/star-portal-east-v1.png"
+          "portalEast": "assets/scenes/level1/star-portal-east-v1.png",
+          "birthdayHall": "assets/scenes/level1/birthday-hall-v2.png",
+          "guests": "assets/scenes/level1/party-guests-v2.png",
+          "museCostumes": "assets/scenes/level1/muse-costumes-v4.png",
+          "adultBlue": "assets/scenes/level1/party-adult-walk-v3.png",
+          "childBlue": "assets/scenes/level1/party-child-walk-v3.png",
+          "parent": "assets/scenes/level1/party-parent-walk-v3.png",
+          "childPink": "assets/scenes/level1/party-pink-walk-v3.png",
+          "childYellow": "assets/scenes/level1/party-yellow-walk-v3.png"
         },
         "groundDecorations": [],
         "decorations": [
-          {
-            "kind": "entranceDoor",
-            "art": "seating",
-            "frame": [
-              570,
-              0,
-              680,
-              724
-            ],
-            "x": 0.7,
-            "y": 25.5,
-            "w": 3,
-            "h": 2.5
-          },
-          {
-            "kind": "arch",
-            "art": "ocean",
-            "frame": [
-              0,
-              0,
-              680,
-              670
-            ],
-            "x": 8,
-            "y": 22,
-            "w": 5,
-            "h": 4
-          },
-          {
-            "kind": "welcomeWhale",
-            "art": "ocean",
-            "frame": [
-              0,
-              688,
-              655,
-              550
-            ],
-            "x": 5.5,
-            "y": 24,
-            "w": 3,
-            "h": 2.6
-          },
-          {
-            "kind": "rug",
-            "art": "backstage",
-            "frame": [
-              0,
-              550,
-              512,
-              430
-            ],
-            "x": 5.5,
-            "y": 22,
-            "w": 8,
-            "h": 4
-          },
-          {
-            "kind": "balloons",
-            "art": "games",
-            "frame": [
-              0,
-              512,
-              512,
-              512
-            ],
-            "x": 6,
-            "y": 20.5,
-            "w": 3,
-            "h": 4.8
-          },
-          {
-            "kind": "window",
-            "art": "games",
-            "frame": [
-              0,
-              0,
-              512,
-              512
-            ],
-            "x": -0.1,
-            "y": 8.5,
-            "w": 3,
-            "h": 3.8
-          },
-          {
-            "kind": "window",
-            "art": "games",
-            "frame": [
-              0,
-              0,
-              512,
-              512
-            ],
-            "x": -0.1,
-            "y": 16.5,
-            "w": 3,
-            "h": 3.8
-          },
-          {
-            "kind": "ringToss",
-            "art": "games",
-            "frame": [
-              512,
-              0,
-              512,
-              512
-            ],
-            "x": 31,
-            "y": 10.5,
-            "w": 6,
-            "h": 5
-          },
-          {
-            "kind": "fishing",
-            "art": "games",
-            "frame": [
-              1024,
-              0,
-              512,
-              512
-            ],
-            "x": 31,
-            "y": 17,
-            "w": 6,
-            "h": 4.5
-          },
-          {
-            "kind": "beanbag",
-            "art": "games",
-            "frame": [
-              512,
-              512,
-              512,
-              512
-            ],
-            "x": 31,
-            "y": 22,
-            "w": 6,
-            "h": 4.5
-          },
-          {
-            "kind": "instrumentBench",
-            "art": "instruments",
-            "frame": [
-              512,
-              512,
-              512,
-              512
-            ],
-            "x": 3,
-            "y": 12,
-            "w": 4.5,
-            "h": 3
-          },
-          {
-            "kind": "costumeRail",
-            "art": "instruments",
-            "frame": [
-              0,
-              512,
-              512,
-              512
-            ],
-            "x": 3,
-            "y": 16.5,
-            "w": 4.5,
-            "h": 3.5
-          },
-          {
-            "kind": "storageTrunk",
-            "art": "games",
-            "frame": [
-              1024,
-              512,
-              512,
-              512
-            ],
-            "x": 3,
-            "y": 1.5,
-            "w": 4,
-            "h": 2.1
-          },
-          {
-            "kind": "whaleMural",
-            "art": "mural",
-            "x": 11.5,
-            "y": 2.8,
-            "w": 15,
-            "h": 3.2
-          },
-          {
-            "kind": "piano",
-            "art": "instruments",
-            "frame": [
-              0,
-              0,
-              512,
-              512
-            ],
-            "x": 12,
-            "y": 4.5,
-            "w": 3.6,
-            "h": 3.5
-          },
-          {
-            "kind": "drums",
-            "art": "instruments",
-            "frame": [
-              512,
-              0,
-              512,
-              512
-            ],
-            "x": 16.5,
-            "y": 5,
-            "w": 3.7,
-            "h": 3.5
-          },
-          {
-            "kind": "guitars",
-            "art": "instruments",
-            "frame": [
-              1024,
-              0,
-              512,
-              512
-            ],
-            "x": 20.7,
-            "y": 4.5,
-            "w": 3,
-            "h": 3.5
-          },
-          {
-            "kind": "stageCurtains",
-            "art": "curtains",
-            "x": 9,
-            "y": 0,
-            "w": 21,
-            "h": 11
-          },
-          {
-            "kind": "stageSteps",
-            "x": 19,
-            "y": 10,
-            "w": 1,
-            "h": 1
-          },
-          {
-            "kind": "chair",
-            "x": 12.8,
-            "y": 14.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 15.8,
-            "y": 14.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 18.8,
-            "y": 14.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 21.8,
-            "y": 14.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 24.8,
-            "y": 14.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 12.8,
-            "y": 17.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 15.8,
-            "y": 17.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 18.8,
-            "y": 17.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 21.8,
-            "y": 17.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 24.8,
-            "y": 17.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 12.8,
-            "y": 20.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 15.8,
-            "y": 20.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 18.8,
-            "y": 20.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 21.8,
-            "y": 20.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 24.8,
-            "y": 20.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 12.8,
-            "y": 23.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 15.8,
-            "y": 23.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 18.8,
-            "y": 23.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 21.8,
-            "y": 23.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 24.8,
-            "y": 23.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
           {
             "kind": "vanity",
             "room": "backstage",
@@ -2023,6 +1663,2399 @@
               "w": 2,
               "h": 2
             }
+          },
+          {
+            "kind": "stageSteps",
+            "room": "hall",
+            "baked": true,
+            "x": 18,
+            "y": 9,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "kind": "stageCurtains",
+            "room": "hall",
+            "baked": true,
+            "x": 9,
+            "y": 0,
+            "w": 26,
+            "h": 10
+          },
+          {
+            "kind": "rug",
+            "room": "hall",
+            "baked": true,
+            "x": 18.5,
+            "y": 10,
+            "w": 3,
+            "h": 15
+          },
+          {
+            "kind": "piano",
+            "x": 11.5733,
+            "y": 3.8933,
+            "w": 3.7333,
+            "h": 3.6267,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 11.7067,
+              "y": 6.5333,
+              "w": 3.4133,
+              "h": 1.0133
+            },
+            "depth": 7.5467,
+            "occlusionShape": [
+              [
+                0.05,
+                0.38
+              ],
+              [
+                0.96,
+                0
+              ],
+              [
+                1,
+                0.64
+              ],
+              [
+                0.88,
+                0.76
+              ],
+              [
+                0.88,
+                0.99
+              ],
+              [
+                0.8,
+                0.99
+              ],
+              [
+                0.8,
+                0.8
+              ],
+              [
+                0.4,
+                0.8
+              ],
+              [
+                0.35,
+                1
+              ],
+              [
+                0.27,
+                1
+              ],
+              [
+                0.27,
+                0.79
+              ],
+              [
+                0.05,
+                0.74
+              ]
+            ]
+          },
+          {
+            "kind": "drums",
+            "x": 15.76,
+            "y": 4.8267,
+            "w": 4.2133,
+            "h": 2.6667,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 15.8933,
+              "y": 6.4,
+              "w": 3.8933,
+              "h": 1.04
+            },
+            "depth": 7.44,
+            "occlusionShape": [
+              [
+                0,
+                0.05
+              ],
+              [
+                0.35,
+                0.05
+              ],
+              [
+                0.4,
+                0.2
+              ],
+              [
+                0.6,
+                0.2
+              ],
+              [
+                0.65,
+                0.05
+              ],
+              [
+                1,
+                0.05
+              ],
+              [
+                1,
+                0.18
+              ],
+              [
+                0.9,
+                0.22
+              ],
+              [
+                0.94,
+                0.95
+              ],
+              [
+                0.86,
+                1
+              ],
+              [
+                0.75,
+                0.7
+              ],
+              [
+                0.7,
+                0.99
+              ],
+              [
+                0.3,
+                0.99
+              ],
+              [
+                0.23,
+                0.7
+              ],
+              [
+                0.14,
+                1
+              ],
+              [
+                0.06,
+                0.95
+              ],
+              [
+                0.1,
+                0.22
+              ],
+              [
+                0,
+                0.18
+              ]
+            ]
+          },
+          {
+            "kind": "guitars",
+            "x": 22.4533,
+            "y": 4.9867,
+            "w": 3.44,
+            "h": 2.56,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 22.64,
+              "y": 6.6667,
+              "w": 3.2533,
+              "h": 0.8267
+            },
+            "depth": 7.4933,
+            "occlusionShapes": [
+              [
+                [
+                  0.18,
+                  0
+                ],
+                [
+                  0.37,
+                  0
+                ],
+                [
+                  0.32,
+                  0.48
+                ],
+                [
+                  0.45,
+                  0.64
+                ],
+                [
+                  0.4,
+                  0.96
+                ],
+                [
+                  0.02,
+                  0.96
+                ],
+                [
+                  0,
+                  0.75
+                ],
+                [
+                  0.16,
+                  0.5
+                ]
+              ],
+              [
+                [
+                  0.55,
+                  0.44
+                ],
+                [
+                  1,
+                  0.44
+                ],
+                [
+                  1,
+                  1
+                ],
+                [
+                  0.55,
+                  1
+                ]
+              ]
+            ]
+          },
+          {
+            "kind": "gramophone",
+            "x": 26.8533,
+            "y": 4.2667,
+            "w": 1.76,
+            "h": 3.4133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 26.88,
+              "y": 6.64,
+              "w": 1.7333,
+              "h": 1.0133
+            },
+            "depth": 7.6533,
+            "occlusionShape": [
+              [
+                0.28,
+                0
+              ],
+              [
+                0.75,
+                0
+              ],
+              [
+                0.98,
+                0.28
+              ],
+              [
+                0.7,
+                0.43
+              ],
+              [
+                0.65,
+                0.6
+              ],
+              [
+                1,
+                0.6
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0.62
+              ],
+              [
+                0.43,
+                0.6
+              ],
+              [
+                0.4,
+                0.45
+              ],
+              [
+                0.05,
+                0.35
+              ],
+              [
+                0,
+                0.15
+              ]
+            ]
+          },
+          {
+            "kind": "storageShelves",
+            "x": 1.44,
+            "y": 0.96,
+            "w": 6.88,
+            "h": 3.1733,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 1.4667,
+              "y": 0.96,
+              "w": 6.8533,
+              "h": 3.0933
+            },
+            "depth": 4.0533
+          },
+          {
+            "kind": "spareChairs",
+            "x": 2.1867,
+            "y": 3.8933,
+            "w": 3.2,
+            "h": 2.48,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 2.2667,
+              "y": 5.4133,
+              "w": 3.0133,
+              "h": 0.9067
+            },
+            "depth": 6.32
+          },
+          {
+            "kind": "recordCabinet",
+            "x": 6.4533,
+            "y": 5.8667,
+            "w": 1.84,
+            "h": 1.0667,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 6.5067,
+              "y": 6.4533,
+              "w": 1.7333,
+              "h": 0.48
+            },
+            "depth": 6.9333
+          },
+          {
+            "kind": "cakeTable",
+            "x": 1.4667,
+            "y": 9.7067,
+            "w": 4.8,
+            "h": 4.7733,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 1.6,
+              "y": 12.8,
+              "w": 4.6133,
+              "h": 1.68
+            },
+            "depth": 14.48,
+            "occlusionShape": [
+              [
+                0.18,
+                0.04
+              ],
+              [
+                0.68,
+                0.04
+              ],
+              [
+                0.8,
+                0.3
+              ],
+              [
+                0.99,
+                0.35
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0.35
+              ],
+              [
+                0.16,
+                0.3
+              ]
+            ]
+          },
+          {
+            "kind": "giftTable",
+            "x": 33.8667,
+            "y": 10.1333,
+            "w": 4.1333,
+            "h": 4.2667,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 33.9467,
+              "y": 12.8267,
+              "w": 3.9733,
+              "h": 1.5733
+            },
+            "depth": 14.4,
+            "occlusionShape": [
+              [
+                0.1,
+                0
+              ],
+              [
+                0.9,
+                0
+              ],
+              [
+                1,
+                0.35
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0.5
+              ]
+            ]
+          },
+          {
+            "kind": "ringToss",
+            "x": 1.3067,
+            "y": 14.88,
+            "w": 4.32,
+            "h": 6.56,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 1.4667,
+              "y": 16.6933,
+              "w": 4.1333,
+              "h": 4.72
+            },
+            "depth": 21.4133
+          },
+          {
+            "kind": "ringTray",
+            "x": 5.76,
+            "y": 19.6,
+            "w": 1.6533,
+            "h": 1.7067,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 5.8133,
+              "y": 20.4267,
+              "w": 1.5467,
+              "h": 0.88
+            },
+            "depth": 21.3067
+          },
+          {
+            "kind": "fishing",
+            "x": 34.32,
+            "y": 14.88,
+            "w": 4.16,
+            "h": 6.56,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 34.4,
+              "y": 16.7733,
+              "w": 4.0533,
+              "h": 4.6667
+            },
+            "depth": 21.44
+          },
+          {
+            "kind": "chair",
+            "x": 11.0933,
+            "y": 11.8133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 11.1467,
+              "y": 12.8533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 13.6267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 13.5733,
+            "y": 11.8133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 13.6267,
+              "y": 12.8533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 13.6267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 16.1067,
+            "y": 11.8133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 16.16,
+              "y": 12.8533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 13.6267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 22.2933,
+            "y": 11.8133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 22.3467,
+              "y": 12.8533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 13.6267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 24.7733,
+            "y": 11.8133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 24.8267,
+              "y": 12.8533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 13.6267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 27.3867,
+            "y": 11.8133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 27.44,
+              "y": 12.8533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 13.6267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 11.0933,
+            "y": 13.9733,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 11.1467,
+              "y": 15.0133,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 15.7867,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 13.5733,
+            "y": 13.9733,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 13.6267,
+              "y": 15.0133,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 15.7867,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 16.1067,
+            "y": 13.9733,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 16.16,
+              "y": 15.0133,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 15.7867,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 22.2933,
+            "y": 13.9733,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 22.3467,
+              "y": 15.0133,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 15.7867,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 24.7733,
+            "y": 13.9733,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 24.8267,
+              "y": 15.0133,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 15.7867,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 27.3867,
+            "y": 13.9733,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 27.44,
+              "y": 15.0133,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 15.7867,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 11.0933,
+            "y": 16.2133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 11.1467,
+              "y": 17.2533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 18.0267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 13.5733,
+            "y": 16.2133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 13.6267,
+              "y": 17.2533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 18.0267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 16.1067,
+            "y": 16.2133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 16.16,
+              "y": 17.2533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 18.0267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 22.2933,
+            "y": 16.2133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 22.3467,
+              "y": 17.2533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 18.0267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 24.7733,
+            "y": 16.2133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 24.8267,
+              "y": 17.2533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 18.0267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 27.3867,
+            "y": 16.2133,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 27.44,
+              "y": 17.2533,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 18.0267,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 11.0933,
+            "y": 18.4267,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 11.1467,
+              "y": 19.4667,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 20.24,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 13.5733,
+            "y": 18.4267,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 13.6267,
+              "y": 19.4667,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 20.24,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 16.1067,
+            "y": 18.4267,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 16.16,
+              "y": 19.4667,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 20.24,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 22.2933,
+            "y": 18.4267,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 22.3467,
+              "y": 19.4667,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 20.24,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 24.7733,
+            "y": 18.4267,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 24.8267,
+              "y": 19.4667,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 20.24,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "x": 27.3867,
+            "y": 18.4267,
+            "w": 1.52,
+            "h": 1.8133,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 27.44,
+              "y": 19.4667,
+              "w": 1.4133,
+              "h": 0.7733
+            },
+            "depth": 20.24,
+            "occlusionShape": [
+              [
+                0.12,
+                0
+              ],
+              [
+                0.88,
+                0
+              ],
+              [
+                1,
+                0.14
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                0.88,
+                1
+              ],
+              [
+                0.75,
+                1
+              ],
+              [
+                0.75,
+                0.85
+              ],
+              [
+                0.25,
+                0.85
+              ],
+              [
+                0.25,
+                1
+              ],
+              [
+                0.12,
+                1
+              ],
+              [
+                0,
+                0.9
+              ],
+              [
+                0,
+                0.14
+              ]
+            ],
+            "facing": "north"
+          },
+          {
+            "kind": "storagePost",
+            "x": 8.4267,
+            "y": 0.0,
+            "w": 1.0933,
+            "h": 10.2667,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 8.4533,
+              "y": 0.0,
+              "w": 1.0667,
+              "h": 10.2133
+            },
+            "depth": 10.2133
+          },
+          {
+            "kind": "storageSouthWall",
+            "x": 1.2,
+            "y": 7.44,
+            "w": 4.3733,
+            "h": 2.0533,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 1.2533,
+              "y": 7.7333,
+              "w": 3.92,
+              "h": 1.76
+            },
+            "depth": 9.4933
+          },
+          {
+            "kind": "storageEntryPost",
+            "x": 5.1733,
+            "y": 7.1467,
+            "w": 0.6667,
+            "h": 3.2533,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 5.2,
+              "y": 8.4533,
+              "w": 0.64,
+              "h": 1.9467
+            },
+            "depth": 10.4
+          },
+          {
+            "kind": "entryPostLeft",
+            "x": 16.5867,
+            "y": 22.3467,
+            "w": 0.9333,
+            "h": 2.6933,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 16.64,
+              "y": 23.44,
+              "w": 0.8533,
+              "h": 1.6
+            },
+            "depth": 25.04
+          },
+          {
+            "kind": "entryPostRight",
+            "x": 22.5333,
+            "y": 22.3467,
+            "w": 0.9867,
+            "h": 2.6933,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 22.5867,
+              "y": 23.44,
+              "w": 0.9067,
+              "h": 1.6
+            },
+            "depth": 25.04
+          },
+          {
+            "kind": "stageFrontLeft",
+            "x": 9.36,
+            "y": 8.2133,
+            "w": 8.8267,
+            "h": 2.1867,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 9.4133,
+              "y": 8.7733,
+              "w": 8.72,
+              "h": 1.5467
+            },
+            "depth": 10.32
+          },
+          {
+            "kind": "stageFrontRight",
+            "x": 22.0,
+            "y": 8.2133,
+            "w": 8.8533,
+            "h": 2.1867,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 22.0533,
+              "y": 8.7733,
+              "w": 8.7467,
+              "h": 1.5467
+            },
+            "depth": 10.32
+          },
+          {
+            "kind": "plantStorage",
+            "x": 4.5333,
+            "y": 8.24,
+            "w": 1.3867,
+            "h": 2.4267,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 4.72,
+              "y": 9.7867,
+              "w": 1.0667,
+              "h": 0.88
+            },
+            "depth": 10.6667,
+            "occlusionShape": [
+              [
+                0.3,
+                0
+              ],
+              [
+                0.75,
+                0
+              ],
+              [
+                1,
+                0.55
+              ],
+              [
+                0.85,
+                1
+              ],
+              [
+                0.2,
+                1
+              ],
+              [
+                0,
+                0.5
+              ]
+            ]
+          },
+          {
+            "kind": "plantStage",
+            "x": 30.4,
+            "y": 8.1867,
+            "w": 1.5467,
+            "h": 2.08,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 30.72,
+              "y": 9.3333,
+              "w": 1.0933,
+              "h": 0.9333
+            },
+            "depth": 10.2667,
+            "occlusionShape": [
+              [
+                0.42,
+                0
+              ],
+              [
+                0.72,
+                0.1
+              ],
+              [
+                0.7,
+                0.3
+              ],
+              [
+                1,
+                0.3
+              ],
+              [
+                0.92,
+                0.65
+              ],
+              [
+                0.8,
+                1
+              ],
+              [
+                0.22,
+                1
+              ],
+              [
+                0.12,
+                0.7
+              ],
+              [
+                0,
+                0.48
+              ],
+              [
+                0.2,
+                0.2
+              ]
+            ]
+          },
+          {
+            "kind": "plantRight",
+            "x": 35.3867,
+            "y": 3.3067,
+            "w": 1.92,
+            "h": 3.0933,
+            "room": "hall",
+            "baked": true,
+            "collision": {
+              "x": 35.92,
+              "y": 5.3867,
+              "w": 1.0933,
+              "h": 1.0133
+            },
+            "depth": 6.4,
+            "occlusionShape": [
+              [
+                0.3,
+                0
+              ],
+              [
+                0.65,
+                0
+              ],
+              [
+                0.72,
+                0.2
+              ],
+              [
+                0.95,
+                0.23
+              ],
+              [
+                1,
+                0.53
+              ],
+              [
+                0.76,
+                0.7
+              ],
+              [
+                0.8,
+                1
+              ],
+              [
+                0.28,
+                1
+              ],
+              [
+                0.2,
+                0.72
+              ],
+              [
+                0,
+                0.5
+              ],
+              [
+                0.14,
+                0.2
+              ]
+            ]
           }
         ],
         "areas": [
@@ -2030,10 +4063,10 @@
             "id": "hall",
             "title": "生日会礼堂",
             "rect": {
-              "x": -2,
-              "y": -2,
-              "w": 44,
-              "h": 32
+              "x": 0,
+              "y": 0,
+              "w": 40,
+              "h": 28
             },
             "bounds": {
               "x": 0,
@@ -2053,13 +4086,1083 @@
             }
           }
         ],
-        "outdoor": true,
+        "outdoor": false,
         "entryFade": 1.4,
         "stageRect": {
           "x": 10,
-          "y": 5,
-          "w": 19,
+          "y": 4,
+          "w": 25,
           "h": 5
+        },
+        "party": {
+          "background": {
+            "art": "birthdayHall",
+            "x": 0,
+            "y": 0,
+            "w": 40,
+            "h": 28
+          },
+          "sprites": [
+            [
+              [
+                114,
+                34,
+                162,
+                308
+              ],
+              [
+                411,
+                32,
+                174,
+                310
+              ]
+            ],
+            [
+              [
+                699,
+                59,
+                182,
+                283
+              ],
+              [
+                1002,
+                61,
+                194,
+                281
+              ]
+            ],
+            [
+              [
+                90,
+                395,
+                167,
+                296
+              ],
+              [
+                398,
+                395,
+                168,
+                296
+              ]
+            ],
+            [
+              [
+                698,
+                389,
+                185,
+                303
+              ],
+              [
+                1005,
+                389,
+                181,
+                303
+              ]
+            ],
+            [
+              [
+                106,
+                728,
+                129,
+                221
+              ],
+              [
+                409,
+                733,
+                128,
+                216
+              ]
+            ],
+            [
+              [
+                694,
+                728,
+                190,
+                221
+              ],
+              [
+                1004,
+                728,
+                188,
+                221
+              ]
+            ],
+            [
+              [
+                107,
+                979,
+                128,
+                218
+              ],
+              [
+                410,
+                979,
+                130,
+                221
+              ]
+            ],
+            [
+              [
+                716,
+                979,
+                146,
+                218
+              ],
+              [
+                1027,
+                979,
+                145,
+                221
+              ]
+            ]
+          ],
+          "animations": {
+            "adultBlue": {
+              "art": "adultBlue",
+              "height": 40,
+              "width": 20,
+              "frames": [
+                [
+                  [
+                    100,
+                    18,
+                    177,
+                    311,
+                    71.567
+                  ],
+                  [
+                    401,
+                    18,
+                    178,
+                    314,
+                    72.43
+                  ],
+                  [
+                    697,
+                    22,
+                    178,
+                    310,
+                    72.425
+                  ],
+                  [
+                    992,
+                    20,
+                    181,
+                    313,
+                    71.42
+                  ]
+                ],
+                [
+                  [
+                    80,
+                    346,
+                    184,
+                    289,
+                    117.31
+                  ],
+                  [
+                    378,
+                    346,
+                    185,
+                    290,
+                    119.164
+                  ],
+                  [
+                    675,
+                    346,
+                    186,
+                    291,
+                    114.136
+                  ],
+                  [
+                    976,
+                    346,
+                    185,
+                    294,
+                    118.369
+                  ]
+                ],
+                [
+                  [
+                    101,
+                    656,
+                    155,
+                    296,
+                    76.114
+                  ],
+                  [
+                    401,
+                    657,
+                    154,
+                    294,
+                    73.373
+                  ],
+                  [
+                    697,
+                    656,
+                    155,
+                    297,
+                    77.183
+                  ],
+                  [
+                    999,
+                    657,
+                    154,
+                    297,
+                    78.782
+                  ]
+                ],
+                [
+                  [
+                    82,
+                    965,
+                    190,
+                    285,
+                    70.155
+                  ],
+                  [
+                    381,
+                    965,
+                    193,
+                    289,
+                    68.322
+                  ],
+                  [
+                    679,
+                    965,
+                    191,
+                    286,
+                    70.98
+                  ],
+                  [
+                    977,
+                    965,
+                    190,
+                    289,
+                    75.004
+                  ]
+                ]
+              ],
+              "alternateFeet": true
+            },
+            "childBlue": {
+              "art": "childBlue",
+              "height": 25,
+              "width": 15,
+              "frames": [
+                [
+                  [
+                    124,
+                    105,
+                    146,
+                    247,
+                    71.762
+                  ],
+                  [
+                    426,
+                    105,
+                    148,
+                    247,
+                    72.676
+                  ],
+                  [
+                    705,
+                    105,
+                    149,
+                    247,
+                    72.247
+                  ],
+                  [
+                    994,
+                    105,
+                    148,
+                    252,
+                    73.228
+                  ]
+                ],
+                [
+                  [
+                    125,
+                    387,
+                    147,
+                    245,
+                    81.518
+                  ],
+                  [
+                    423,
+                    387,
+                    147,
+                    246,
+                    78.198
+                  ],
+                  [
+                    707,
+                    387,
+                    145,
+                    246,
+                    79.382
+                  ],
+                  [
+                    999,
+                    388,
+                    152,
+                    247,
+                    72.749
+                  ]
+                ],
+                [
+                  [
+                    123,
+                    661,
+                    147,
+                    247,
+                    72.25
+                  ],
+                  [
+                    421,
+                    662,
+                    148,
+                    246,
+                    56.913
+                  ],
+                  [
+                    703,
+                    661,
+                    150,
+                    247,
+                    75.327
+                  ],
+                  [
+                    996,
+                    661,
+                    148,
+                    250,
+                    73.528
+                  ]
+                ],
+                [
+                  [
+                    124,
+                    934,
+                    148,
+                    241,
+                    63.009
+                  ],
+                  [
+                    417,
+                    934,
+                    149,
+                    242,
+                    75.516
+                  ],
+                  [
+                    705,
+                    934,
+                    149,
+                    241,
+                    65.295
+                  ],
+                  [
+                    993,
+                    935,
+                    147,
+                    243,
+                    77.657
+                  ]
+                ]
+              ],
+              "alternateFeet": true
+            },
+            "parent": {
+              "art": "parent",
+              "height": 40,
+              "width": 20,
+              "frames": [
+                [
+                  [
+                    110,
+                    44,
+                    189,
+                    291,
+                    93.117
+                  ],
+                  [
+                    393,
+                    44,
+                    189,
+                    291,
+                    92.79
+                  ],
+                  [
+                    675,
+                    44,
+                    187,
+                    291,
+                    94.919
+                  ],
+                  [
+                    948,
+                    44,
+                    187,
+                    294,
+                    95.273
+                  ]
+                ],
+                [
+                  [
+                    110,
+                    358,
+                    172,
+                    288,
+                    100.225
+                  ],
+                  [
+                    396,
+                    358,
+                    172,
+                    288,
+                    99.869
+                  ],
+                  [
+                    676,
+                    358,
+                    171,
+                    288,
+                    101.976
+                  ],
+                  [
+                    947,
+                    358,
+                    173,
+                    288,
+                    101.056
+                  ]
+                ],
+                [
+                  [
+                    111,
+                    664,
+                    182,
+                    278,
+                    89.241
+                  ],
+                  [
+                    399,
+                    664,
+                    183,
+                    277,
+                    91.598
+                  ],
+                  [
+                    679,
+                    664,
+                    185,
+                    278,
+                    92.77
+                  ],
+                  [
+                    951,
+                    664,
+                    186,
+                    277,
+                    91.925
+                  ]
+                ],
+                [
+                  [
+                    118,
+                    959,
+                    177,
+                    289,
+                    69.248
+                  ],
+                  [
+                    401,
+                    959,
+                    175,
+                    289,
+                    75.479
+                  ],
+                  [
+                    689,
+                    959,
+                    172,
+                    290,
+                    69.874
+                  ],
+                  [
+                    961,
+                    959,
+                    173,
+                    290,
+                    75.754
+                  ]
+                ]
+              ],
+              "alternateFeet": true
+            },
+            "childPink": {
+              "art": "childPink",
+              "height": 25,
+              "width": 15,
+              "frames": [
+                [
+                  [
+                    82,
+                    65,
+                    220,
+                    251,
+                    115.75
+                  ],
+                  [
+                    378,
+                    64,
+                    225,
+                    253,
+                    108.222
+                  ],
+                  [
+                    677,
+                    64,
+                    220,
+                    252,
+                    134.273
+                  ],
+                  [
+                    974,
+                    64,
+                    222,
+                    253,
+                    124.235
+                  ]
+                ],
+                [
+                  [
+                    93,
+                    357,
+                    180,
+                    259,
+                    101.5
+                  ],
+                  [
+                    386,
+                    357,
+                    188,
+                    262,
+                    116.769
+                  ],
+                  [
+                    691,
+                    357,
+                    182,
+                    259,
+                    87.684
+                  ],
+                  [
+                    991,
+                    357,
+                    182,
+                    264,
+                    80.625
+                  ]
+                ],
+                [
+                  [
+                    80,
+                    645,
+                    222,
+                    244,
+                    124.364
+                  ],
+                  [
+                    381,
+                    644,
+                    223,
+                    248,
+                    107.692
+                  ],
+                  [
+                    677,
+                    646,
+                    220,
+                    243,
+                    74.417
+                  ],
+                  [
+                    974,
+                    645,
+                    220,
+                    247,
+                    113.786
+                  ]
+                ],
+                [
+                  [
+                    107,
+                    921,
+                    185,
+                    252,
+                    68.75
+                  ],
+                  [
+                    413,
+                    921,
+                    182,
+                    255,
+                    59.2
+                  ],
+                  [
+                    705,
+                    921,
+                    184,
+                    252,
+                    81.056
+                  ],
+                  [
+                    1007,
+                    921,
+                    188,
+                    254,
+                    76.769
+                  ]
+                ]
+              ],
+              "alternateFeet": true
+            },
+            "childYellow": {
+              "art": "childYellow",
+              "height": 25,
+              "width": 15,
+              "frames": [
+                [
+                  [
+                    99,
+                    84,
+                    171,
+                    272,
+                    87.437
+                  ],
+                  [
+                    403,
+                    84,
+                    171,
+                    275,
+                    84.809
+                  ],
+                  [
+                    698,
+                    84,
+                    170,
+                    272,
+                    87.418
+                  ],
+                  [
+                    1014,
+                    84,
+                    172,
+                    275,
+                    87.527
+                  ]
+                ],
+                [
+                  [
+                    105,
+                    386,
+                    167,
+                    264,
+                    70.799
+                  ],
+                  [
+                    415,
+                    384,
+                    166,
+                    267,
+                    64.397
+                  ],
+                  [
+                    704,
+                    386,
+                    166,
+                    264,
+                    71.46
+                  ],
+                  [
+                    1023,
+                    384,
+                    167,
+                    267,
+                    63.805
+                  ]
+                ],
+                [
+                  [
+                    109,
+                    670,
+                    163,
+                    257,
+                    78.668
+                  ],
+                  [
+                    410,
+                    670,
+                    165,
+                    262,
+                    80.974
+                  ],
+                  [
+                    704,
+                    670,
+                    168,
+                    257,
+                    82.93
+                  ],
+                  [
+                    1018,
+                    670,
+                    165,
+                    263,
+                    81.759
+                  ]
+                ],
+                [
+                  [
+                    96,
+                    948,
+                    166,
+                    253,
+                    99.413
+                  ],
+                  [
+                    403,
+                    947,
+                    168,
+                    255,
+                    96.22
+                  ],
+                  [
+                    707,
+                    947,
+                    166,
+                    255,
+                    96.49
+                  ],
+                  [
+                    1018,
+                    947,
+                    166,
+                    257,
+                    102.707
+                  ]
+                ]
+              ],
+              "alternateFeet": true
+            }
+          },
+          "muses": {
+            "lily": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    112,
+                    25,
+                    157,
+                    243,
+                    77.5
+                  ]
+                ],
+                [
+                  [
+                    806,
+                    25,
+                    118,
+                    243,
+                    62.5
+                  ]
+                ],
+                [
+                  [
+                    562,
+                    25,
+                    155,
+                    243,
+                    77.0
+                  ]
+                ],
+                [
+                  [
+                    359,
+                    25,
+                    118,
+                    243,
+                    53.5
+                  ]
+                ]
+              ]
+            },
+            "haewon": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    117,
+                    275,
+                    145,
+                    238,
+                    72.0
+                  ]
+                ],
+                [
+                  [
+                    806,
+                    275,
+                    118,
+                    238,
+                    65.5
+                  ]
+                ],
+                [
+                  [
+                    569,
+                    275,
+                    141,
+                    238,
+                    70.5
+                  ]
+                ],
+                [
+                  [
+                    357,
+                    275,
+                    118,
+                    238,
+                    53.0
+                  ]
+                ]
+              ]
+            },
+            "sullyoon": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    107,
+                    519,
+                    166,
+                    257,
+                    82.5
+                  ]
+                ],
+                [
+                  [
+                    786,
+                    519,
+                    136,
+                    258,
+                    84.0
+                  ]
+                ],
+                [
+                  [
+                    558,
+                    519,
+                    163,
+                    258,
+                    81.5
+                  ]
+                ],
+                [
+                  [
+                    360,
+                    519,
+                    135,
+                    258,
+                    51.0
+                  ]
+                ]
+              ]
+            },
+            "bae": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    123,
+                    783,
+                    132,
+                    254,
+                    65.5
+                  ]
+                ],
+                [
+                  [
+                    807,
+                    783,
+                    119,
+                    254,
+                    68.5
+                  ]
+                ],
+                [
+                  [
+                    575,
+                    783,
+                    130,
+                    254,
+                    65.0
+                  ]
+                ],
+                [
+                  [
+                    354,
+                    783,
+                    121,
+                    254,
+                    50.5
+                  ]
+                ]
+              ]
+            },
+            "jiwoo": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    113,
+                    1037,
+                    166,
+                    252,
+                    75.0
+                  ]
+                ],
+                [
+                  [
+                    781,
+                    1038,
+                    149,
+                    252,
+                    92.0
+                  ]
+                ],
+                [
+                  [
+                    557,
+                    1040,
+                    164,
+                    250,
+                    82.5
+                  ]
+                ],
+                [
+                  [
+                    351,
+                    1038,
+                    148,
+                    252,
+                    55.5
+                  ]
+                ]
+              ]
+            },
+            "kyujin": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    95,
+                    1296,
+                    189,
+                    230,
+                    94.0
+                  ]
+                ],
+                [
+                  [
+                    786,
+                    1296,
+                    138,
+                    230,
+                    87.0
+                  ]
+                ],
+                [
+                  [
+                    545,
+                    1296,
+                    190,
+                    230,
+                    94.5
+                  ]
+                ],
+                [
+                  [
+                    355,
+                    1296,
+                    139,
+                    230,
+                    50.0
+                  ]
+                ]
+              ]
+            }
+          },
+          "playerMotion": "parent",
+          "preciseCollision": true,
+          "footprint": {
+            "x": 4,
+            "y": 9,
+            "w": 8,
+            "h": 5
+          },
+          "colliders": [
+            {
+              "x": 9.3333,
+              "y": 3.7867,
+              "w": 21.12,
+              "h": 1.52
+            },
+            {
+              "x": 35.28,
+              "y": 3.84,
+              "w": 3.4667,
+              "h": 1.76
+            },
+            {
+              "x": 1.0667,
+              "y": 23.6533,
+              "w": 17.12,
+              "h": 1.0667
+            },
+            {
+              "x": 21.6267,
+              "y": 23.6533,
+              "w": 17.28,
+              "h": 1.0667
+            }
+          ],
+          "recordVisual": {
+            "x": 6.85,
+            "y": 5.91,
+            "size": 0.8
+          }
         }
       }
     ],
@@ -2067,6 +5170,19 @@
     /* ══════════ 对话稿（GAME_DESIGN.md §8，v0.3 全文） ══════════ */
 
     dialogue: {
+
+  "l1.rings.complete": {
+    "type": "cutscene",
+    "trigger": "interact:ring-toss",
+    "once": true,
+    "lines": [
+      {
+        "s": "bae",
+        "t": "鲸鱼、月亮、星星，全中！第一颗愿望之星就在摊位前，收下吧。第二颗在左上杂物间。"
+      }
+    ]
+  }
+,
       /* ── 序章（自动演出：进入 p0 场景时触发） ── */
       p0: {
         type: 'cutscene',
@@ -2100,8 +5216,8 @@
           { s: 'haewon', t: '别愣着，小寿星。我们六个可是认真化了妆、换了演出服。幼儿园文艺汇演限定版——身体没变小，放心。' },
           { s: 'lily', t: '这里的彩带、椅子、蛋糕，都是照着你记忆里的生日会摆的。可蜡烛都灭了——愿望之星一散，生日会就停在这一刻。' },
           { s: 'haewon', t: '帮我们找回三颗愿望之星吧。集齐了，蜡烛就能重新亮起来。' },
-          { s: 'lily', t: '先收下气球拱门下那颗——小时候的第一颗糖，也是第一颗愿望之星。' },
-          { s: 'haewon', t: '杂物间按 E 开门，里面有第二颗星。先和六位 Muse 都聊聊，再找齐两颗星——然后去舞台上看看唱片机。' },
+          { s: 'lily', t: '第一颗星在左边的套圈摊位，Bae 会教你怎么玩。把鲸鱼、月亮、星星都套中，就能拿到啦。' },
+          { s: 'haewon', t: '杂物间没有门，直接从南侧开口进去，里面有第二颗星。先和六位 Muse 都聊聊，再找齐两颗星——然后去舞台上看看唱片机。' },
           { s: 'haewon', t: '顺带一提，在这个梦里我们都有神话倒影——Lily 是春天，我是冥王。今天冥王也得当幼儿园小主持人。' },
           { s: 'haewon', t: '操作提示：方向键 / WASD 移动，E 或空格互动。手机用屏幕方向键和 A 键。' },
           { s: 'lily', t: '慢慢来。小时候的生日会，本来就不赶时间。응답하라 NSWER！' },
@@ -2111,7 +5227,7 @@
       'l1.star1': {
         type: 'star', trigger: 'star:s1', once: true,
         lines: [
-          { s: 'lily', t: '第一颗愿望之星！小时候的你，也是在这条路上捡到第一颗糖的吧？' },
+          { s: 'lily', t: '第一颗愿望之星！你把三个圈都套中了，像小时候收到第一颗糖一样开心吧？' },
           { s: 'haewon', t: '左上角 HUD 会帮你数星星。别嫌我们啰嗦，幼儿园老师都这样。' },
         ],
       },
@@ -2136,7 +5252,7 @@
         lines: [
           { s: 'haewon', t: '大班主持人兼解说员，Haewon。玩具话筒归我，吐槽也归我。' },
           { s: 'haewon', t: '冥王来幼儿园当主持，是不是很有反差感？' },
-          { s: 'haewon', t: '放心，这个梦不吓人。最多就是椅子矮了点。' },
+          { s: 'haewon', t: '我是今天的鼓手。唱片放在左上杂物间的矮柜上，从南侧开口直接进去就能看见。先和大家聊聊、找齐两颗星，再拿回来播放吧。' },
         ],
       },
       'l1.npc.sullyoon': {
@@ -2152,7 +5268,7 @@
         lines: [
           { s: 'bae', t: '小园丁 Bae，报到！花环是纸的，向日葵也是纸的，但力气是真的。' },
           { s: 'bae', t: '大地会记住每一颗种下去的心。生日愿望，也是种下去就会开花的。' },
-          { s: 'bae', t: '等会儿吹蜡烛，我帮你一起吹！……开玩笑的，许愿要自己来。' },
+          { s: 'bae', t: '先来玩套圈吧！到左侧摊位前按 E / A，依次套中鲸鱼、月亮和星星，就能拿到第一颗星。没套中也可以重试。第二颗星在左上杂物间，从南侧开口直接进去。' },
         ],
       },
       'l1.npc.jiwoo': {
@@ -2168,15 +5284,27 @@
         lines: [
           { s: 'kyujin', t: '……小国王 Kyujin。皇冠是纸的，别笑。' },
           { s: 'kyujin', t: '今天你过生日，你说了算。天空看着你呢。' },
-          { s: 'kyujin', t: '许愿的时候别怂。……我会假装没看见你闭眼睛。' },
+          { s: 'kyujin', t: '吉他已经调好音了。还缺杂物间里的唱片——拿回来放到右边唱片机，音乐响起后向右穿过蓝幕布，就到后台了。进去后就沿星光门继续旅程，不能回礼堂。' },
         ],
       },
       'l1.lily.hint': {
         type: 'hint', trigger: 'npc:lily', once: false,
         lines: [
-          { s: 'lily', t: '杂物间按 E 开门。听完六位 Muse 的自我介绍、找到两颗星后，上舞台靠近唱片机。' },
+          { s: 'lily', t: '欢迎来到生日会！先和六位 Muse 聊聊；左边套圈摊位藏着第一颗星，左上杂物间里有第二颗。杂物间从南侧开口直接进入，唱片线索问舞台上的鼓手和吉他手。' },
           { s: 'lily', t: '小时候的生日会，本来就是要慢慢过的呀。' },
         ],
+      },
+      'l1.haewon.hint': {
+        type: 'hint', trigger: 'npc:haewon', once: false,
+        lines: [{s:'haewon',t:'唱片在左上杂物间的矮柜上，从南侧开口直接进去。六段自我介绍和套圈、杂物间的两颗星齐备后，再把唱片带回来播放。'}],
+      },
+      'l1.kyujin.hint': {
+        type:'hint', trigger:'npc:kyujin', once:false,
+        lines:[{s:'kyujin',t:'唱片拿回来了吗？放进右边唱片机，等音乐响起再向右走进蓝色幕布。后台不能回礼堂，想玩的先玩好。'}],
+      },
+      'l1.bae.hint': {
+        type:'hint', trigger:'npc:bae', once:false,
+        lines:[{s:'bae',t:'左侧摊位前按 E / A 套圈。光标进入金色区域时投圈，鲸鱼、月亮、星星全部套中就有星星啦！'}],
       },
       'l1.byeori.hint': {
         type: 'hint', trigger: 'npc:byeori', once: false,
@@ -2224,7 +5352,7 @@
           },
           {
             "s": "nar",
-            "t": "温柔的旋律响起，舞台右侧的帷幕缓缓打开——后台化妆间正在等你。"
+            "t": "温柔的旋律响起。向右走，直接进入蓝色幕布后面，就到后台化妆间了。"
           }
         ]
       },
@@ -2319,7 +5447,7 @@
           { s: 'haewon', t: '蜡烛重新亮起来了。下一站的路，也照亮了。' },
           { s: 'lily', t: '许个愿吧，NSWER。不用变回小孩，也可以被当成小孩一样宠爱。' },
           { s: 'nar', t: '你吹灭蜡烛的一瞬间，礼堂的灯一盏一盏亮起来。梦还在继续。' },
-          { s: 'byeori', t: '目标达成！舞台幕布后面就是下一关——Jiwoo 在等的「灯油与火焰」。信使要下冥界啦。' },
+          { s: 'byeori', t: '目标达成！后台左侧的星光门通往下一关——Jiwoo 在等的「灯油与火焰」。信使要下冥界啦。' },
         ],
       },
 

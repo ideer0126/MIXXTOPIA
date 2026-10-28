@@ -17,13 +17,16 @@
     <div id="stage">
       <!-- 顶部 HUD：位于游戏画面上方、左缘对齐，不压画面 -->
       <div id="hud" class="hidden">
-        <span id="hud-level"></span>
-        <span id="hud-shards"></span>
-        <span id="hud-hp">♥ 10/10</span>
-        <span id="hud-energy" aria-label="能量炮能量">
-          <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
-          <span id="hud-energy-label">0%</span>
-        </span>
+        <div id="hud-status">
+          <span id="hud-level"></span>
+          <span id="hud-shards"></span>
+          <span id="hud-hp">♥ 10/10</span>
+          <span id="hud-energy" aria-label="能量炮能量">
+            <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
+            <span id="hud-energy-label">0%</span>
+          </span>
+        </div>
+        <span id="hud-objective" role="status" aria-live="polite"></span>
       </div>
 
       <!-- 游戏画布 -->
@@ -159,7 +162,7 @@
       <p id="settings-account" class="settings-account">已登录</p>
       <div class="settings-avatar-panel">
         <div id="avatar-preview" class="avatar-preview">
-          <span class="avatar-face" aria-hidden="true"></span>
+          <span id="avatar-preview-face" class="avatar-face" aria-hidden="true"></span>
           <span id="avatar-preview-name" class="avatar-preview-name">Lily</span>
         </div>
         <div id="avatar-options" class="avatar-options" role="group" aria-label="选择固定头像"></div>
@@ -281,6 +284,7 @@
   <script src="js/account.js"></script>
   <script src="js/cloud.js"></script>
   <script src="js/stats.js"></script>
+  <script src="js/birthday.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

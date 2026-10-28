@@ -826,14 +826,16 @@ body {
 }
 
 /* ── HUD（Issue #6）：游戏画面上方、左缘对齐的关卡名 + 星数，不压画面。
-   引擎已为这一行预留空间（hudReserve=24px），HUD 隐藏时仍占位避免画布跳动。
+   引擎为状态和目标两行预留空间（hudReserve=44px），HUD 隐藏时仍占位避免画布跳动。
    Issue #18：追加 HP 与被动能量条（窄屏下关卡名截断，保证一行放下） */
 #hud {
   z-index: 10;
   display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 17px;        /* 固定带宽：有字/无字/隐藏都占同样高度，画布不跳动 */
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  height: 37px;        /* 固定两行高度，目标更新或隐藏时画布不跳动 */
+  width: 100%;
   margin: 0 0 6px;
   font-family: "Press Start 2P", monospace;
   font-size: 12px;
@@ -843,6 +845,25 @@ body {
   pointer-events: none;
   white-space: nowrap;
   max-width: 100%;
+}
+
+#hud-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 17px;
+}
+
+#hud-objective {
+  display: block;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 18px;
+  color: #b8e0d2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 隐藏态只不可见、仍占位：保证标题/游玩切换时画布不上下跳动 */
@@ -864,6 +885,10 @@ body {
 #hud-shards {
   flex: none;
   color: #ffffff;
+}
+
+#hud.peaceful #hud-level {
+  max-width: none;
 }
 
 /* HP：♥ 当前/上限；低血量变红 */
@@ -1077,3 +1102,16 @@ body {
   #save-screen { padding: 12px 12px 32px; }
   .cloud-actions { flex-direction: column; }
 }
+
+/* 六位 Muse：三列两行的透明头像图集，保留色块头像作为无素材回退。 */
+.avatar-face.has-portrait {
+  width: 52px;
+  height: 52px;
+  background-color: transparent;
+  background-size: 300% 200%;
+  background-repeat: no-repeat;
+  border-radius: 0;
+  image-rendering: pixelated;
+}
+.avatar-btn .avatar-face.has-portrait { width: 48px; height: 48px; }
+.avatar-face.has-portrait::before, .avatar-face.has-portrait::after { content: none; }

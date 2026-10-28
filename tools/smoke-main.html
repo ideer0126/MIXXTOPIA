@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MIXXTOPIA · 状态机冒烟测试</title>
+  <link rel="icon" href="data:," />
   <link rel="stylesheet" href="../styles.css" />
 </head>
 <body>
@@ -21,13 +22,16 @@
   <canvas id="game" width="320" height="224"></canvas>
 
   <div id="hud" class="hidden">
-    <span id="hud-level"></span>
-    <span id="hud-shards"></span>
-    <span id="hud-hp"></span>
-    <span id="hud-energy">
-      <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
-      <span id="hud-energy-label"></span>
-    </span>
+    <div id="hud-status">
+      <span id="hud-level"></span>
+      <span id="hud-shards"></span>
+      <span id="hud-hp"></span>
+      <span id="hud-energy">
+        <span id="hud-energy-bar"><span id="hud-energy-fill"></span></span>
+        <span id="hud-energy-label"></span>
+      </span>
+    </div>
+    <span id="hud-objective" role="status" aria-live="polite"></span>
   </div>
 
   <div id="title-screen" class="screen">
@@ -70,7 +74,7 @@
     <p id="settings-account" class="settings-account"></p>
     <div class="settings-avatar-panel">
       <div id="avatar-preview" class="avatar-preview">
-        <span class="avatar-face" aria-hidden="true"></span>
+        <span id="avatar-preview-face" class="avatar-face" aria-hidden="true"></span>
         <span id="avatar-preview-name" class="avatar-preview-name"></span>
       </div>
       <div id="avatar-options" class="avatar-options" role="group" aria-label="选择固定头像"></div>
@@ -288,6 +292,7 @@
   <script src="../js/account.js"></script>
   <script src="../js/cloud.js"></script>
   <script src="../js/stats.js"></script>
+  <script src="../js/birthday.js"></script>
   <script src="../js/main.js"></script>
   <script>
     (async function () {

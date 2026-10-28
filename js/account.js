@@ -140,11 +140,16 @@
         const id = typeof item.id === 'string' ? item.id.trim() : '';
         if (!AVATAR_ID_RE.test(id) || seen[id]) continue;
         seen[id] = true;
-        out.push({
+        const portrait = typeof item.art === 'string' && /^assets\/[a-zA-Z0-9/_-]+\.png$/.test(item.art)
+          && Array.isArray(item.portraitCell) && item.portraitCell.length === 2
+          && Number.isInteger(item.portraitCell[0]) && item.portraitCell[0] >= 0 && item.portraitCell[0] < 3
+          && Number.isInteger(item.portraitCell[1]) && item.portraitCell[1] >= 0 && item.portraitCell[1] < 2
+          ? { art: item.art, portraitCell: item.portraitCell.slice() } : {};
+        out.push(Object.assign({
           id,
           name: typeof item.name === 'string' && item.name ? item.name : id,
           color: typeof item.color === 'string' && item.color ? item.color : '#FFC857',
-        });
+        }, portrait));
       }
     }
     // 默认头像必须始终在集合里：数据库 default 与历史资料都可能是 muse-1。
