@@ -111,7 +111,6 @@
   // 碰撞与机关判定统一走 engine.Mechanics（#9）：墙/水、关闭的门、箱子均阻挡。
 
   /* 说话人头像位（Issue #28）：素材规范见 assets/characters/README.md */
-  const PORTRAIT_BASE = 'assets/characters/';
   const PORTRAIT_NO_ART = { nar: true, all: true }; // 伪说话人无立绘（GAME_DESIGN §3）
 
   /* HUD 带：位于游戏画面上方（styles.css #stage 竖排），渲染器缩放时
@@ -3165,21 +3164,26 @@
 
     /**
      * 说话人头像位（Issue #28）：按 speaker 加载素材立绘（对话框右上方框外、
-     * 探出框顶，3:4 半身照，规格见 assets/characters/README.md）。
+     * 探出框顶，直接使用 characters 中配置的透明原图）。
      * nar/all 等伪说话人直接隐藏；图片缺失由 onerror 降级隐藏，不影响对话流程。
      */
     _setPortrait(speaker) {
       const img = this._ui.dialogPortrait;
       if (!img) return;
-      if (!speaker || PORTRAIT_NO_ART[speaker]) {
+      const character = this.characters[speaker];
+      if (!character || !character.portrait || PORTRAIT_NO_ART[speaker]) {
         this._hidePortrait();
         return;
       }
-      const src = PORTRAIT_BASE + speaker + '/art/' + speaker + '-portrait.png';
+      const src = character.portrait;
       if (this._failedPortraits.has(src)) {
         this._hidePortrait();
         return;
       }
+      // 按原图底部透明留白比例下移，让可见人物底边贴框，而非 PNG 画布底边。
+      const bottom = (character.portraitBottom || 0) * 100;
+      img.style.transform = 'translateY(' + bottom + '%)';
+      img.style.clipPath = 'inset(0 0 ' + bottom + '% 0)';
       this._show(img);
       const dialog = this._ui.dialog;
       if (dialog && dialog.classList) dialog.classList.add('has-portrait');
