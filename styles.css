@@ -1114,12 +1114,8 @@ body.recovery-page {
     }
   }
 
-  /* 矮横屏的按键位于两侧，对话贴底，为选项与立绘留出纵向空间。 */
+  /* 矮横屏缩小立绘，为选项留出纵向空间。 */
   @media (orientation: landscape) and (max-height: 450px) {
-    #dialog {
-      bottom: 10px;
-    }
-
     #dialog-portrait {
       width: min(33.333%, 12vh);
     }
