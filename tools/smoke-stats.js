@@ -16,6 +16,7 @@ const B = '22222222-2222-2222-2222-222222222222';
   fs.mkdirSync(output, { recursive: true });
   const db = new PGlite(), errors = [], requests = [];
   let browser, server, queue = Promise.resolve(), offline = false;
+  let fixturePassword = 'release-test-password';
   try {
     await db.exec(`create role anon; create role authenticated; create schema auth;
       create table auth.users(id uuid primary key);
@@ -57,10 +58,22 @@ const B = '22222222-2222-2222-2222-222222222222';
         if (u.pathname.startsWith('/auth/v1/')) {
           requests.push({ path: u.pathname, method: req.method() });
           if (u.pathname.endsWith('/logout')) { await route.fulfill({ status: 204 }); return; }
+          if (u.pathname.endsWith('/user')) {
+            assert.equal(req.method(), 'PUT');
+            assert.equal(req.headers().authorization, 'Bearer ' + A);
+            assert.equal(body.current_password, fixturePassword);
+            fixturePassword = body.password;
+            await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: A, email: 'release-a@example.com' }) });
+            return;
+          }
           assert.equal(req.method(), 'POST');
           assert.ok(u.pathname.endsWith('/signup') || u.pathname.endsWith('/token'), 'unexpected auth endpoint');
           const who = u.searchParams.get('grant_type') === 'refresh_token' ? body.refresh_token.slice(8)
-            : body.email === 'release-a@example.com' && body.password === 'release-test-password' ? A : '';
+            : body.email === 'release-a@example.com' && body.password === fixturePassword ? A : '';
+          if (!who) {
+            await route.fulfill({ status: 400, contentType: 'application/json', body: '{"error_code":"invalid_credentials"}' });
+            return;
+          }
           assert.ok([A, B].includes(who), 'unexpected auth credentials');
           if (u.pathname.endsWith('/signup')) await db.query('insert into auth.users values ($1)', [who]);
           await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
@@ -121,7 +134,7 @@ const B = '22222222-2222-2222-2222-222222222222';
       assert.equal(await privacy.isVisible(), true);
       assert.equal(await privacy.getAttribute('href'), 'https://github.com/ideer0126/MIXXTOPIA/blob/main/docs/PRIVACY.md');
       await page.locator('#login-email').fill('release-a@example.com');
-      await page.locator('#login-password').fill('release-test-password');
+      await page.locator('#login-password').fill(fixturePassword);
       await page.locator(register ? '#btn-register' : '#btn-login').click();
       await page.evaluate(() => game._authPromise); await settle(page);
       assert.equal(await page.evaluate(() => game.auth.getSession().user.id), A);
@@ -218,6 +231,51 @@ const B = '22222222-2222-2222-2222-222222222222';
     await phone.locator('#btn-stats-sync').scrollIntoViewIfNeeded(); await phone.locator('#btn-stats-sync').click(); await settle(phone);
     assert.equal(await phone.locator('#stats-time').innerText(), await page.locator('#stats-time').innerText());
     console.log('  ✓ offline save / reload / next-login retry / idempotent cross-device update');
+
+    for (const [device, target] of [['desktop', page], ['touch', phone]]) {
+      const oldPassword = fixturePassword, nextPassword = 'changed-password-' + device;
+      const writesBefore = requests.filter(r => r.path.endsWith('/user')).length;
+      await target.locator('#password-current').fill(oldPassword);
+      await target.locator('#password-new').fill(nextPassword);
+      await target.locator('#password-confirm').fill('different-password');
+      await target.locator('#btn-password-save').click();
+      assert.match(await target.locator('#password-msg').innerText(), /不一致/);
+      assert.equal(requests.filter(r => r.path.endsWith('/user')).length, writesBefore);
+      await target.locator('#password-current').fill('wrong-current-password');
+      await target.locator('#password-new').fill(nextPassword);
+      await target.locator('#password-confirm').fill(nextPassword);
+      await target.locator('#btn-password-save').click(); await target.evaluate(() => game._passwordPromise);
+      assert.match(await target.locator('#password-msg').innerText(), /当前密码不正确/);
+      assert.equal(requests.filter(r => r.path.endsWith('/user')).length, writesBefore);
+      await target.locator('#password-current').fill(oldPassword);
+      await target.locator('#password-new').fill(nextPassword);
+      await target.locator('#password-confirm').fill(nextPassword);
+      await target.locator('#btn-password-save').click(); await target.evaluate(() => game._passwordPromise); await settle(target);
+      assert.match(await target.locator('#password-msg').innerText(), /密码已修改/);
+      assert.equal(requests.filter(r => r.path.endsWith('/user')).length, writesBefore + 1);
+      for (const id of ['password-current', 'password-new', 'password-confirm']) assert.equal(await target.locator('#' + id).inputValue(), '');
+      assert.ok(await target.evaluate(() => {
+        const panel = document.getElementById('settings-password').getBoundingClientRect();
+        return [...document.querySelectorAll('#password-form input')].every(el => {
+          const box = el.getBoundingClientRect(); return box.left > panel.left && box.right < panel.right;
+        });
+      }), 'password fields must fit the panel on both devices');
+      await target.locator('#settings-password').screenshot({ path: path.join(output, 'password-' + device + '.png') });
+      const saved = await target.evaluate(() => localStorage.getItem(MIXX.main.SAVE_KEY));
+      await target.locator('#btn-settings-back').click();
+      await target.locator('#btn-logout').click(); await target.evaluate(() => game._authPromise); await settle(target);
+      assert.equal(await target.evaluate(() => localStorage.getItem(MIXX.main.SAVE_KEY)), saved);
+      await target.locator('#login-email').fill('release-a@example.com');
+      await target.locator('#login-password').fill(oldPassword);
+      await target.locator('#btn-login').click(); await target.evaluate(() => game._authPromise);
+      assert.equal(await target.evaluate(() => game.auth.getSession()), null);
+      await target.locator('#login-email').fill('release-a@example.com');
+      await target.locator('#login-password').fill(nextPassword);
+      await target.locator('#btn-login').click(); await target.evaluate(() => game._authPromise); await settle(target);
+      assert.equal(await target.evaluate(() => game.auth.getSession().user.id), A);
+      await target.locator('#btn-login-back').click();
+      console.log('  ✓ ' + device + ': password mismatch / wrong current / change / old rejected / new login / local save preserved');
+    }
 
     const other = await context(B), second = await open(other);
     await second.locator('#btn-title-settings').click(); await settle(second);

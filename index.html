@@ -175,6 +175,21 @@
       </div>
       <p id="settings-cloud-note" class="settings-hint">昵称与头像保存到云端；声音与操作偏好同时保存到本机并立即生效。</p>
       <p id="settings-msg" class="settings-msg" role="status" aria-live="polite"></p>
+      <section id="settings-password" class="password-panel hidden" aria-labelledby="password-heading">
+        <h3 id="password-heading">修改密码</h3>
+        <p id="password-note" class="settings-hint">请输入当前密码验证身份。新密码至少 6 位，不可与当前密码相同。</p>
+        <form id="password-form" class="login-form" aria-describedby="password-note">
+          <label class="settings-field"><span>当前密码</span>
+            <input id="password-current" type="password" autocomplete="current-password" required /></label>
+          <label class="settings-field"><span>新密码</span>
+            <input id="password-new" type="password" autocomplete="new-password" minlength="6" required /></label>
+          <label class="settings-field"><span>确认新密码</span>
+            <input id="password-confirm" type="password" autocomplete="new-password" minlength="6" required /></label>
+          <button id="btn-password-save" type="submit" class="menu-btn small">修改密码</button>
+          <button id="btn-password-clear" type="button" class="menu-btn small">清空输入</button>
+        </form>
+        <p id="password-msg" class="settings-msg" role="status" aria-live="polite"></p>
+      </section>
       <section class="stats-panel" aria-labelledby="stats-heading">
         <h3 id="stats-heading">梦境足迹</h3>
         <p>游玩时长：<span id="stats-time">0 小时 0 分 0 秒</span></p>

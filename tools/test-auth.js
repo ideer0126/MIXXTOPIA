@@ -518,6 +518,148 @@ async function test(name, fn) {
     assert.strictEqual(fetch.calls.length, 1, '续期后未过期不再请求');
   });
 
+  async function passwordClient(handler) {
+    const { auth, storage } = setup();
+    seedSession(storage);
+    storage.setItem('mixxtopia.save.v1', 'local-save');
+    storage.setItem('mixxtopia.settings.v1', 'local-settings');
+    const fetch = fetchRecorder(handler || (call => response(200,
+      call.url.endsWith('/user') ? USER : sessionPayload())));
+    const client = auth.createClient({ fetch, storage, now: () => NOW });
+    await client.restore();
+    return { auth, storage, fetch, client };
+  }
+
+  await test('修改密码：当前密码重新验证 → 新会话 PUT /user，不存储密码或改动存档', async () => {
+    const { client, fetch, storage } = await passwordClient();
+    const result = await client.changePassword('old-secret', 'new-secret');
+    assert.strictEqual(result.id, USER.id);
+    assert.strictEqual(fetch.calls.length, 2);
+    assert.deepStrictEqual(fetch.calls[0].body, { email: USER.email, password: 'old-secret' });
+    assert.strictEqual(fetch.calls[1].init.method, 'PUT');
+    assert.strictEqual(fetch.calls[1].init.headers.Authorization, 'Bearer access-1');
+    assert.deepStrictEqual(fetch.calls[1].body, { password: 'new-secret', current_password: 'old-secret' });
+    const stored = storage.getItem('mixxtopia.account.v1');
+    assert.ok(!stored.includes('old-secret') && !stored.includes('new-secret'));
+    assert.strictEqual(JSON.parse(stored).accessToken, 'access-1');
+    assert.strictEqual(storage.getItem('mixxtopia.save.v1'), 'local-save');
+    assert.strictEqual(storage.getItem('mixxtopia.settings.v1'), 'local-settings');
+  });
+
+  await test('修改密码：缺当前密码、短密码、相同密码、游客均在请求前拒绝', async () => {
+    const { client, fetch } = await passwordClient();
+    await rejects(client.changePassword('', 'new-secret'), 'missing_current_password');
+    await rejects(client.changePassword('old-secret', 'x'), 'short_password');
+    await rejects(client.changePassword('old-secret', 'old-secret'), 'same_password');
+    client.session = null;
+    await rejects(client.changePassword('old-secret', 'new-secret'), 'not_signed_in');
+    assert.strictEqual(fetch.calls.length, 0);
+  });
+
+  await test('修改密码：当前密码错误不发送 PUT；其他错误保留原始分类', async () => {
+    for (const [status, payload, code] of [[400, { error_code: 'invalid_credentials' }, 'wrong_current_password'],
+      [429, {}, 'rate_limit'], [500, {}, 'server']]) {
+      const { client, fetch } = await passwordClient(() => response(status, payload));
+      await rejects(client.changePassword('old-secret', 'new-secret'), code);
+      assert.strictEqual(fetch.calls.length, 1);
+      assert.strictEqual(client.getAccessToken(), 'stored-access');
+    }
+  });
+
+  await test('修改密码：PUT 错误中文映射且不自动重试，保留已验证的会话', async () => {
+    for (const [serverCode, code] of [['weak_password', 'weak_password'], ['same_password', 'same_password'],
+      ['current_password_mismatch', 'wrong_current_password'], ['current_password_required', 'missing_current_password'],
+      ['reauthentication_needed', 'reauthentication_needed'], ['insufficient_aal', 'reauthentication_needed']]) {
+      const { client, fetch } = await passwordClient(call => response(call.url.endsWith('/user') ? 422 : 200,
+        call.url.endsWith('/user') ? { error_code: serverCode } : sessionPayload()));
+      await rejects(client.changePassword('old-secret', 'new-secret'), code);
+      assert.strictEqual(fetch.calls.length, 2);
+      assert.strictEqual(client.getAccessToken(), 'access-1');
+    }
+  });
+
+  await test('修改密码：网络失败不重试 PUT；无法识别的成功响应不谎报成功', async () => {
+    const { client, fetch } = await passwordClient(call => {
+      if (call.url.endsWith('/user')) throw new Error('offline');
+      return response(200, sessionPayload());
+    });
+    await rejects(client.changePassword('old-secret', 'new-secret'), 'password_update_uncertain');
+    assert.strictEqual(fetch.calls.length, 2);
+    const malformed = await passwordClient(call => response(200, call.url.endsWith('/user') ? {} : sessionPayload()));
+    await rejects(malformed.client.changePassword('old-secret', 'new-secret'), 'password_update_uncertain');
+  });
+
+  await test('修改密码：重新验证返回另一账号/缺失会话时拒绝写入', async () => {
+    for (const payload of [sessionPayload({ user: { id: 'other', email: USER.email } }), {},
+      sessionPayload({ refresh_token: '' })]) {
+      const { client, fetch } = await passwordClient(() => response(200, payload));
+      await rejects(client.changePassword('old-secret', 'new-secret'), 'invalid_response');
+      assert.strictEqual(fetch.calls.length, 1);
+      assert.strictEqual(client.getAccessToken(), 'stored-access');
+    }
+  });
+
+  await test('修改密码：响应头后读取正文也有超时，结果不明时提示验证新密码且不重试', async () => {
+    const { auth, storage, sandbox } = setup(); seedSession(storage);
+    const fetch = fetchRecorder(call => {
+      if (!call.url.endsWith('/user')) return response(200, sessionPayload());
+      return { status: 200, ok: true, json: () => new Promise((resolve, reject) => {
+        call.init.signal.addEventListener('abort', () => reject(new Error('body aborted')), { once: true });
+      }) };
+    });
+    const config = Object.assign({}, sandbox.MIXX.cloudConfig, { timeoutMs: 5 });
+    const client = auth.createClient({ config, fetch, storage, now: () => NOW });
+    await client.restore();
+    await rejects(client.changePassword('old-secret', 'new-secret'), 'password_update_uncertain');
+    assert.strictEqual(fetch.calls.length, 2);
+    assert.strictEqual(client._changingPassword, false);
+  });
+
+  await test('修改密码：验证期间登出 / 同账号重登 / 跨标签切号，旧请求不发送 PUT', async () => {
+    for (const mode of ['logout', 'signin', 'storage-other', 'storage-same']) {
+      const gate = deferred();
+      const { client, storage, fetch } = await passwordClient(call => call.url.includes('/logout') ? response(204, null) : gate.promise);
+      const task = client.changePassword('old-secret', 'new-secret');
+      await Promise.resolve();
+      if (mode === 'logout') await client.signOut();
+      else if (mode === 'signin') client._applySession(Object.assign({}, client.session, { accessToken: 'new-login' }), 'signin');
+      else seedSession(storage, { accessToken: 'other-tab', user: mode === 'storage-other' ? { id: 'B', email: 'b@example.com' } : USER });
+      gate.resolve(response(200, sessionPayload()));
+      await rejects(task, 'account_changed');
+      assert.ok(!fetch.calls.some(call => call.url.endsWith('/user')));
+      if (mode.startsWith('storage-')) assert.strictEqual(JSON.parse(storage.getItem('mixxtopia.account.v1')).accessToken, 'other-tab');
+    }
+  });
+
+  await test('修改密码：在途 PUT 遇到登出不恢复旧会话，并发调用不重复写入', async () => {
+    const gate = deferred(), started = deferred();
+    const { client, storage, fetch } = await passwordClient(call => {
+      if (call.url.endsWith('/user')) { started.resolve(); return gate.promise; }
+      return response(200, sessionPayload());
+    });
+    const task = client.changePassword('old-secret', 'new-secret');
+    await started.promise;
+    await rejects(client.changePassword('old-secret', 'another-secret'), 'busy');
+    await client.signOut();
+    gate.resolve(response(200, USER));
+    await rejects(task, 'account_changed');
+    assert.strictEqual(client.getSession(), null);
+    assert.strictEqual(storage.getItem('mixxtopia.account.v1'), null);
+    assert.strictEqual(fetch.calls.filter(call => call.url.endsWith('/user')).length, 1);
+  });
+
+  await test('修改密码：旧 refresh 迟到不覆盖新验证会话', async () => {
+    const gate = deferred();
+    const { client, fetch } = await passwordClient(call => call.url.includes('grant_type=refresh_token')
+      ? gate.promise : response(200, call.url.endsWith('/user') ? USER : sessionPayload()));
+    const refresh = client.refresh();
+    await client.changePassword('old-secret', 'new-secret');
+    gate.resolve(response(200, sessionPayload({ access_token: 'stale-refresh' })));
+    await refresh;
+    assert.strictEqual(client.getAccessToken(), 'access-1');
+    assert.strictEqual(fetch.calls.length, 3);
+  });
+
   /* ─────────────────── 汇总 ─────────────────── */
 
   console.log('');

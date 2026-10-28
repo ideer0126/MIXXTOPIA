@@ -62,6 +62,8 @@ const UI_IDS = [
   'avatar-preview', 'avatar-preview-name', 'avatar-options',
   'btn-pref-sound', 'btn-pref-touch', 'settings-cloud-note', 'settings-msg',
   'btn-settings-retry', 'btn-settings-save', 'link-delete-account', 'btn-settings-back',
+  'settings-password', 'password-form', 'password-current', 'password-new', 'password-confirm',
+  'password-msg', 'btn-password-save', 'btn-password-clear',
   'stats-time', 'stats-collection', 'stats-achievements', 'stats-status', 'btn-stats-sync',
   'touch-controls',
 ];
@@ -3747,6 +3749,114 @@ testAsync('#46 保存先完成云存档同步，再刷新账户收集率；离�
   saveOne(game); await game._statsTask; await stats.task;
   assert.equal(game.state, STATE.TITLE); assert.ok(stats.error);
   game.destroy();
+});
+
+async function passwordGame(handler) {
+  localStorageStub.clear(); seedAccount();
+  const fetch = authFetch(call => {
+    if (isProfilesCall(call)) return profileResponse(call);
+    if (handler) return handler(call);
+    return authResponse(200, call.url.endsWith('/user') ? ACCOUNT_USER : accountPayload());
+  });
+  const game = makeAccountGame(fetch, { keepStorage: true });
+  await settle(game); game._openSettingsScreen();
+  return { game, fetch };
+}
+function fillPassword(current = 'old-secret', password = 'new-secret', confirm = password) {
+  elt('password-current').value = current;
+  elt('password-new').value = password;
+  elt('password-confirm').value = confirm;
+}
+function passwordsEmpty() {
+  for (const id of ['password-current', 'password-new', 'password-confirm']) assert.strictEqual(elt(id).value, '');
+}
+
+testAsync('修改密码 UI：游客不显示入口且不会请求账户服务', async () => {
+  const fetch = authFetch(() => { throw Error('Guest must not fetch'); });
+  const game = makeAccountGame(fetch);
+  await settle(game); game._openSettingsScreen();
+  assert.ok(hidden('settings-password'));
+  assert.strictEqual(game._onPasswordSubmit(), null);
+  assert.strictEqual(fetch.calls.length, 0);
+  game.destroy();
+});
+
+testAsync('修改密码 UI：表单提交、锁定防重复、成功清空字段与保留存档/设置', async () => {
+  const { game, fetch } = await passwordGame();
+  try {
+    assert.ok(shown('settings-password'));
+    const before = localStorageStub.getItem(main.SETTINGS_KEY);
+    localStorageStub.setItem(main.SAVE_KEY, 'local-save');
+    fillPassword(); let prevented = false;
+    elt('password-form')._fire('submit', { preventDefault() { prevented = true; } });
+    const task = game._passwordPromise;
+    assert.ok(prevented);
+    assert.ok(elt('btn-password-save').disabled && elt('password-current').disabled);
+    assert.strictEqual(game._onPasswordSubmit(), task);
+    passwordsEmpty();
+    await task;
+    assert.match(text('password-msg'), /密码已修改/);
+    assert.ok(!elt('btn-password-save').disabled);
+    assert.strictEqual(fetch.calls.filter(call => call.url.endsWith('/user')).length, 1);
+    assert.strictEqual(localStorageStub.getItem(main.SAVE_KEY), 'local-save');
+    assert.strictEqual(localStorageStub.getItem(main.SETTINGS_KEY), before);
+  } finally { game.destroy(); }
+});
+
+testAsync('修改密码 UI：确认不一致/短密码不请求；清空和返回不残留密码', async () => {
+  const { game, fetch } = await passwordGame();
+  try {
+    const before = fetch.calls.length;
+    fillPassword('old-secret', 'new-secret', 'different');
+    assert.strictEqual(game._onPasswordSubmit(), null);
+    assert.match(text('password-msg'), /不一致/); passwordsEmpty();
+    fillPassword('old-secret', 'x'); await game._onPasswordSubmit();
+    assert.match(text('password-msg'), /至少 6 位/);
+    assert.strictEqual(fetch.calls.length, before);
+    fillPassword(); elt('btn-password-clear').click(); passwordsEmpty();
+    fillPassword(); elt('btn-settings-back').click(); passwordsEmpty();
+    game._openSettingsScreen(); assert.strictEqual(text('password-msg'), '');
+    fillPassword(); game._setState(STATE.PLAYING); passwordsEmpty();
+  } finally { game.destroy(); }
+});
+
+testAsync('修改密码 UI：当前密码错误有中文提示，可重试且不调用 PUT', async () => {
+  const { game, fetch } = await passwordGame(() => authResponse(400, { error_code: 'invalid_credentials' }));
+  try {
+    fillPassword(); await game._onPasswordSubmit();
+    assert.match(text('password-msg'), /当前密码不正确/);
+    assert.ok(!elt('btn-password-save').disabled); passwordsEmpty();
+    assert.ok(!fetch.calls.some(call => call.url.endsWith('/user')));
+    assert.strictEqual(game._currentUserId(), ACCOUNT_USER.id);
+  } finally { game.destroy(); }
+});
+
+testAsync('修改密码 UI：离开设置页后旧回包不显示成功，销毁也清空密码', async () => {
+  let release, started;
+  const gate = new Promise(resolve => { release = resolve; });
+  const entered = new Promise(resolve => { started = resolve; });
+  const { game } = await passwordGame(call => {
+    if (call.url.endsWith('/user')) { started(); return gate; }
+    return authResponse(200, accountPayload());
+  });
+  fillPassword(); const task = game._onPasswordSubmit(); await entered;
+  game._closeSettingsScreen(); game._openSettingsScreen();
+  release(authResponse(200, ACCOUNT_USER)); await task;
+  assert.strictEqual(text('password-msg'), ''); passwordsEmpty();
+  fillPassword(); game.destroy(); passwordsEmpty();
+});
+
+testAsync('修改密码 UI：跨标签页切号清空密码，撤销尚未发起的操作', async () => {
+  const { game, fetch } = await passwordGame();
+  try {
+    const before = fetch.calls.length;
+    fillPassword(); const task = game._onPasswordSubmit();
+    fireWindow('storage', { key: main.ACCOUNT_KEY, newValue: JSON.stringify({ user: { id: 'B' } }) });
+    await task;
+    passwordsEmpty(); assert.strictEqual(text('password-msg'), '');
+    assert.strictEqual(fetch.calls.length, before);
+    fillPassword(); fireWindow('pagehide', {}); passwordsEmpty();
+  } finally { game.destroy(); }
 });
 
 /* ─────────────────── 汇总 ─────────────────── */
