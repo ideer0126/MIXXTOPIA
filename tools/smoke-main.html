@@ -314,22 +314,20 @@
         });
       }
 
-      // 冒烟数据使用独立的 sessionStorage，避免读写或清理 stable localStorage。
-      var smokeStorage = window.sessionStorage;
-      // 清掉历史冒烟数据，保证每次运行起点一致。
-      try {
-        smokeStorage.removeItem('mixxtopia.save.v1');
-        smokeStorage.removeItem('mixxtopia.settings.v1');
-        smokeStorage.removeItem('mixxtopia.account.v1');
-        smokeStorage.removeItem('mixxtopia.cloud.v1');
-        Object.keys(smokeStorage).filter(function (key) { return key.indexOf('mixxtopia.stats.v1.') === 0; })
-          .forEach(function (key) { smokeStorage.removeItem(key); });
-      } catch (e) { /* 存储不可用时仍可验证游戏流程 */ }
+      // 每次运行使用独立内存存储，避免读写同源游戏数据（含统计 journal/cache）。
+      var stored = new Map();
+      var storage = {
+        getItem: function (key) { return stored.has(String(key)) ? stored.get(String(key)) : null; },
+        setItem: function (key, value) { stored.set(String(key), String(value)); },
+        removeItem: function (key) { stored.delete(String(key)); },
+        key: function (i) { return Array.from(stored.keys())[i] || null; },
+        get length() { return stored.size; }
+      };
 
       var main = window.MIXX.main;
       try {
       ok('main 就绪', !!main && typeof main.Game === 'function');
-      var game = main.boot({ storage: smokeStorage });
+      var game = main.boot({ storage: storage });
       ok('boot 成功', !!game);
       if (!game) {
         document.body.setAttribute('data-smoke', 'fail');
@@ -479,7 +477,7 @@
       frame();
       ok('→ clear', game.state === 'clear' && shown('clear-screen') && /星星 3\/3/.test(text('clear-text')));
       ok('进入传送门音效', sfx.indexOf('portal-enter') >= 0);
-      var saveRaw = JSON.parse(smokeStorage.getItem('mixxtopia.save.v1'));
+      var saveRaw = JSON.parse(storage.getItem('mixxtopia.save.v1'));
       ok('通关自动存档', !!saveRaw && !!saveRaw.slots[0]
         && saveRaw.slots[0].current === 2 && saveRaw.slots[0].cleared.indexOf(1) >= 0);
 
@@ -565,7 +563,7 @@
         && patch.body.prefs.sound === false && patch.body.prefs.touch === 'on');
       ok('保存成功提示', text('settings-msg') === '设置已保存。');
       ok('标题显示新昵称', text('btn-account') === '☁ 账户 · 冒烟小星');
-      var localSettings = JSON.parse(smokeStorage.getItem('mixxtopia.settings.v1'));
+      var localSettings = JSON.parse(storage.getItem('mixxtopia.settings.v1'));
       ok('偏好写入本地 settings', !!localSettings
         && localSettings.sound === false && localSettings.touch === 'on');
 

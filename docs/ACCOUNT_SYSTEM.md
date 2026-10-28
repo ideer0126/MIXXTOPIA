@@ -11,6 +11,7 @@
 ## 2. 需求要点
 
 - **账户**：注册 / 登录（邮箱 + 密码，后续可扩展 OAuth）；未登录可继续以游客身份游玩，登录后提示合并本地与云端存档
+- **登录后修改密码（#22 扩展，本地实现）**：账户设置里输入当前密码、新密码及确认；独立于昵称 / 偏好保存，保持零 SDK。实现与验收边界见 §12「修改密码」。
 - **账户设置**：昵称、头像（**固定选项集**，不支持上传自定义图片；集合由前端白名单维护，可随美术扩展）、音效 / 操作等偏好设置
 - **云存档 / 跨设备同步**：进度（当前关、已收集、已解锁关卡）上传与下载；冲突处理（版本号 / 更新时间，逐档手动选择，默认不自动覆盖）
 - **用户资料 / 统计**：游戏时长、成就、收集率
@@ -271,6 +272,26 @@ MIXX_CHROME=/opt/google/chrome/chrome node tools/smoke-stats.js
 ```
 
 浏览器脚本启动并关闭自己的本地静态服务器，以本地 PostgreSQL 引擎响应拦截的 REST 请求，不访问真实 Supabase。检查桌面/触屏页面、离线刷新补传、跨设备一致、切号和游客零请求；截图与结构化结果默认保存在 `/tmp/mixxtopia-stats-smoke/`（可用 `MIXX_STATS_OUTPUT` 更改）。
+
+### 修改密码（#22 扩展，2026-10-28 实现并通过真实 REST 验收，尚未发布）
+
+- 分支 `feat/22-change-password`：`AuthClient.changePassword(currentPassword, newPassword)` 先用当前账号邮箱与当前密码请求 `POST /auth/v1/token?grant_type=password`，验证响应归属后采用新会话，再带新令牌请求 `PUT /auth/v1/user`，JSON 仅含 `password` / `current_password`。不修改数据库表、RLS 或后端安全配置。新密码沿用至少 6 位的现有前端规则；后端可施加更高强度要求。参考：[Supabase 密码安全](https://supabase.com/docs/guides/auth/password-security)、[GoTrue user.go](https://github.com/supabase/auth/blob/master/internal/api/user.go)。
+- 先重新登录验证当前密码，避免依赖项目是否启用了「必须提供当前密码」；新会话满足近期登录要求。后端额外要求身份验证时显示中文提示，不绕过 nonce / MFA。新旧相同、确认不一致、当前密码错误分别提示，不自动重试修改请求。
+- 验证前后、写入前后核对账号 id、登录代次及共享存储令牌；切号 / 登出 / 同账号另一次登录后，旧请求不能发起后续写入或恢复旧会话。重新验证同时使旧 refresh 失效，防止迟到响应覆盖新会话；已发出的请求可能完成，但离开页面、切号或销毁后不再显示旧结果。
+- 密码只存在当前表单 / 请求期间的局部变量，不写 localStorage、资料表或日志。有效提交立即清空三个字段；清空按钮、离开设置、切号、离开标题、pagehide 和 destroy 同样清空。表单原生支持 Enter 提交，期间禁用输入及提交，游客隐藏该区域。
+- 超时覆盖响应头与正文读取。修改已发出但网络失败、超时或成功响应格式异常时，提示「未能确认修改结果，请尝试用新密码登录后再操作」，避免把未知状态当作确定失败或盲目重复写入。存档、设置与云同步基线不因改密而删除。
+- 本地验证：`test-auth` 49 项（新增 10 项改密流程 / 竞态 / 正文超时检查）、`test-main` 131 项（新增 6 项 UI 检查）；八组原有 Node 套件当前合计 329 项，另有 6 组发布检查回归。`smoke-stats.js` 在真实 `index.html` 上使用 Auth 请求桩与本地 SQL，桌面 / 触屏均覆盖确认不一致、旧密码错误、修改成功、旧密码被拒 / 新密码登录及本机存档保留；主流程各 102 项、输入各 22 项通过。截图：`/tmp/mixxtopia-password-smoke/password-desktop.png`、`password-touch.png`。
+- **真实 REST 验收通过（08:55，Asia/Shanghai）**：用户单独授权在隔离项目 `hlnubesywvcxdghfyoux` 新建一个专用账号、写入测试云档 / 统计及通过真实 API 修改其生成的密码。`tools/check-password-live.js` 加载当前分支的 Auth / Cloud / Stats 客户端直连真实 GoTrue / PostgREST，7 组检查、22 次响应全部通过：注册自动建档；本人 1 份云档及 2500ms / 首星统计；相同 / 短密码在本地拒绝；错误当前密码不发 PUT；正确改密仅一次 PUT；改密后的当前会话仍能读数据并续期；旧密码拒绝 / 新客户端新密码登录；新旧客户端读取的资料、云档和统计一致；登出保留本地存储夹具。密码与令牌仅在内存使用，没有写入报告或临时凭据文件。
+- 这次验证是**当前本地客户端加真实 REST**，不是已部署页面的改密验收；真实浏览器 UI 接线仍以前述本地桩冒烟为证。验收时本分支尚未提交，随后用户已单独授权本地提交；推送和发布尚未执行，实际部署后的页面流程仍需验证。脱敏报告 `/tmp/mixxtopia-password-live.json`。
+- 本次创建的唯一测试账号：`2b0b5991-0068-4def-82dc-58b02a8bf313`（`mixxtopia-password-mvrekh61ba733227@example.com`）。验收后用户进一步明确授权「仅删除这个临时测试账号」，已通过 Auth 管理界面删除，并在项目所有者上下文执行精确 UUID 的纯 SELECT：`auth.users` / `profiles` / `saves` / `stats` **均为 0/0/0/0**。清理报告 `/tmp/mixxtopia-password-cleanup.json`，实际 SQL 结果截图 `/tmp/mixxtopia-password-cleanup-after.png`；没有遗留该测试账号或关联数据。未操作现有账号，未更改数据库迁移、RLS 或项目设置。
+- 真实验收工具不进入默认离线门禁；无明确开关或项目不匹配时零请求，注册前要求目标项目已开启自动确认，避免发邮件或代改项目设置。`node tools/test-password-live.js` 的 2 组本地桩检查覆盖执行门禁、完整七组流程、仅一次注册 / PUT、无删除和报告无令牌。
+
+```bash
+node tools/test-password-live.js # 本地桩，零外网请求
+# 下列命令会新建一个真实测试账号并修改其密码；每次运行前须明确授权。
+node tools/check-password-live.js --allow-test-writes \
+  --project hlnubesywvcxdghfyoux --out /tmp/mixxtopia-password-live.json
+```
 
 ## 13. 影响下游
 

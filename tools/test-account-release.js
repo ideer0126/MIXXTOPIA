@@ -9,24 +9,26 @@ let passed = 0;
 async function test(name, fn) {
   await fn(); passed++; console.log('  ✓ ' + name);
 }
-async function snapshot({ comparison = 'same-runtime', statsCode = '42501', missing = [], games = true } = {}) {
+async function snapshot({ comparison = 'same-runtime', statsCode = '42501', missing = [], games = true,
+  previewCommit = null, authStatus = 200, authSettings = { disable_signup: false, mailer_autoconfirm: true } } = {}) {
   const calls = [];
   const read = async url => {
     calls.push(url);
     if (url.startsWith(base)) {
       const route = url.slice(base.length), game = games && route.startsWith('beta/');
-      if (route.endsWith('channel.json')) return { status: 200, text: JSON.stringify({ commit: game ? '6d91a27' : null }) };
+      if (route.endsWith('channel.json')) return { status: 200, text: JSON.stringify({
+        commit: game ? '6d91a27' : route.startsWith('preview/') ? previewCommit : null }) };
       if (route.endsWith('cloud-config.js')) return { status: 200, text: "url: '" + backend + "', anonKey: 'sb_publishable_fixture'" };
       return { status: 200, text: game ? ['main', 'auth', 'account', 'cloud', 'stats'].filter(n => !missing.includes(n))
         .map(n => '<script src="js/' + n + '.js"></script>').join('') : 'placeholder' };
     }
-    if (url === backend + '/auth/v1/settings') return { status: 200, text: '{"disable_signup":false,"mailer_autoconfirm":true}' };
+    if (url === backend + '/auth/v1/settings') return { status: authStatus, text: JSON.stringify(authSettings) };
     assert.equal(url, backend + '/rest/v1/stats?select=device_millis,remainder_ms,collections&limit=0');
     return { status: statsCode === '42703' ? 400 : 401, text: JSON.stringify({ code: statsCode,
       message: statsCode === '42703' ? 'column stats.device_millis does not exist' : 'permission denied for table stats' }) };
   };
   const report = await checkRelease({ read, expectedCommit: '5fb500a', compare: () => comparison });
-  assert.equal(calls.length, games ? 9 : 6, 'each fixed GET target is requested once');
+  assert.equal(calls.length, games && !missing.includes('main') ? 9 : 6, 'each fixed GET target is requested once');
   return report;
 }
 (async () => {
@@ -52,11 +54,34 @@ async function snapshot({ comparison = 'same-runtime', statsCode = '42501', miss
     assert.equal(calls, 0);
     assert.equal(compareDeployment('abcdef0', '5fb500a', () => { throw Error('unknown ref'); }), 'unknown-commit');
   });
-  await test('匿名拒绝不再误报缺列，仍保留真实迁移/RPC/RLS待验项', async () => {
+  await test('认证设置与匿名权限检查不误报，仍保留真实迁移/RPC/RLS待验项', async () => {
     const report = await snapshot();
     assert.deepEqual(report.blockers, []); assert.equal(report.ready, false);
     assert.equal(report.channels[1].sourceComparison, 'same-runtime');
     assert.ok(report.pending.some(p => p.includes('merge_stats')));
+    for (const mailer_autoconfirm of [true, false]) {
+      const disabled = await snapshot({ authSettings: { disable_signup: true, mailer_autoconfirm } });
+      assert.deepEqual(disabled.blockers, ['Auth signup is disabled']);
+      assert.equal(disabled.backends[0].signupEnabled, false);
+    }
+    for (const disable_signup of [undefined, null, false, 0, 1, 'true', 'false']) {
+      const allowed = await snapshot({ authSettings: { disable_signup, mailer_autoconfirm: false } });
+      assert.deepEqual(allowed.blockers, []);
+      assert.equal(allowed.backends[0].emailAutoConfirm, false);
+    }
+    assert.deepEqual((await snapshot({ authSettings: null })).blockers, []);
+    const unavailable = await snapshot({ authStatus: 503, authSettings: { disable_signup: true } });
+    assert.deepEqual(unavailable.blockers, ['Auth settings unavailable']);
+  });
+  await test('邮箱提供方明确关闭时阻塞注册，缺省配置保持原有行为', async () => {
+    for (const disable_signup of [false, true]) {
+      for (const external of [{ email: false }, { email: true }, {}, null, undefined]) {
+        const report = await snapshot({ authSettings: { disable_signup, external } });
+        const disabled = disable_signup || external?.email === false;
+        assert.deepEqual(report.blockers, disabled ? ['Auth signup is disabled'] : []);
+        assert.equal(report.backends[0].signupEnabled, !disabled);
+      }
+    }
   });
   await test('已确认的缺列仍报告迁移阻塞', async () => {
     const report = await snapshot({ statsCode: '42703' });
@@ -69,8 +94,11 @@ async function snapshot({ comparison = 'same-runtime', statsCode = '42501', miss
     assert.ok(unknown.pending.some(p => p.includes('cannot be compared locally')));
     assert.equal(unknown.ready, false);
   });
-  await test('缺少账户脚本或全部为占位页仍阻塞', async () => {
+  await test('缺少游戏/账户脚本或全部为占位页仍阻塞', async () => {
     assert.ok((await snapshot({ missing: ['stats'] })).blockers.some(b => b.includes('missing scripts stats')));
+    assert.ok((await snapshot({ missing: ['main'] })).blockers.includes(base + 'beta/: missing scripts main'));
+    assert.deepEqual((await snapshot({ previewCommit: '6d91a27' })).blockers, [base + 'preview/: missing scripts main']);
+    assert.deepEqual((await snapshot({ previewCommit: '' })).blockers, []);
     assert.ok((await snapshot({ games: false })).blockers.includes('No game channel is deployed'));
   });
   console.log('全部通过：' + passed + ' 组发布检查回归');
