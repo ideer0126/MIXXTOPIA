@@ -1411,30 +1411,16 @@ test('#12 共享 NPC trigger：仅播放当前关卡台词，切关与返回时�
 });
 
 test('#12 选项列表：↑↓ 移动 · E 确认 → goto 分支；check 节点可重复', () => {
+  const data = {};
+  vm.runInNewContext(fs.readFileSync(path.join(repoRoot, 'js/data.js'), 'utf8'), data);
+  const djNodes = ['l3.dj.check', 'l3.dj.right', 'l3.dj.wrong'];
   withGAME({
     levels: [Object.assign(dataLevel([
       { type: 'spawn', x: 2, y: 26 },
       { type: 'npc', id: 'dj', x: 10, y: 15, dialogue: 'l3.dj.check' },
     ]), { id: 3 })],
-    characters: { dj: { name: '街头DJ', color: '#FF5D8F' } },
-    dialogue: {
-      'l3.dj.check': {
-        type: 'check', trigger: 'npc:dj', once: false,
-        lines: [{ s: 'dj', t: '这条街最酷的人是谁？' }],
-        options: [
-          { label: '「Kyujin。」', goto: 'l3.dj.right' },
-          { label: '「我自己。」', goto: 'l3.dj.wrong' },
-        ],
-      },
-      'l3.dj.right': {
-        type: 'check', trigger: 'npc:dj', once: false,
-        lines: [{ s: 'dj', t: '会说话。过吧。' }],
-      },
-      'l3.dj.wrong': {
-        type: 'check', trigger: 'npc:dj', once: false,
-        lines: [{ s: 'dj', t: '哈！有胆量，但没门。' }],
-      },
-    },
+    characters: data.GAME.characters,
+    dialogue: Object.fromEntries(djNodes.map(id => [id, data.GAME.dialogue[id]])),
   }, () => {
     const game = makeGame();
     elt('btn-start').click();
@@ -1446,7 +1432,7 @@ test('#12 选项列表：↑↓ 移动 · E 确认 → goto 分支；check 节�
     let ended = 0;
     const onEnd = () => { ended++; };
     game._dialog.onEnd = onEnd;
-    advanceDialog(game); // 台词播完 → 进入选项模式
+    for (const line of data.GAME.dialogue['l3.dj.check'].lines) advanceDialog(game);
     assert.strictEqual(game.state, STATE.DIALOGUE, '选项模式仍停留在对话态');
     assert.ok(game._dialog.optionsShown);
     const box = elt('dialog-options');
@@ -1458,19 +1444,29 @@ test('#12 选项列表：↑↓ 移动 · E 确认 → goto 分支；check 节�
     assert.ok(box.children[0].className.indexOf('selected') >= 0, '顶部越界保持');
     press('ArrowDown'); tick(game);
     assert.ok(box.children[1].className.indexOf('selected') >= 0, '第 2 项选中');
-    // 确认 → goto wrong 分支
+    // 确认「我自己」→ 自信探索分支（保留既有 wrong 内部 ID）
     press('e'); tick(game);
     assert.strictEqual(game._dialog.nodeId, 'l3.dj.wrong');
     assert.strictEqual(box.children.length, 0, '分支台词播放期间清空旧选项及高亮');
     assert.strictEqual(box.textContent, '');
     assert.strictEqual(game._dialog.onEnd, onEnd, 'goto 分支保留完成回调');
     assert.strictEqual(ended, 0, '分支播完前不调用完成回调');
-    advanceDialog(game);
+    for (const line of data.GAME.dialogue['l3.dj.wrong'].lines) advanceDialog(game);
     assert.strictEqual(game.state, STATE.PLAYING);
     assert.strictEqual(ended, 1, '分支结束后调用完成回调一次');
-    // check 节点 once:false → 再次互动可重来
-    press('e'); tick(game);
-    assert.strictEqual(game._dialog.nodeId, 'l3.dj.check');
+    // 使用真实文案验证重选：B → A → B → A，各分支播完都可再次互动。
+    for (const choice of [0, 1, 0]) {
+      press('e'); tick(game);
+      assert.strictEqual(game._dialog.nodeId, 'l3.dj.check');
+      for (const line of data.GAME.dialogue['l3.dj.check'].lines) advanceDialog(game);
+      assert.ok(game._dialog.optionsShown);
+      if (choice === 1) { press('ArrowDown'); tick(game); }
+      press('e'); tick(game);
+      const branchId = data.GAME.dialogue['l3.dj.check'].options[choice].goto;
+      assert.strictEqual(game._dialog.nodeId, branchId);
+      for (const line of data.GAME.dialogue[branchId].lines) advanceDialog(game);
+      assert.strictEqual(game.state, STATE.PLAYING);
+    }
     game.destroy();
   });
 });
