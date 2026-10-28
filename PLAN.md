@@ -117,6 +117,8 @@ MIXXTOPIA/
   同时运行 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` +
   `node tools/test-auth.js` + `node tools/test-account.js` + `node tools/test-cloud.js` +
   `node tools/test-stats.js` + `node tools/test-channels.js` + 浏览器冒烟；六关齐备后恢复全量绿门禁。
+  邮件找回密码另跑 `node tools/test-password-recovery.js` 与
+  `node tools/smoke-password-recovery.js`（配置本地 Playwright 模块路径，全走桩，不发真实邮件）。
 - **发布**：测试期（无稳定 tag）`/` 与 `/preview/` 占位，`/beta/` 用 beta/rc tag 或 `main`；
   首个 `vX.Y.Z` 后 `/` 用 stable tag、`/preview/` 用 `main`、`/beta/` 停用（占位页，不再看 beta tag）。
   三份产物一次构建、一次 Pages 部署。
@@ -176,6 +178,7 @@ MIXXTOPIA/
 ## 8. 当前进度与后续节奏
 
 **已完成（截至 2026-10-27）**
+- [x] #22 邮件找回密码（2026-10-28，本地实现）：登录页入口 + 独立重置页，沿用手写 REST；恢复令牌仅留内存、验证前清除 URL，不替换游戏原登录态或触发云同步。新密码确认、失效链接、发信限流及写入结果不确定均有处理；找回页随活动通道构建。具体接口、验证命令及尚待授权的 SMTP / 回调配置与真实邮件验收见 [PASSWORD_RECOVERY.md](docs/PASSWORD_RECOVERY.md)；本次不写真实后端。
 - [x] M0 项目基建：仓库、CI（pages.yml）、README/LICENSE/.gitignore、Milestones/Labels/Issues 落地
 - [x] #3 游戏设计文档 docs/GAME_DESIGN.md（PR #19）
 - [x] #4 Canvas 渲染引擎：瓦片图集、调色板、摄像机、整数缩放（PR #20）

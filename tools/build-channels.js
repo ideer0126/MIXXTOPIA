@@ -37,7 +37,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // index.html 若引用了未列入的文件，verifyLocalRefs 会直接报错，避免静默漏发。
 const RUNTIME_PATHS = ['index.html', 'styles.css', 'js', 'assets'];
 // 可选根文件：存在才复制，避免自定义域名 / 爬虫配置被三通道构建漏掉。
-const OPTIONAL_RUNTIME_PATHS = ['CNAME', 'robots.txt', 'favicon.ico', 'manifest.webmanifest'];
+const OPTIONAL_RUNTIME_PATHS = ['CNAME', 'robots.txt', 'favicon.ico', 'manifest.webmanifest', 'reset-password.html'];
 const CHANNELS = ['stable', 'beta', 'preview'];
 
 function fail(message) {
@@ -249,11 +249,14 @@ function htmlRefs(html) {
 
 function verifyLocalRefs(dest, expectGame) {
   const html = fs.readFileSync(path.join(dest, 'index.html'), 'utf8');
-  for (const ref of htmlRefs(html)) {
-    const clean = ref.split('?')[0].split('#')[0];
-    if (!clean || clean.endsWith('/')) continue;
-    if (!fs.existsSync(path.resolve(dest, clean))) {
-      fail('index.html 引用了不存在的资源：' + ref + '（' + dest + '）');
+  const pages = ['index.html', 'reset-password.html'].filter(name => fs.existsSync(path.join(dest, name)));
+  for (const page of pages) {
+    for (const ref of htmlRefs(fs.readFileSync(path.join(dest, page), 'utf8'))) {
+      const clean = ref.split('?')[0].split('#')[0];
+      if (!clean || clean.endsWith('/')) continue;
+      if (!fs.existsSync(path.resolve(dest, clean))) {
+        fail(page + ' 引用了不存在的资源：' + ref + '（' + dest + '）');
+      }
     }
   }
   if (expectGame) {
