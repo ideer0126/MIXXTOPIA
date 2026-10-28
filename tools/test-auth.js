@@ -181,6 +181,7 @@ async function test(name, fn) {
     const call = fetch.calls[0];
     assert.strictEqual(call.url, 'https://test.supabase.co/auth/v1/signup');
     assert.strictEqual(call.init.method, 'POST');
+    assert.strictEqual(call.init.redirect, 'error');
     assert.strictEqual(call.init.headers.apikey, 'sb_publishable_test');
     assert.strictEqual(call.init.headers['Content-Type'], 'application/json');
     assert.strictEqual(call.init.headers.Authorization, undefined, '未登录请求不带 Bearer');
@@ -248,6 +249,7 @@ async function test(name, fn) {
 
     const call = fetch.calls[0];
     assert.strictEqual(call.url, 'https://test.supabase.co/auth/v1/token?grant_type=password');
+    assert.strictEqual(call.init.redirect, 'error');
     assert.deepStrictEqual(call.body, { email: USER.email, password: 'secret123' });
   });
 
@@ -301,6 +303,7 @@ async function test(name, fn) {
     assert.strictEqual(session.user.email, USER.email, '续期响应缺 user 时沿用本地用户');
     assert.strictEqual(fetch.calls.length, 1);
     assert.deepStrictEqual(fetch.calls[0].body, { refresh_token: 'stored-refresh' });
+    assert.strictEqual(fetch.calls[0].init.redirect, 'error');
     assert.strictEqual(fetch.calls[0].init.headers.Authorization, undefined);
 
     const stored = JSON.parse(storage.getItem(auth.AUTH_KEY));
@@ -393,6 +396,7 @@ async function test(name, fn) {
     assert.ok(storage.getItem('mixxtopia.save.v1'), '登出不得动本地存档');
     assert.strictEqual(fetch.calls[0].url, 'https://test.supabase.co/auth/v1/logout');
     assert.strictEqual(fetch.calls[0].init.method, 'POST');
+    assert.strictEqual(fetch.calls[0].init.redirect, 'error');
     assert.strictEqual(fetch.calls[0].init.headers.Authorization, 'Bearer stored-access');
 
     // 离线登出：服务端请求失败，本地仍然登出
@@ -536,6 +540,7 @@ async function test(name, fn) {
     assert.strictEqual(result.id, USER.id);
     assert.strictEqual(fetch.calls.length, 2);
     assert.deepStrictEqual(fetch.calls[0].body, { email: USER.email, password: 'old-secret' });
+    assert.ok(fetch.calls.every(call => call.init.redirect === 'error'));
     assert.strictEqual(fetch.calls[1].init.method, 'PUT');
     assert.strictEqual(fetch.calls[1].init.headers.Authorization, 'Bearer access-1');
     assert.deepStrictEqual(fetch.calls[1].body, { password: 'new-secret', current_password: 'old-secret' });

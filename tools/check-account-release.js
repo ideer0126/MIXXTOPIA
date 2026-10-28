@@ -56,7 +56,10 @@ async function checkRelease({ read: get = read, expectedCommit = git(['rev-parse
       if (item.sourceComparison === 'different-runtime') report.blockers.push(item.url + ': deployed runtime sources differ from local HEAD');
       if (item.sourceComparison === 'unknown-commit') report.pending.push(item.url + ': deployed commit cannot be compared locally; verify runtime sources');
     }
-    if (!game) continue;
+    if (!game) {
+      if (info && info.commit) report.blockers.push(item.url + ': missing scripts main');
+      continue;
+    }
     const config = await get(item.url + 'js/cloud-config.js');
     // Parse public constants only; never execute downloaded JavaScript.
     const host = config.text && config.text.match(/url:\s*'(https:\/\/[a-z0-9-]+\.supabase\.co)'/);
@@ -78,6 +81,7 @@ async function checkRelease({ read: get = read, expectedCommit = git(['rev-parse
     if (statsData && statsData.code === '42703') report.blockers.push('Stats migration incomplete: ' + statsData.message);
     else report.pending.push('Verify 0002 columns and merge_stats RPC with an authorized test account; anonymous GET cannot confirm full migration');
     if (auth.status !== 200) report.blockers.push('Auth settings unavailable');
+    else if (authData && authData.disable_signup === true) report.blockers.push('Auth signup is disabled');
   }
   if (!report.channels.some(c => c.game)) report.blockers.push('No game channel is deployed');
   report.ready = report.blockers.length === 0 && report.pending.length === 0;

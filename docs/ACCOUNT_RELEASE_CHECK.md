@@ -11,7 +11,7 @@
 | 检查 | 结果 |
 |---|---|
 | 全部 `js/*.js`、`tools/*.js` 语法；`git diff --check` | 通过 |
-| Node 单测 | 313 项：engine 51、main 125、auth 39、account 21、cloud 38、stats 19、channels 9、level1 11 |
+| Node 单测 | 329 项：engine 51、main 131、auth 49、account 21、cloud 38、stats 19、channels 9、level1 11；不包含另行统计的 6 组发布检查回归 |
 | PostgreSQL 迁移 / RPC / RLS / 删除级联 | PGlite 本地引擎 6 组通过 |
 | 桌面 / 触屏主流程冒烟 | 各 102 项通过，已接入 `stats.js`、统计 UI / RPC 桩、注册与隐私入口 |
 | 桌面 / 触屏输入冒烟 | 各 22 项通过 |

@@ -356,7 +356,7 @@
 
       const headers = config.headers(opts.token);
       headers['Content-Type'] = 'application/json';
-      const init = { method: opts.method || 'POST', headers: headers };
+      const init = { method: opts.method || 'POST', headers: headers, redirect: 'error' };
       if (opts.body) init.body = JSON.stringify(opts.body);
 
       // 超时：浏览器有 AbortController；Node 测试桩不注入时退化为「不主动超时」
