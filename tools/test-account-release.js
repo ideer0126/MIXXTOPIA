@@ -73,6 +73,16 @@ async function snapshot({ comparison = 'same-runtime', statsCode = '42501', miss
     const unavailable = await snapshot({ authStatus: 503, authSettings: { disable_signup: true } });
     assert.deepEqual(unavailable.blockers, ['Auth settings unavailable']);
   });
+  await test('邮箱提供方明确关闭时阻塞注册，缺省配置保持原有行为', async () => {
+    for (const disable_signup of [false, true]) {
+      for (const external of [{ email: false }, { email: true }, {}, null, undefined]) {
+        const report = await snapshot({ authSettings: { disable_signup, external } });
+        const disabled = disable_signup || external?.email === false;
+        assert.deepEqual(report.blockers, disabled ? ['Auth signup is disabled'] : []);
+        assert.equal(report.backends[0].signupEnabled, !disabled);
+      }
+    }
+  });
   await test('已确认的缺列仍报告迁移阻塞', async () => {
     const report = await snapshot({ statsCode: '42703' });
     assert.ok(report.blockers.some(b => b.includes('Stats migration incomplete')));
