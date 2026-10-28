@@ -23,7 +23,7 @@
       }
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = cx + dx, ny = cy + dy, key = nx + ',' + ny;
-        if (prev.has(key) || game.mechanics.blockedAt(nx * 16, ny * 16, 16)) continue;
+        if (prev.has(key) || (game.birthday ? game.birthday.blockedAt(nx * 16, ny * 16) : game.mechanics.blockedAt(nx * 16, ny * 16, 16))) continue;
         prev.set(key, cx + ',' + cy); queue.push([nx, ny]);
       }
     }
@@ -59,7 +59,10 @@
     const area = game._currentArea();
     const npc = game.level.entities.find(e => e.id === id && (!e.room || e.room === (area ? area.id : 'hall')));
     check(npc, '当前房间没有目标：' + id);
-    walkTo(game, npc.x, npc.y);
+    const targets=[[npc.x,npc.y],[npc.x-1,npc.y],[npc.x+1,npc.y],[npc.x,npc.y+1],[npc.x,npc.y-1]];
+    const target=targets.find(([x,y])=>pathTo(game,x,y)!==null);
+    check(target,'没有可接近的互动位置：'+id);
+    walkTo(game, target[0], target[1]);
     check(game._interact(), '无法互动：' + id);
     finishDialogue(game);
   }
@@ -96,19 +99,18 @@
     winRings(game);
     walkTo(game, 7, 21);
     check(game.collected.includes('s1'), '套圈奖励星未收集');
-    check(pathTo(game, 4, 6) === null, '关门时不能进入杂物间');
-    walkTo(game, 6, 8); check(game._interact(), '不能按 E 开门');
-    check(game._entitiesOf('door')[0].open, '杂物间门未打开');
+    check(!game._entitiesOf('door').length, '杂物间不应出现门');
+    check(pathTo(game, 4, 6) !== null, '杂物间应可从开口直接进入');
     walkTo(game, 4, 6);
     check(game.collected.includes('s2'), '杂物间星未收集');
     talkTo(game, record.id);
     check(!record.taken, '对话未完成不能提前取走唱片');
-    walkTo(game, music.x, music.y); check(game._interact(), '唱片机应有前置提示'); finishDialogue(game);
+    walkTo(game, music.x+1, music.y); check(game._interact(), '唱片机应有前置提示'); finishDialogue(game);
     check(!gate.open && !game._playedNodes.has(music.dialogue), '尚未准备好不能播放或开后台');
     for (const id of ['haewon', 'sullyoon', 'jiwoo', 'kyujin']) talkTo(game, id);
     game._syncProgressLocks(); game._checkTriggers(); finishDialogue(game);
     talkTo(game, 'sheep1');
-    walkTo(game, 28, 8);
+    walkTo(game, 29, 7);
     check(game._playedNodes.has('l1.music.ready'), '六人 + 两星后靠近唱片机缺少寻找唱片提示');
     check(!gate.open && pathTo(game, 34, 5) === null, '没播放唱片不能进入后台');
     talkTo(game, record.id);

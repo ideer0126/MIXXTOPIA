@@ -1046,7 +1046,7 @@
       const p = this.player;
       const nx = p.x + dx;
       const ny = p.y + dy;
-      if (!this.mechanics.blockedAt(nx, ny, PLAYER_SIZE)) {
+      if (!(this.birthday ? this.birthday.blockedAt(nx, ny) : this.mechanics.blockedAt(nx, ny, PLAYER_SIZE))) {
         p.x = nx;
         p.y = ny;
         return true;
@@ -4052,16 +4052,24 @@
     /** 官方封套原图与黑胶分开绘制，保留封面，不让生成图改写专辑设计。 */
     _drawRecord(x, y, size) {
       const ctx = this.renderer.ctx;
-      this._drawSceneryAsset({ art: 'cover', x: x + size * 0.35, y, w: size * 0.65, h: size * 0.65 });
-      const px = Math.round(x * TILE - this.camera.x), py = Math.round((y + 0.22) * TILE - this.camera.y);
-      const s = Math.round(size * 10);
-      ctx.fillStyle = 'rgb(31,31,43)'; ctx.fillRect(px + 2, py, s - 4, s); ctx.fillRect(px, py + 3, s, s - 6);
-      ctx.fillStyle = 'rgb(69,64,80)'; ctx.fillRect(px + 3, py + 3, s - 6, 1);
-      ctx.fillStyle = 'rgb(227,161,173)'; ctx.fillRect(px + Math.floor(s / 2) - 2, py + Math.floor(s / 2) - 2, 4, 4);
-      ctx.fillStyle = 'rgb(232,212,171)'; ctx.fillRect(px + Math.floor(s / 2), py + Math.floor(s / 2), 1, 1);
+      const px = x * TILE - this.camera.x, py = y * TILE - this.camera.y;
+      // 原专辑封套与独立黑胶：在三倍细节缓冲中绘制唱片沟槽与反光。
+      ctx.fillStyle = 'rgb(60,46,62)';
+      ctx.fillRect(px + size * 5, py - .33, size * 10, size * 11);
+      this._drawSceneryAsset({ art: 'cover', x: x + size * .35, y, w: size * .65, h: size * .65 });
+      const diameter = size * 12, n = 30, step = diameter / n;
+      for (let iy = 0; iy < n; iy++) for (let ix = 0; ix < n; ix++) {
+        const dx = (ix + .5 - n/2)/(n/2), dy = (iy + .5 - n/2)/(n/2), r = Math.hypot(dx,dy);
+        if (r > 1) continue;
+        const groove = Math.floor(r * 20) % 2;
+        let color = r > .92 ? '#181a24' : groove ? '#353642' : '#252733';
+        if (dx < -.15 && dy < -.1 && r > .35 && r < .86) color = groove ? '#686a76' : '#454854';
+        if (r < .3) color = r < .09 ? '#e9d6ac' : r < .14 ? '#443345' : '#cc8b9e';
+        ctx.fillStyle = color; ctx.fillRect(px + ix * step, py + size * 2 + iy * step, step + .01, step + .01);
+      }
     }
 
-    /** 场景图集只负责绘制；家具脚下的 F/M 瓦片统一决定碰撞。 */
+    /** 场景图集只负责绘制；碰撞由关卡的瓦片或精确脚底矩形决定。 */
     _drawSceneryAsset(d) {
       const lit = d.kind === 'cake' && this.stars >= this._starCount() && d.litArt;
       const src = (this.level.sceneryAssets || {})[lit ? d.litArt : d.art];

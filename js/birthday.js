@@ -9,6 +9,10 @@
     }
     inHall(){ return this.g._currentArea().id==='hall'; }
     direction(dx,dy){if(!dx&&!dy)return 0;return Math.abs(dx)>Math.abs(dy)?(dx>0?1:3):(dy>0?0:2);}
+    blockedAt(x,y,child){
+      const f=child?{x:5,y:10,w:6,h:4}:this.g.level.party.footprint;
+      return this.g.mechanics.blockedAt(x+f.x,y+f.y,f.w,{height:f.h});
+    }
     updatePlayer(dx,dy,dt){
       this.playerMotion.walking=!!(dx||dy);
       this.playerMotion.time=this.playerMotion.walking?this.playerMotion.time+dt:0;
@@ -33,7 +37,7 @@
         if(Math.hypot(e.x*T-this.g.player.x,e.y*T-this.g.player.y)<24)continue;
         const step=Math.min(distance,dt*0.9),nx=e.x+dx/distance*step,ny=e.y+dy/distance*step;
         e._dir=this.direction(dx,dy);
-        if(!this.g.mechanics.blockedAt(nx*T,ny*T,12)){
+        if(!this.blockedAt(nx*T,ny*T,e.age==='child')){
           e.x=nx;e.y=ny;e._walking=true;e._walkDistance=(e._walkDistance||0)+step*T;
         }else{e._waypoint=((e._waypoint||0)+1)%e.path.length;e._rest=.28;}
       }
@@ -173,53 +177,80 @@
         g._drawTalkBubble(px+8-g.camera.x,py+14-h-g.camera.y);
       }
     }
-    drawPerformers(){
+    drawPerformers(actor){
       if(!this.inHall())return;
-      const g=this.g,c=g.renderer.ctx,beat=Math.floor(this.time*5)%2;
+      const g=this.g,c=g.renderer.ctx;
       for(const e of g._entitiesOf('npc')){
-        if(!e.performance||e.room!=='hall'||e._dir)continue;
+        if(e!==actor||!e.performance||e.room!=='hall'||e._dir)continue;
         const x=Math.round(e.x*T+8-g.camera.x),y=Math.round(e.y*T+14+(e.spriteOffsetY||0)*T-g.camera.y);
         if(e.performance==='drums'){
+          const beat=Math.floor(this.time*5)%2;
           c.fillStyle='#d7bb83';
           for(let i=0;i<7;i++){c.fillRect(x-10+i,y-18+(beat?Math.floor(i/2):-Math.floor(i/2)),1,1);c.fillRect(x+4+i,y-18+(beat?-Math.floor(i/2):Math.floor(i/2)),1,1);}
         }else{
-          c.fillStyle='#553848';c.fillRect(x-6,y-19,10,9);c.fillRect(x-8,y-17,14,5);
-          c.fillStyle='#be6b68';c.fillRect(x-6,y-18,10,7);c.fillRect(x-7,y-16,12,3);
-          c.fillStyle='#d8bf91';for(let i=0;i<9;i++)c.fillRect(x+i,y-20-i,2,2);
-          c.fillStyle='#423647';c.fillRect(x-3,y-17,3,3);
-          c.fillStyle='#eed6bd';c.fillRect(x-4+beat*2,y-16,3,2);
+          // 静态抱琴：琴颈、双弧琴身与白色护板，不再移动拨弦像素。
+          for(let i=0;i<12;i++){
+            c.fillStyle='#493441';c.fillRect(x-1+i,y-20-i,3,3);
+            c.fillStyle='#cfb584';c.fillRect(x+i,y-19-i,1,1);
+          }
+          const body=['....dddddd...','...drrrrrrd..','...drrwwsrd..','....drwsrd...','...drrwsrrd..','..drrrwsrrrd.','..drrrwsrrrd.','..drrrwwrrrd.','...drrrrrrd..','....dddddd...'];
+          const colors={d:'#493441',r:'#b73f4f',w:'#eee5d0',s:'#57434a'};
+          body.forEach((row,iy)=>{for(let ix=0;ix<row.length;ix++)if(colors[row[ix]]){
+            c.fillStyle=colors[row[ix]];c.fillRect(x-8+ix,y-19+iy,1,1);
+          }});
+          c.fillStyle='#eed6bd';c.fillRect(x-5,y-12,3,2);
         }
       }
+    }
+    drawDrummerUpperBody(actor){
+      if(!actor)return;
+      const g=this.g,c=g.renderer.ctx;
+      if(typeof c.clip!=='function')return;
+      // 鼓手腿部仍在鼓组后方，上半身和手臂在鼓沿上方完整显示。
+      const x=Math.round(actor.x*T+8-20-g.camera.x);
+      const y=Math.round((actor.y+(actor.spriteOffsetY||0))*T+14-40-g.camera.y);
+      c.save();c.beginPath();c.rect(x,y,40,30);c.clip();
+      this.drawSprite(actor,false);c.restore();this.drawPerformers(actor);
     }
     drawActors(){
       const g=this.g,area=g._currentArea().id;
       const actors=g.level.entities.filter(e=>['npc','guest'].includes(e.type)&&(!e.room||e.room===area));
       const player={type:'player',sprite:2,age:'adult',x:g.player.x/T,y:g.player.y/T,_walking:this.playerMotion.walking};
-      const items=actors.concat(player).map(e=>({foot:e.y+1+(e.spriteOffsetY||0),actor:e}));
+      const items=actors.concat(player).map(e=>({foot:e.y+14/T+(e.spriteOffsetY||0),actor:e}));
       if(this.inHall()){
         for(const d of g.level.decorations){
-          if(d.room==='hall'&&d.collision)items.push({foot:d.y+d.h,object:d});
+          if(d.room==='hall'&&d.collision)items.push({foot:d.depth===undefined?d.collision.y+d.collision.h:d.depth,object:d});
         }
       }
+      const record=this.inHall()&&g._entitiesOf('record')[0];
+      if(record&&!record.taken){const cabinet=g.level.decorations.find(d=>d.room==='hall'&&d.kind==='recordCabinet');
+        items.push({foot:cabinet.depth,record:true});}
       items.sort((a,b)=>a.foot-b.foot);
       const img=g._sceneryImages.get(g.level.sceneryAssets.birthdayHall);
       for(const item of items){
-        if(item.actor){this.drawSprite(item.actor,item.actor===player);continue;}
+        if(item.record){const r=g.level.party.recordVisual;g._drawRecord(r.x,r.y,r.size);continue;}
+        if(item.actor){this.drawSprite(item.actor,item.actor===player);if(item.actor.performance!=='drums')this.drawPerformers(item.actor);continue;}
         if(!img||!img.complete||!img.naturalWidth)continue;
         const d=item.object;
         // 原图同位置取样，只重画家具占地，按脚下深度遮挡人物。
         ctxDraw(g,img,d);
-      }
-      this.drawPerformers();
-      if(this.inHall()){
-        const record=g._entitiesOf('record')[0];
-        if(record&&!record.taken)g._drawRecord(6.8,5.9,.8);
+        if(d.kind==='drums')this.drawDrummerUpperBody(actors.find(e=>e.performance==='drums'));
       }
     }
   }
   function ctxDraw(g,img,d){
+    const ctx=g.renderer.ctx,shapes=d.occlusionShapes||(d.occlusionShape?[d.occlusionShape]:null);
+    if(shapes && typeof ctx.clip==='function'){
+      ctx.save();ctx.beginPath();
+      for(const shape of shapes){
+        shape.forEach((p,i)=>{const x=(d.x+p[0]*d.w)*T-g.camera.x,y=(d.y+p[1]*d.h)*T-g.camera.y;
+          if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.closePath();
+      }
+      ctx.clip();
+    }
     g.renderer.ctx.drawImage(img,d.x/40*img.naturalWidth,d.y/28*img.naturalHeight,d.w/40*img.naturalWidth,d.h/28*img.naturalHeight,
       Math.round(d.x*T-g.camera.x),Math.round(d.y*T-g.camera.y),d.w*T,d.h*T);
+    if(shapes && typeof ctx.clip==='function')ctx.restore();
   }
   root.MIXX=root.MIXX||{};root.MIXX.Birthday=Birthday;
 })(typeof window!=='undefined'?window:globalThis);

@@ -107,7 +107,7 @@ test('礼堂 / 后台对话与角色齐全；出口落点不能指向墙体或�
   const g = clone(v.selectLevel(game, 1));
   g.levels[0].entities = g.levels[0].entities.filter(e => !(e.type === 'npc' && e.room === 'backstage' && e.id === 'byeori'));
   const R = v.makeReport(); v.rule8(g, R); assert.ok(R.errors.length);
-  for (const target of [{ x: 0, y: 0 }, { x: 28, y: 5 }, { x: 99, y: 4 }]) {
+  for (const target of [{ x: 0, y: 0 }, { x: 13, y: 6 }, { x: 99, y: 4 }]) {
     const bad = clone(v.selectLevel(game, 1));
     bad.levels[0].entities.find(e => e.id === 'to-backstage').to = target;
     const r = v.makeReport(); v.rule5(bad, r); assert.ok(r.errors.length);

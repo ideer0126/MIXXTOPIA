@@ -128,6 +128,15 @@ function isWall(level, x, y) {
   return ch === '#' || legendName(level, ch) === 'wall';
 }
 
+/** 精确碰撞关卡按脚底范围判断静态家具，保持状态搜索与运行时一致。 */
+function furnitureBlocks(level, x, y) {
+  const party=level.party;if(!party||!party.preciseCollision)return false;
+  const f=party.footprint;if(!f||![f.x,f.y,f.w,f.h].every(Number.isFinite))return true;
+  const px=x+f.x/16,py=y+f.y/16,w=f.w/16,h=f.h/16;
+  return (party.colliders||[]).concat((level.decorations||[]).filter(d=>d.room==='hall'&&d.collision).map(d=>d.collision))
+    .some(r=>px<r.x+r.w&&px+w>r.x&&py<r.y+r.h&&py+h>r.y);
+}
+
 function isWater(level, x, y) {
   return legendName(level, tileAt(level, x, y)) === 'water';
 }
@@ -296,14 +305,23 @@ function rule2(game, R) {
         R.err('规则 2', tag + ' ' + label(e) + ' 叠放在水域上，仅允许 WATER/STEPSTONE/浅滩星');
       }
     }
+    if(lv.party && lv.party.preciseCollision){
+      const f=lv.party.footprint;
+      if(!f || ![f.x,f.y,f.w,f.h].every(Number.isFinite) || f.x<0 || f.y<0 || f.w<=0 || f.h<=0 || f.x+f.w>16 || f.y+f.h>16)
+        R.err('规则 2',tag+' 脚底范围必须是人物瓦片内的有效矩形');
+      for(const r of lv.party.colliders||[])if(![r.x,r.y,r.w,r.h].every(Number.isFinite)||r.x<0||r.y<0||r.w<=0||r.h<=0||r.x+r.w>lv.map.w||r.y+r.h>lv.map.h)
+        R.err('规则 2',tag+' 精确墙脚碰撞必须在地图范围内');
+    }
     for (const d of lv.decorations || []) {
       if (!d.collision) continue;
       const r = d.collision;
-      if (![r.x, r.y, r.w, r.h].every(Number.isInteger) || r.w <= 0 || r.h <= 0
+      const precise = lv.party && lv.party.preciseCollision && d.room === 'hall';
+      if (![r.x, r.y, r.w, r.h].every(precise ? Number.isFinite : Number.isInteger) || r.w <= 0 || r.h <= 0
         || r.x < 0 || r.y < 0 || r.x + r.w > lv.map.w || r.y + r.h > lv.map.h) {
-        R.err('规则 2', tag + ' 家具 ' + d.kind + ' collision 必须是地图内的整数矩形');
+        R.err('规则 2', tag + ' 家具 ' + d.kind + (precise ? ' collision 必须是地图内的有限数值矩形' : ' collision 必须是地图内的整数矩形'));
         continue;
       }
+      if (precise) continue;
       let missing = false;
       for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
         if (!isWall(lv, x, y)) missing = true;
@@ -422,7 +440,7 @@ function rule5(game, R) {
         const p = e.to;
         if (!p || !Number.isInteger(p.x) || !Number.isInteger(p.y)
           || p.x < 0 || p.y < 0 || p.x >= lv.map.w || p.y >= lv.map.h
-          || isWall(lv, p.x, p.y) || isWater(lv, p.x, p.y)
+          || isWall(lv, p.x, p.y) || furnitureBlocks(lv,p.x,p.y) || isWater(lv, p.x, p.y)
           || (p.x === e.x && p.y === e.y)) {
           R.err('规则 5', tag + ' roomdoor "' + e.id + '" 的落点必须是有效地面，且不能指回自身');
         }
@@ -923,7 +941,7 @@ function staticReachability(lv) {
 
   const passable = (x, y) => {
     if (x < 0 || y < 0 || x >= lv.map.w || y >= lv.map.h) return false;
-    if (isWall(lv, x, y)) return false;
+    if (isWall(lv, x, y) || furnitureBlocks(lv,x,y)) return false;
     if (isWater(lv, x, y)) {
       const w = waters.find(w => w.x === x && w.y === y);
       return stones.has(x + ',' + y) || !!(w && w.shallow === true); // high/low 并集
@@ -1041,7 +1059,7 @@ function stateSearch(lv, dialogue = {}) {
   /** 动态可站立判定（st = {pos, boxesSet, lit, waterLevel, windOffset}） */
   const standable = (x, y, st) => {
     if (x < 0 || y < 0 || x >= lv.map.w || y >= lv.map.h) return false;
-    if (isWall(lv, x, y)) return false;
+    if (isWall(lv, x, y) || furnitureBlocks(lv,x,y)) return false;
     const k = x + ',' + y;
     if (st.boxesSet.has(k)) return false;
     if (doorAt.has(k) && !st.openDoors.includes(doorAt.get(k).id)) return false;
