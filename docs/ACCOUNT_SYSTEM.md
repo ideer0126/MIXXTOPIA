@@ -204,6 +204,8 @@ match /users/{uid} {
 
 ## 10. 安全与隐私
 
+- **忘记密码（#22，本地实现）**：登录页链接到同一通道的独立 `reset-password.html`；申请邮件并用邮件恢复令牌验证身份后重置密码。该流程不启动游戏、不恢复或改写原有登录态，恢复凭据仅留内存、验证前清除 URL，不读取或修改本机存档 / 设置 / 统计。真实投递、SMTP / 回调 allowlist 和已部署页面验收尚待完成，流程与本地测试见 [PASSWORD_RECOVERY.md](PASSWORD_RECOVERY.md)。
+
 - **anon key 是公开的**（新控制台叫 **publishable key**，`sb_publishable_...`；旧的 JWT 版 anon key 在 Legacy 页签，两者等价），安全边界只在 RLS；测试必须包含「A 用户 token 读 B 用户存档 → 失败」用例
 - 只存游戏所需：昵称、固定头像 id、偏好、存档、统计；邮箱由 Auth 托管，不复制进业务表
 - **删除账户**：前端只有 publishable key，**不能**直接删除 `auth.users`（需仅在服务端使用的特权密钥；删 `profiles` 等业务行也不等于删账号）。当前定为**人工处理流程**（#44 已实现入口）：账户设置页「删除账户（提交申请）」跳转预填标题/说明的 GitHub issue 模板，维护者核实后通过 Supabase 后台删除 `auth.users`，`profiles/saves/stats` 由外键级联删除，不可恢复。若后续要提供自助删除，须先增加受信任的服务端端点（持 `service_role` 的 Edge Function，或仅授 `authenticated` 的 `security definer` RPC），单独评审并补测试；在该端点落地前，文案不承诺即时自助删除

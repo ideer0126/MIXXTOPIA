@@ -56,6 +56,11 @@
     busy: '正在修改密码，请稍候',
     reauthentication_needed: '请重新登录并完成身份验证后再修改密码',
     password_update_uncertain: '未能确认修改结果，请尝试用新密码登录后再操作。本机存档不受影响。',
+    invalid_recovery_link: '重置链接不完整，请重新申请密码重置邮件。',
+    recovery_expired: '重置链接已失效或已使用，请重新申请邮件。',
+    recovery_cancelled: '本次密码重置已结束，请重新申请邮件。',
+    recovery_busy: '正在处理密码重置，请稍候。',
+    email_delivery_unavailable: '重置邮件暂时无法发送，请稍后重试或联系维护者。',
     validation_failed: '邮箱或密码格式不正确',
     forbidden: '没有权限执行此操作',
     // 网络 / 配置 / 服务端
@@ -173,6 +178,12 @@
     }
     if (code === 'same_password' || hasAny(text, ['same password'])) {
       return new AuthError('same_password', statusCode);
+    }
+    if (['otp_expired', 'otp_disabled', 'bad_jwt', 'session_expired'].includes(code)) {
+      return new AuthError('recovery_expired', statusCode);
+    }
+    if (['email_address_not_authorized', 'email_address_invalid', 'email_provider_disabled'].includes(code)) {
+      return new AuthError('email_delivery_unavailable', statusCode);
     }
     if (code === 'current_password_required') return new AuthError('missing_current_password', statusCode);
     if (code === 'current_password_mismatch') return new AuthError('wrong_current_password', statusCode);
@@ -653,6 +664,106 @@
     return new AuthClient(opts);
   }
 
+  /**
+   * Standalone password recovery. Never restores, persists or emits a game session:
+   * opening an email link must not authorize cloud-save merges or replace another user.
+   */
+  class RecoveryClient extends AuthClient {
+    constructor(opts) {
+      super(Object.assign({}, opts, { storage: null }));
+      this._recovery = null;
+      this._recoveryBusy = false;
+      this._recoveryEpoch = 0;
+    }
+
+    getRecoveryUser() {
+      return this._recovery ? normalizeUser(this._recovery.user) : null;
+    }
+
+    cancelRecovery() {
+      this._recoveryEpoch++;
+      this._recovery = null;
+    }
+
+    async requestPasswordReset(email, redirectTo) {
+      const cleanEmail = normalizeEmail(email);
+      const problem = validateEmail(cleanEmail);
+      if (problem) throw new AuthError(problem);
+      // Only the controller supplies this URL; GoTrue also enforces its redirect allowlist.
+      let target;
+      try { target = new this.root.URL(redirectTo); } catch (err) { throw new AuthError('invalid_recovery_link'); }
+      const local = ['localhost', '127.0.0.1', '[::1]'].includes(target.hostname);
+      if (target.protocol !== 'https:' && !(target.protocol === 'http:' && local)) throw new AuthError('invalid_recovery_link');
+      target.hash = '';
+      target.search = '';
+      if (this._recoveryBusy) throw new AuthError('recovery_busy');
+      this.cancelRecovery();
+      this._recoveryBusy = true;
+      const epoch = this._recoveryEpoch;
+      try {
+        const data = await this._request('/recover?redirect_to=' + encodeURIComponent(target.href), {
+          body: { email: cleanEmail },
+        });
+        if (epoch !== this._recoveryEpoch) throw new AuthError('recovery_cancelled');
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new AuthError('invalid_response');
+        return true; // Same result for registered and unknown emails.
+      } catch (err) {
+        if (epoch !== this._recoveryEpoch) throw new AuthError('recovery_cancelled');
+        if (err.code === 'user_not_found') return true;
+        throw err;
+      } finally { this._recoveryBusy = false; }
+    }
+
+    async verifyRecovery(accessToken) {
+      if (this._recoveryBusy) throw new AuthError('recovery_busy');
+      this.cancelRecovery();
+      if (typeof accessToken !== 'string' || !accessToken || accessToken.length > 16384) {
+        throw new AuthError('invalid_recovery_link');
+      }
+      const epoch = this._recoveryEpoch;
+      this._recoveryBusy = true;
+      try {
+        const raw = await this._request('/user', { method: 'GET', token: accessToken });
+        if (epoch !== this._recoveryEpoch) throw new AuthError('recovery_cancelled');
+        const user = normalizeUser(raw);
+        if (!user.id || !user.email) throw new AuthError('invalid_response');
+        this._recovery = { token: accessToken, user };
+        return normalizeUser(user);
+      } catch (err) {
+        if (epoch !== this._recoveryEpoch) throw new AuthError('recovery_cancelled');
+        if (['invalid_credentials', 'forbidden', 'invalid_refresh_token'].includes(err.code)) throw new AuthError('recovery_expired');
+        throw err;
+      } finally { this._recoveryBusy = false; }
+    }
+
+    async resetPassword(password) {
+      const problem = validatePassword(password);
+      if (problem) throw new AuthError(problem);
+      if (this._recoveryBusy) throw new AuthError('recovery_busy');
+      if (!this._recovery) throw new AuthError('recovery_expired');
+      const recovery = this._recovery, epoch = this._recoveryEpoch;
+      this._recoveryBusy = true;
+      try {
+        const user = await this._request('/user', { method: 'PUT', token: recovery.token, body: { password } });
+        if (epoch !== this._recoveryEpoch) throw new AuthError('recovery_cancelled');
+        if (!user || user.id !== recovery.user.id) throw new AuthError('invalid_response');
+        this.cancelRecovery();
+        return normalizeUser(user);
+      } catch (err) {
+        if (epoch !== this._recoveryEpoch) throw new AuthError('recovery_cancelled');
+        if (['network', 'timeout', 'server', 'invalid_response'].includes(err.code)) {
+          this.cancelRecovery();
+          throw new AuthError('password_update_uncertain', err.status);
+        }
+        if (['invalid_credentials', 'forbidden', 'invalid_refresh_token', 'recovery_expired'].includes(err.code)) {
+          this.cancelRecovery();
+          throw new AuthError('recovery_expired', err.status);
+        }
+        throw err;
+      } finally { this._recoveryBusy = false; }
+    }
+  }
+
   root.MIXX = root.MIXX || {};
   root.MIXX.auth = Object.freeze({
     AUTH_KEY: AUTH_KEY,
@@ -662,6 +773,8 @@
     ERROR_MESSAGES: ERROR_MESSAGES,
     AuthError: AuthError,
     AuthClient: AuthClient,
+    RecoveryClient: RecoveryClient,
+    createRecoveryClient: function (opts) { return new RecoveryClient(opts); },
     createClient: createClient,
     mapError: mapError,
     normalizeEmail: normalizeEmail,

@@ -225,6 +225,24 @@ try {
     }
   });
 
+  test('密码找回页随活动通道发布，返回 / 回调链接保留通道，无游戏启动脚本', () => {
+    for (const dir of [path.join(testing, 'beta'), stable, path.join(stable, 'preview')]) {
+      const html = read(path.join(dir, 'reset-password.html'));
+      assert.ok(html.includes('href="index.html"'));
+      assert.ok(read(path.join(dir, 'index.html')).includes('href="reset-password.html"'));
+      assert.ok(html.includes('content="no-referrer"'));
+      assert.ok(hasNoindex(html));
+      assert.ok(!html.includes('js/main.js'));
+      for (const name of ['cloud-config.js', 'auth.js', 'password-recovery.js']) {
+        assert.ok(html.includes('src="js/' + name + '"'));
+        assert.ok(fs.existsSync(path.join(dir, 'js', name)));
+      }
+    }
+    for (const dir of [testing, path.join(testing, 'preview'), path.join(stable, 'beta')]) {
+      assert.ok(!fs.existsSync(path.join(dir, 'reset-password.html')), '占位通道不应开放找回页');
+    }
+  });
+
   test('稳定版后禁止同时构建 beta', () => {
     let error = null;
     const forbidden = path.join(tmp, 'forbidden');

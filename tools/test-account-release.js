@@ -39,6 +39,7 @@ async function snapshot({ comparison = 'same-runtime', statsCode = '42501', miss
         calls.push(args);
         if (args[0] === 'rev-parse') return args[2].startsWith('6d91a27') && !same ? 'b'.repeat(40) : 'a'.repeat(40);
         assert.ok(args.includes('--')); assert.ok(args.includes('assets')); assert.ok(args.includes('manifest.webmanifest'));
+        assert.ok(args.includes('reset-password.html'));
         assert.ok(!args.includes('tools')); assert.ok(!args.includes('docs'));
         return changes;
       };

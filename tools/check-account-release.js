@@ -8,7 +8,7 @@ const { execFileSync } = require('child_process');
 const repo = path.resolve(__dirname, '..');
 const base = 'https://ideer0126.github.io/MIXXTOPIA/';
 // Match build-channels.js's source allowlist. Generated channel metadata is excluded.
-const runtimePaths = ['index.html', 'styles.css', 'js', 'assets',
+const runtimePaths = ['index.html', 'reset-password.html', 'styles.css', 'js', 'assets',
   'CNAME', 'robots.txt', 'favicon.ico', 'manifest.webmanifest'];
 function git(args) {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();

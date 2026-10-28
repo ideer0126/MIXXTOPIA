@@ -179,8 +179,12 @@ const B = '22222222-2222-2222-2222-222222222222';
       game._setState('paused'); game._update(3);
       game._setState('dialogue'); game._update(3);
       game._setState('playing');
-      const star = game.level.entities.find(e => e.type === 'star');
+      // The first star may be a locked minigame reward. Use an actually available
+      // pickup so this account/statistics check preserves the level's progression.
+      const star = game.level.entities.find(e => e.type === 'star' && game._starAvailable(e));
+      if (!star) throw Error('Expected an unlocked star in the real first level');
       level1Playthrough.walkTo(game, star.x, star.y);
+      if (!game.collected.includes(star.id)) throw Error('Expected the walked-to star to be collected');
       game._setState('paused'); return { time, after: game.stats.record.seconds };
     });
     assert.equal(measured.time, 2.5); assert.equal(measured.after, 2.5);
