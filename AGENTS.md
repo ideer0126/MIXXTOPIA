@@ -1,50 +1,63 @@
-# AGENTS.md —— AI 智能体行为规范
+# AGENTS.md — Rules for AI Agents
 
-> 本文件规范在本仓库工作的所有 AI 编码智能体（Copilot / Codex / 自定义 Agent 等）。
-> 规范优先于智能体自身的「高效自动化」倾向：**多问一句，比多做一步更安全。**
+> This file governs all AI coding agents working in this repository (Copilot, Codex, custom agents, etc.).
+> These rules take precedence over an agent's preference for efficient automation: **Asking one more question is safer than taking one extra action.**
 
-## 1. 铁律（必须遵守）
+## 1. Mandatory Rules
 
-1. **不自动提交代码**
-   禁止在未经人类明确许可时执行 `git commit`、`git commit --amend`、`git stash` 等任何
-   产生或改动提交的操作。代码改完后，先汇报变更内容与验证结果，**停下等待**
-   「提交」指令。
+1. **Do not commit code automatically.**
+   Do not run `git commit`, `git commit --amend`, `git stash`, or any other operation that
+   creates or modifies commits without explicit human permission. After making changes,
+   report the changes and validation results, then **stop and wait** for an instruction to commit.
 
-2. **不自动做出后台监视行为**
-   禁止未经许可启动后台轮询、监视、长时观察类任务（例如轮询 CI 状态、监视 PR 评审
-   进度、定时抓取评论）。需要等待某个结果时，直接告知人类「结果预计何时出现、
-   何时可以回来查看」，由人类决定是否需要监视。
+2. **Do not start background monitoring automatically.**
+   Do not start background polling, monitoring, or prolonged observation without permission
+   (for example, polling CI status, monitoring PR review progress, or periodically fetching comments).
+   When waiting for a result, tell the human when it is expected and when they can check again.
+   Let the human decide whether monitoring is needed.
 
-3. **不自动推送与操作远端**（与第 1 条同一精神）
-   `git push`（含 `--force`、`--force-with-lease`）与一切 GitHub 远端操作——
-   创建 PR、修改 PR 状态（草稿/转正/关闭/重开）、发评论、@ 触发评审机器人、
-   打标签/指派/里程碑等——**逐项征求人类同意后再执行**。
+3. **Do not push or perform remote operations automatically.** (Same principle as rule 1.)
+   Obtain **separate human approval for each action** before running `git push` (including
+   `--force` and `--force-with-lease`) or performing any GitHub remote operation: creating PRs,
+   changing PR status (draft, ready for review, closed, or reopened), posting comments,
+   mentioning review bots to trigger reviews, adding labels, assigning people or milestones, etc.
 
-4. **不改动仓库治理配置**
-   `.github/`（工作流、CODEOWNERS 等）、分支规则集/保护规则、评审机器人配置
-   （.coderabbit.yaml 等）一律不自动修改；发现问题先报告，由人类决定。
+4. **Do not modify repository governance configuration automatically.**
+   Do not automatically change `.github/` (workflows, CODEOWNERS, etc.), branch rulesets or
+   protection rules, or review bot configuration such as `.coderabbit.yaml`.
+   Report any issues first and let the human decide.
 
-## 2. 允许的自动行为
+## 2. Allowed Automatic Actions
 
-- 本地文件读写、分支创建与切换、`git status` / `git diff` 等只读查询；
-- 本地验证：`node --check`、`node tools/test-engine.js`、静态服务器 + 无头浏览器冒烟；
-- 向人类**汇报**以上任何结果。
+- Read and write local files, create and switch branches, and run read-only queries such as `git status` and `git diff`.
+- Run local validation: `node --check`, `node tools/test-engine.js`, and smoke tests using a local static server and a headless browser.
+- **Report** the results of these actions to the human.
 
-判断标准：**凡是只在本地产生效果、可随时撤销的操作可以自动；凡是写远端、
-不可轻易撤销、或会打扰人类（通知/评论/轮询）的操作必须先确认。**
+Decision rule: **Actions that only affect the local environment and are readily reversible may
+be performed automatically. Actions that write to remote systems, are difficult to reverse,
+or disturb people (notifications, comments, or polling) require prior approval.**
 
-## 3. 工作流约定
+## 3. Workflow Conventions
 
-1. 接到任务先读 `PLAN.md`、`docs/GAME_DESIGN.md` 与本文件，遵守仓库现有约定
-   （分支命名 `feat/<issue号>-<slug>`、Conventional Commits 等）。
-2. 改动完成后跑仓库质量门禁（PLAN.md §4），汇报：**变更文件 + 验证结果 +
-   下一步建议**，然后停下等待指示。
-3. 需要提交/推送/开 PR 等远端动作时，把计划**逐条列出征求同意**，而不是直接执行。
-4. 汇报保持简洁，不要替人类做「顺手就办了」的远端决策。
+1. At the start of a task, read `PLAN.md`, `docs/GAME_DESIGN.md`, and this file. Follow the
+   repository's existing conventions, including branch names (`feat/<issue-number>-<slug>`)
+   and Conventional Commits.
+2. After making changes, run the repository quality gates (PLAN.md §4), report the
+   **changed files, validation results, and recommended next steps**, then stop and wait for instructions.
+3. When commits, pushes, PR creation, or other remote actions are needed, **list the planned
+   actions individually and request approval** instead of executing them immediately.
+4. Keep reports concise. Do not make remote decisions on the human's behalf just because
+   they seem convenient to handle along the way.
+5. When reasoning about design or implementation decisions, consult similar open-source
+   games where practical. Prefer proven approaches and reuse suitable existing solutions
+   rather than reinventing the wheel, while respecting this project's constraints and any
+   applicable licenses.
 
-## 4. 制定缘由
+## 4. Why These Rules Exist
 
-- 2026-10-21（Issue #5 期间）：智能体未经确认多次提交，并在用户未要求时启动
-  后台监视任务轮询 CodeRabbit 评审进度，均被人类叫停 —— 由此形成第 1 节铁律。
-- 同日：分支被仓库规则集拦截推送后，智能体自行关闭并重开 PR、自行 @ 评审机器人，
-  属于越权的远端操作 —— 由此形成第 1 条第 3 款。
+- On 2026-10-21 (during Issue #5), an agent committed changes several times without confirmation
+  and started background polling of CodeRabbit review progress without being asked. The human
+  stopped both behaviors, leading to the mandatory rules in section 1.
+- On the same day, after a branch ruleset blocked a push, the agent closed and reopened the PR
+  and mentioned a review bot on its own initiative. These unauthorized remote operations led
+  to section 1, rule 3.
