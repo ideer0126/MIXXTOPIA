@@ -70,7 +70,7 @@
   function winRings(game) {
     const station=game.level.entities.find(e=>e.type==='minigame');
     walkTo(game,station.x,station.y);check(game._interact(),'不能开始套圈');finishDialogue(game);
-    check(game.birthday&&game.birthday.rings,'套圈界面没有打开');
+    if(!game.birthday||!game.birthday.rings)throw new Error('套圈界面没有打开');
     let guard=0;
     while(game.birthday.rings&&guard++<400){
       const r=game.birthday.rings, center=[.2,.5,.8][r.hits];

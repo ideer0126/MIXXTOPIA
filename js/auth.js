@@ -49,6 +49,13 @@
     not_signed_in: '尚未登录',
     user_not_found: '账户不存在，请先注册',
     same_password: '新密码不能与旧密码相同',
+    missing_current_password: '请填写当前密码',
+    wrong_current_password: '当前密码不正确，请重新输入',
+    password_mismatch: '两次输入的新密码不一致',
+    account_changed: '账户已变化，请重新登录后修改密码',
+    busy: '正在修改密码，请稍候',
+    reauthentication_needed: '请重新登录并完成身份验证后再修改密码',
+    password_update_uncertain: '未能确认修改结果，请尝试用新密码登录后再操作。本机存档不受影响。',
     validation_failed: '邮箱或密码格式不正确',
     forbidden: '没有权限执行此操作',
     // 网络 / 配置 / 服务端
@@ -167,6 +174,11 @@
     if (code === 'same_password' || hasAny(text, ['same password'])) {
       return new AuthError('same_password', statusCode);
     }
+    if (code === 'current_password_required') return new AuthError('missing_current_password', statusCode);
+    if (code === 'current_password_mismatch') return new AuthError('wrong_current_password', statusCode);
+    if (['reauthentication_needed', 'reauthentication_not_valid', 'insufficient_aal'].includes(code)) {
+      return new AuthError('reauthentication_needed', statusCode);
+    }
     if (code === 'validation_failed' || hasAny(text, ['validation failed'])) {
       return new AuthError('validation_failed', statusCode);
     }
@@ -217,6 +229,7 @@
       this._listeners = [];
       this._generation = 0;   // 登录/登出后，旧的恢复与续期结果失效
       this._refreshing = null; // 并发续期去重
+      this._changingPassword = false;
     }
 
     /** 云端配置是否可用（未配置时所有请求直接失败，不发起网络） */
@@ -343,7 +356,7 @@
 
       const headers = config.headers(opts.token);
       headers['Content-Type'] = 'application/json';
-      const init = { method: opts.method || 'POST', headers: headers };
+      const init = { method: opts.method || 'POST', headers: headers, redirect: 'error' };
       if (opts.body) init.body = JSON.stringify(opts.body);
 
       // 超时：浏览器有 AbortController；Node 测试桩不注入时退化为「不主动超时」
@@ -364,8 +377,14 @@
       }
 
       let res;
+      let data = null;
       try {
         res = await fetchFn(url, init);
+        // Cover body consumption too, so credential requests cannot hang after headers.
+        if (res && typeof res.json === 'function') {
+          try { data = await res.json(); }
+          catch (err) { if (timedOut) throw new AuthError('timeout'); }
+        }
       } catch (err) {
         if (timedOut) throw new AuthError('timeout');
         if (err instanceof AuthError) throw err;
@@ -374,10 +393,6 @@
         if (timer !== null && typeof clearTimeout === 'function') clearTimeout(timer);
       }
 
-      let data = null;
-      if (res && typeof res.json === 'function') {
-        try { data = await res.json(); } catch (e) { data = null; }
-      }
       const ok = res && typeof res.ok === 'boolean'
         ? res.ok
         : !!res && Number(res.status) >= 200 && Number(res.status) < 300;
@@ -489,6 +504,67 @@
       if (!session) throw new AuthError('invalid_response');
       this._applySession(session, 'signin');
       return session;
+    }
+
+    /** Reauthenticate this account before PUT /user; never retain password fields.
+     * A fresh password session also satisfies secure password change's recent-login rule.
+     * No automatic write retries: a lost response may already have changed the password.
+     */
+    async changePassword(currentPassword, newPassword) {
+      if (this._changingPassword) throw new AuthError('busy');
+      if (typeof currentPassword !== 'string' || !currentPassword) throw new AuthError('missing_current_password');
+      const problem = validatePassword(newPassword);
+      if (problem) throw new AuthError(problem);
+      if (currentPassword === newPassword) throw new AuthError('same_password');
+      const original = this.session;
+      if (!original || !original.user || !original.user.id || !original.user.email) throw new AuthError('not_signed_in');
+      const uid = original.user.id;
+      let generation = this._generation;
+      const assertOwner = () => {
+        if (generation !== this._generation || !this.session || this.session.user.id !== uid) throw new AuthError('account_changed');
+        if (this.storage && !this.writeFailed) {
+          const stored = this._readSession();
+          if (!stored || stored.user.id !== uid || stored.accessToken !== this.session.accessToken
+            || stored.refreshToken !== this.session.refreshToken) throw new AuthError('account_changed');
+        }
+      };
+      assertOwner();
+      this._changingPassword = true;
+      try {
+        let data;
+        try {
+          data = await this._request('/token?grant_type=password', {
+            body: { email: original.user.email, password: currentPassword },
+          });
+        } catch (err) {
+          assertOwner();
+          if (err.code === 'invalid_credentials') throw new AuthError('wrong_current_password', err.status);
+          throw err;
+        }
+        assertOwner();
+        const verified = this._sessionFromResponse(data, null);
+        if (!verified || verified.user.id !== uid || verified.user.email !== original.user.email || !verified.refreshToken) {
+          throw new AuthError('invalid_response');
+        }
+        // Invalidate pre-reauthentication refreshes before publishing the new session.
+        generation = ++this._generation;
+        this._refreshing = null;
+        this._applySession(verified, 'reauthenticate');
+        assertOwner();
+        let user;
+        try {
+          user = await this._request('/user', { method: 'PUT', token: verified.accessToken,
+            body: { password: newPassword, current_password: currentPassword } });
+        } catch (err) {
+          assertOwner();
+          if (['network', 'timeout'].includes(err.code)) throw new AuthError('password_update_uncertain', err.status);
+          throw err;
+        }
+        assertOwner();
+        if (!user || user.id !== uid) throw new AuthError('password_update_uncertain');
+        this._emit('password_changed');
+        return normalizeUser(user);
+      } finally { this._changingPassword = false; }
     }
 
     /**
