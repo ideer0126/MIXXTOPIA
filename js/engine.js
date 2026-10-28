@@ -1704,7 +1704,7 @@
   /* ════════════════════════ 公开 API ════════════════════════ */
 
   const engine = {
-    VERSION: '0.4.0',
+    VERSION: '0.5.0',
     TILE: TILE,
     VIEW_W: VIEW_W,
     VIEW_H: VIEW_H,
