@@ -46,21 +46,24 @@ class FakeContext {
     this.fillStyle = '#000000';
     this._tx = 0;
     this._ty = 0;
+    this._sx = 1;
+    this._sy = 1;
     this._stack = [];
   }
   _realloc() {
     this.pixels = new Uint8ClampedArray(this.canvas.width * this.canvas.height * 4);
   }
   save() {
-    this._stack.push([this._tx, this._ty, this.fillStyle]);
+    this._stack.push([this._tx, this._ty, this.fillStyle, this._sx, this._sy]);
   }
   restore() {
-    if (this._stack.length) [this._tx, this._ty, this.fillStyle] = this._stack.pop();
+    if (this._stack.length) [this._tx, this._ty, this.fillStyle, this._sx, this._sy] = this._stack.pop();
   }
   translate(x, y) {
-    this._tx += x;
-    this._ty += y;
+    this._tx += x * this._sx;
+    this._ty += y * this._sy;
   }
+  scale(x, y) { this._sx *= x; this._sy *= y; }
   createImageData(w, h) {
     return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
   }
@@ -84,10 +87,10 @@ class FakeContext {
     const m = RGB_RE.exec(String(this.fillStyle));
     if (!m) return; // 非 rgb() 格式桩内忽略
     const c = [Number(m[1]), Number(m[2]), Number(m[3])];
-    const x0 = Math.max(0, Math.floor(x + this._tx));
-    const y0 = Math.max(0, Math.floor(y + this._ty));
-    const x1 = Math.min(this.canvas.width, Math.ceil(x + this._tx + w));
-    const y1 = Math.min(this.canvas.height, Math.ceil(y + this._ty + h));
+    const x0 = Math.max(0, Math.floor(x * this._sx + this._tx));
+    const y0 = Math.max(0, Math.floor(y * this._sy + this._ty));
+    const x1 = Math.min(this.canvas.width, Math.ceil((x + w) * this._sx + this._tx));
+    const y1 = Math.min(this.canvas.height, Math.ceil((y + h) * this._sy + this._ty));
     for (let py = y0; py < y1; py++) {
       for (let px = x0; px < x1; px++) {
         const i = (py * this.canvas.width + px) * 4;
@@ -103,11 +106,14 @@ class FakeContext {
     let sx = 0, sy = 0, sw = src.width, sh = src.height, dx, dy, dw = sw, dh = sh;
     if (args.length === 2) {
       [dx, dy] = args;
+    } else if (args.length === 4) {
+      [dx, dy, dw, dh] = args;
     } else if (args.length === 8) {
       [sx, sy, sw, sh, dx, dy, dw, dh] = args;
     } else {
       throw new Error('drawImage 参数形式不支持：' + args.length);
     }
+    dx *= this._sx; dy *= this._sy; dw *= this._sx; dh *= this._sy;
     const s = src.ctx.pixels;
     const cw = this.canvas.width;
     const ch = this.canvas.height;

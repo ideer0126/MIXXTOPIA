@@ -1089,3 +1089,16 @@ body {
   #save-screen { padding: 12px 12px 32px; }
   .cloud-actions { flex-direction: column; }
 }
+
+/* 六位 Muse：三列两行的透明头像图集，保留色块头像作为无素材回退。 */
+.avatar-face.has-portrait {
+  width: 52px;
+  height: 52px;
+  background-color: transparent;
+  background-size: 300% 200%;
+  background-repeat: no-repeat;
+  border-radius: 0;
+  image-rendering: pixelated;
+}
+.avatar-btn .avatar-face.has-portrait { width: 48px; height: 48px; }
+.avatar-face.has-portrait::before, .avatar-face.has-portrait::after { content: none; }

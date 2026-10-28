@@ -64,6 +64,23 @@
     finishDialogue(game);
   }
 
+  function winRings(game) {
+    const station=game.level.entities.find(e=>e.type==='minigame');
+    walkTo(game,station.x,station.y);check(game._interact(),'不能开始套圈');finishDialogue(game);
+    check(game.birthday&&game.birthday.rings,'套圈界面没有打开');
+    let guard=0;
+    while(game.birthday.rings&&guard++<400){
+      const r=game.birthday.rings, center=[.2,.5,.8][r.hits];
+      if(Math.abs(game.birthday.marker()-center)<.08){
+        const original=game.input.wasPressed;
+        try{game.input.wasPressed=action=>action==='confirm';game._update(0);}
+        finally{game.input.wasPressed=original;}
+      }else game._update(.05);
+    }
+    check(!game.birthday.rings,'套圈无法完成');finishDialogue(game);
+    check(game._playedNodes.has(station.dialogue),'套圈成功没有发放奖励资格');
+  }
+
   function playLevel1(game, options) {
     options = options || {};
     finishDialogue(game);
@@ -74,34 +91,35 @@
     const music = game.level.entities.find(e => e.type === 'gramophone');
     const gate = game.level.entities.find(e => e.type === 'gate');
     check(!game._starAvailable(star3) && !record.taken && !gate.open, '开局后台入口须关闭，唱片未取走、第三星隐藏');
-    talkTo(game, 'party-plan');
     talkTo(game, 'lily'); talkTo(game, 'lily');
-    walkTo(game, 10, 24);
-    check(game.collected.includes('s1'), '气球星未收集');
-    check(pathTo(game, 4, 4) === null, '关门时不能进入杂物间');
-    walkTo(game, 5, 8); check(game._interact(), '不能按 E 开门');
+    talkTo(game, 'bae');
+    winRings(game);
+    walkTo(game, 7, 21);
+    check(game.collected.includes('s1'), '套圈奖励星未收集');
+    check(pathTo(game, 4, 6) === null, '关门时不能进入杂物间');
+    walkTo(game, 6, 8); check(game._interact(), '不能按 E 开门');
     check(game._entitiesOf('door')[0].open, '杂物间门未打开');
-    walkTo(game, 4, 4);
+    walkTo(game, 4, 6);
     check(game.collected.includes('s2'), '杂物间星未收集');
     talkTo(game, record.id);
     check(!record.taken, '对话未完成不能提前取走唱片');
     walkTo(game, music.x, music.y); check(game._interact(), '唱片机应有前置提示'); finishDialogue(game);
     check(!gate.open && !game._playedNodes.has(music.dialogue), '尚未准备好不能播放或开后台');
-    for (const id of ['haewon', 'sullyoon', 'bae', 'jiwoo', 'kyujin']) talkTo(game, id);
+    for (const id of ['haewon', 'sullyoon', 'jiwoo', 'kyujin']) talkTo(game, id);
     game._syncProgressLocks(); game._checkTriggers(); finishDialogue(game);
     talkTo(game, 'sheep1');
-    walkTo(game, 25, 9);
+    walkTo(game, 28, 8);
     check(game._playedNodes.has('l1.music.ready'), '六人 + 两星后靠近唱片机缺少寻找唱片提示');
-    check(!gate.open && pathTo(game, 28, 5) === null, '没播放唱片不能进入后台');
+    check(!gate.open && pathTo(game, 34, 5) === null, '没播放唱片不能进入后台');
     talkTo(game, record.id);
     check(record.taken && game._playedNodes.has(record.dialogue), '唱片没有取走');
     if (options.onRecord) options.onRecord(game);
     talkTo(game, music.id);
     check(gate.open && game._playedNodes.has(music.dialogue), '播放唱片没有开启后台入口');
     if (options.onMusic) options.onMusic(game);
-    walkTo(game, 19, 9);
+    walkTo(game, 19, 8);
     check(game._currentArea().id === 'hall', '尚未进入幕后');
-    walkTo(game, 28, 5);
+    walkTo(game, 33, 5); stepTo(game, 34, 5);
     check(game._currentArea().id === 'backstage', '上台右转未进入化妆间');
     check(game._entryFade === game.level.entryFade, '进入后台应使用与关卡入场一致的渐亮');
     check(game.stars === 2 && !game._starAvailable(star3), '后台对话未完成不能提前出星');
@@ -122,7 +140,7 @@
     return { stars: game.stars, sheep: game.sheepCount, gateOpen: gate.open, state: game.state };
   }
 
-  const api = { playLevel1, finishDialogue, walkTo, talkTo, pathTo, stepTo };
+  const api = { playLevel1, finishDialogue, walkTo, talkTo, pathTo, stepTo, winRings };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.level1Playthrough = api;
 })(typeof window !== 'undefined' ? window : globalThis);

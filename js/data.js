@@ -45,12 +45,12 @@
        账户设置界面按本数组动态渲染选项，未知 id 在渲染时回退默认头像 muse-1。
        美术素材（#13）就位后，可给每条追加 art 字段并在渲染时换用图片。 */
     avatarPresets: [
-      { id: 'muse-1', name: 'Lily', color: '#7FB8E6' },
-      { id: 'muse-2', name: 'Haewon', color: '#FFB14E' },
-      { id: 'muse-3', name: 'Sullyoon', color: '#B49BFF' },
-      { id: 'muse-4', name: 'Bae', color: '#FF7BA9' },
-      { id: 'muse-5', name: 'Jiwoo', color: '#FFE066' },
-      { id: 'muse-6', name: 'Kyujin', color: '#5EE6B8' },
+      { id: 'muse-1', name: 'Lily', color: '#7FB8E6', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [0, 0] },
+      { id: 'muse-2', name: 'Haewon', color: '#FFB14E', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [1, 0] },
+      { id: 'muse-3', name: 'Sullyoon', color: '#B49BFF', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [2, 0] },
+      { id: 'muse-4', name: 'Bae', color: '#FF7BA9', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [0, 1] },
+      { id: 'muse-5', name: 'Jiwoo', color: '#FFE066', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [1, 1] },
+      { id: 'muse-6', name: 'Kyujin', color: '#5EE6B8', art: 'assets/avatars/muse-portraits-v1.png', portraitCell: [2, 1] },
     ],
 
     /* 说话人字典（GAME_DESIGN.md §3：姓名框色与显示名） */
@@ -91,32 +91,32 @@
           "h": 28,
           "rows": [
             "####################################################################",
-            "##########MMMMMMMMMMMMMMMMMMM#######################################",
-            "#·#FFFFF##MMMMMMMMMMMMMMMMMMM#######################################",
-            "#·#·····##MMMMMMMMMMMMMMMMMMM#######################################",
-            "#·#·····##MMMMMMMMMMMMMMMMMMM#######################################",
-            "#·#·····##··FFFF·FFFFFFFFFF··#######################################",
-            "#·#·····##··FFFF·FFFFFFFFFF··############········FFFFFFFFFFFFFFF···#",
-            "#·###·####··FFFF·FFFFFFFFFF··############·FF·FF··FFFFFFFFFFFFFFF···#",
-            "#········#···················############·FF·····FFFFFFFFFFFFFFF···#",
-            "#········#···················############·········F··F··F··F··F····#",
-            "#········#########···####################·FF·F·····················#",
+            "#FFFFFFF·###########################################################",
+            "#FFFFFFF·###########################################################",
+            "#······F·###########################################################",
+            "#·FFF··F·#······················####################################",
+            "#·FFF··F·#··FFF·FFFF···FFF·FF······#################################",
+            "#······F·#··FFF·FFFF···FFF·FF······######········FFFFFFFFFFFFFFF···#",
+            "######·###·························######·FF·FF··FFFFFFFFFFFFFFF···#",
+            "#······································##·FF·····FFFFFFFFFFFFFFF···#",
+            "#······································##·········F··F··F··F··F····#",
+            "#······································##·FF·F·····················#",
+            "#·FFFF····························FFFF·##··························#",
+            "#·FFFF·····FF·FF·FF····FFFF·FF····FFFF·##·········F··F··F··F··F····#",
+            "#·FFFF·····FF·FF·FF····FFFF·FF····FFFF·##········FFFFFFFFFFFFFFF···#",
+            "#··········FF·FF·FF····FFFF·FF·········##········FFFFFFFFFFFFFFF···#",
+            "#··········FF·FF·FF····FFFF·FF·········##········FFFFFFFFFFFFFFF···#",
+            "#·································FFFF·##········FFFFFFFFFFFFFFF···#",
+            "#·FFFF·····FF·FF·FF····FFFF·FF····FFFF·##········FFFFFFFFFFFFFFF···#",
+            "#·FFFF·····FF·FF·FF····FFFF·FF····FFFF·##········FFFFFFFFFFFFFFF···#",
+            "#·FFFF·····FF·FF·FF····FFFF·FF····FFFF·##·········F··F··F··F··F····#",
+            "#·FFFF·····FF·FF·FF····FFFF·FF····FFFF·##··························#",
             "#······································##··························#",
             "#······································##·········F··F··F··F··F····#",
-            "#······································##········FFFFFFFFFFFFFFF···#",
-            "#···FFF·························FFFF···##········FFFFFFFFFFFFFFF···#",
-            "#············F··F··F··F··F·············##········FFFFFFFFFFFFFFF···#",
-            "#······································##········FFFFFFFFFFFFFFF···#",
-            "#······································##········FFFFFFFFFFFFFFF···#",
-            "#············F··F··F··F··F·············##········FFFFFFFFFFFFFFF···#",
-            "#···FFF································##·········F··F··F··F··F····#",
-            "#·······························FFFF···##··························#",
-            "#············F··F··F··F··F·············##··························#",
-            "#······································##·········F··F··F··F··F····#",
-            "#······································##·FFFFF··FFFFFFFFFFFFFFF···#",
-            "#······F·····F··F··F··F··F·············##·FFFFF··FFFFFFFFFFFFFFF···#",
-            "#······FF·······················FFFF···##·FFF····FFFFFFFFFFFFFFF···#",
-            "#······································##··························#",
+            "#············FFFF······················##·FFFFF··FFFFFFFFFFFFFFF···#",
+            "##################····#FF################·FFFFF··FFFFFFFFFFFFFFF···#",
+            "##################····###################·FFF····FFFFFFFFFFFFFFF···#",
+            "##################····###################··························#",
             "####################################################################"
           ],
           "legend": {
@@ -133,80 +133,110 @@
         "entities": [
           {
             "type": "spawn",
-            "x": 2,
+            "x": 19,
             "y": 25
           },
           {
             "type": "npc",
             "id": "lily",
-            "x": 5,
-            "y": 24,
+            "x": 21,
+            "y": 23,
             "room": "hall",
-            "dialogue": "l1.intro"
+            "dialogue": "l1.intro",
+            "sprite": 0,
+            "age": "adult",
+            "museStyle": "lily",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "haewon",
-            "x": 10,
-            "y": 21,
+            "x": 18,
+            "y": 7,
             "room": "hall",
-            "dialogue": "l1.npc.haewon"
+            "dialogue": "l1.npc.haewon",
+            "spriteOffsetY": -1.6,
+            "sprite": 0,
+            "age": "adult",
+            "museStyle": "haewon",
+            "fixed": true,
+            "performance": "drums"
           },
           {
             "type": "npc",
             "id": "sullyoon",
-            "x": 24,
+            "x": 32,
             "y": 12,
             "room": "hall",
-            "dialogue": "l1.npc.sullyoon"
+            "dialogue": "l1.npc.sullyoon",
+            "sprite": 3,
+            "age": "adult",
+            "museStyle": "sullyoon",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "bae",
             "x": 8,
-            "y": 12,
+            "y": 20,
             "room": "hall",
-            "dialogue": "l1.npc.bae"
+            "dialogue": "l1.npc.bae",
+            "sprite": 2,
+            "age": "adult",
+            "museStyle": "bae",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "jiwoo",
-            "x": 18,
-            "y": 14,
+            "x": 30,
+            "y": 16,
             "room": "hall",
-            "dialogue": "l1.npc.jiwoo"
+            "dialogue": "l1.npc.jiwoo",
+            "sprite": 1,
+            "age": "adult",
+            "museStyle": "jiwoo",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "kyujin",
-            "x": 27,
-            "y": 14,
+            "x": 23,
+            "y": 7,
             "room": "hall",
-            "dialogue": "l1.npc.kyujin"
+            "dialogue": "l1.npc.kyujin",
+            "sprite": 1,
+            "age": "adult",
+            "museStyle": "kyujin",
+            "fixed": true,
+            "performance": "guitar"
           },
           {
             "type": "sheep",
             "id": "sheep1",
-            "x": 3,
-            "y": 20,
+            "x": 9,
+            "y": 22,
             "dialogue": "l1.sheep"
           },
           {
             "type": "star",
             "id": "s1",
-            "x": 10,
-            "y": 24
+            "x": 7,
+            "y": 21,
+            "requiresDialogue": [
+              "l1.rings.complete"
+            ]
           },
           {
             "type": "star",
             "id": "s2",
             "x": 4,
-            "y": 4
+            "y": 6
           },
           {
             "type": "door",
             "id": "gift-door",
-            "x": 5,
+            "x": 6,
             "y": 7,
             "open": false,
             "label": "杂物间 · E 开门"
@@ -214,7 +244,7 @@
           {
             "type": "roomdoor",
             "id": "to-backstage",
-            "x": 28,
+            "x": 34,
             "y": 5,
             "to": {
               "x": 65,
@@ -222,18 +252,9 @@
             },
             "label": "右侧幕布后 · 化妆间",
             "visual": "curtain",
-            "fadeIn": true
-          },
-          {
-            "type": "roomdoor",
-            "id": "to-hall",
-            "x": 66,
-            "y": 20,
-            "to": {
-              "x": 27,
-              "y": 8
-            },
-            "label": "返回舞台"
+            "fadeIn": true,
+            "enterFrom": "west",
+            "arrivalNode": "l1.backstage.arrived"
           },
           {
             "type": "star",
@@ -259,42 +280,40 @@
             "facing": "east"
           },
           {
-            "type": "sign",
-            "id": "party-plan",
-            "x": 3,
-            "y": 23,
-            "text": "生日会：和六位 Muse 聊聊，收集气球下与杂物间的两颗星。杂物间按 E 开门。准备好后，上舞台看看唱片机。"
-          },
-          {
-            "type": "sign",
-            "id": "backstage",
-            "x": 30,
-            "y": 11,
-            "text": "舞台上的唱片机正在等一张唱片。完成六位 Muse 的自我介绍、找到两颗星后，靠近它看看。舞台右侧的帷幕后通往化妆间。"
-          },
-          {
             "type": "npc",
             "id": "lily",
             "x": 43,
             "y": 12,
             "room": "backstage",
-            "dialogue": "l1.backstage.lily"
+            "dialogue": "l1.backstage.lily",
+            "sprite": 0,
+            "age": "adult",
+            "museStyle": "lily",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "haewon",
-            "x": 44,
+            "x": 45,
             "y": 12,
             "room": "backstage",
-            "dialogue": "l1.backstage.haewon"
+            "dialogue": "l1.backstage.haewon",
+            "sprite": 0,
+            "age": "adult",
+            "museStyle": "haewon",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "sullyoon",
-            "x": 45,
+            "x": 47,
             "y": 12,
             "room": "backstage",
-            "dialogue": "l1.backstage.sullyoon"
+            "dialogue": "l1.backstage.sullyoon",
+            "sprite": 3,
+            "age": "adult",
+            "museStyle": "sullyoon",
+            "fixed": true
           },
           {
             "type": "npc",
@@ -302,23 +321,35 @@
             "x": 43,
             "y": 19,
             "room": "backstage",
-            "dialogue": "l1.backstage.bae"
+            "dialogue": "l1.backstage.bae",
+            "sprite": 2,
+            "age": "adult",
+            "museStyle": "bae",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "jiwoo",
-            "x": 44,
+            "x": 45,
             "y": 19,
             "room": "backstage",
-            "dialogue": "l1.backstage.jiwoo"
+            "dialogue": "l1.backstage.jiwoo",
+            "sprite": 1,
+            "age": "adult",
+            "museStyle": "jiwoo",
+            "fixed": true
           },
           {
             "type": "npc",
             "id": "kyujin",
-            "x": 45,
+            "x": 47,
             "y": 19,
             "room": "backstage",
-            "dialogue": "l1.backstage.kyujin"
+            "dialogue": "l1.backstage.kyujin",
+            "sprite": 1,
+            "age": "adult",
+            "museStyle": "kyujin",
+            "fixed": true
           },
           {
             "type": "npc",
@@ -326,13 +357,15 @@
             "x": 45,
             "y": 16,
             "room": "backstage",
-            "dialogue": "l1.backstage.byeori"
+            "dialogue": "l1.backstage.byeori",
+            "sprite": 0,
+            "age": "adult"
           },
           {
             "type": "record",
             "id": "birthday-record",
-            "x": 5,
-            "y": 4,
+            "x": 6,
+            "y": 6,
             "dialogue": "l1.record.take",
             "requiresStars": [
               "s1",
@@ -350,8 +383,8 @@
           {
             "type": "gramophone",
             "id": "stage-music",
-            "x": 25,
-            "y": 8,
+            "x": 28,
+            "y": 7,
             "dialogue": "l1.music.play",
             "recordNode": "l1.record.take",
             "requiresStars": [
@@ -374,7 +407,7 @@
               "s1",
               "s2"
             ],
-            "x": 28,
+            "x": 34,
             "y": 5,
             "open": false,
             "requiresDialogue": [
@@ -392,10 +425,10 @@
             "x": 25,
             "y": 8,
             "rect": {
-              "x": 23,
+              "x": 27,
               "y": 7,
-              "w": 4,
-              "h": 3
+              "w": 3,
+              "h": 2
             },
             "dialogue": "l1.music.ready",
             "requiresStars": [
@@ -409,6 +442,157 @@
               "l1.npc.bae",
               "l1.npc.jiwoo",
               "l1.npc.kyujin"
+            ]
+          },
+          {
+            "type": "minigame",
+            "id": "ring-toss",
+            "x": 6,
+            "y": 21,
+            "room": "hall",
+            "dialogue": "l1.rings.complete"
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "child",
+            "id": "child-blue",
+            "x": 9,
+            "y": 17,
+            "sprite": 4,
+            "path": [
+              [
+                9,
+                17
+              ],
+              [
+                9,
+                20
+              ]
+            ],
+            "lines": [
+              "我想把圈圈套到小鲸鱼上！"
+            ],
+            "motionStyle": "childBlue"
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "child",
+            "id": "child-pink",
+            "x": 8,
+            "y": 22,
+            "sprite": 5,
+            "lines": [
+              "套中月亮以后，再试试星星吧。"
+            ]
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "child",
+            "id": "child-yellow",
+            "x": 32,
+            "y": 17,
+            "sprite": 6,
+            "path": [
+              [
+                32,
+                17
+              ],
+              [
+                32,
+                21
+              ]
+            ],
+            "lines": [
+              "钓到的鱼像糖果一样！"
+            ],
+            "motionStyle": "childYellow"
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "child",
+            "id": "child-mint",
+            "x": 34,
+            "y": 22,
+            "sprite": 7,
+            "lines": [
+              "老师说，今天谁都可以许愿。"
+            ]
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "child",
+            "id": "child-walk",
+            "x": 15,
+            "y": 22,
+            "sprite": 5,
+            "path": [
+              [
+                15,
+                22
+              ],
+              [
+                17,
+                22
+              ]
+            ],
+            "lines": [
+              "地上的彩带像小小的海浪。"
+            ],
+            "motionStyle": "childPink"
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "adult",
+            "id": "teacher",
+            "x": 31,
+            "y": 13,
+            "sprite": 3,
+            "lines": [
+              "慢慢玩就好，小朋友们都会给你加油。"
+            ]
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "adult",
+            "id": "teacher-blue",
+            "x": 25,
+            "y": 22,
+            "sprite": 0,
+            "motionStyle": "adultBlue",
+            "lines": [
+              "欢迎来玩！慢慢走，别踩到散落的彩带啦。"
+            ]
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "adult",
+            "id": "parent-mustard",
+            "x": 9,
+            "y": 12,
+            "sprite": 2,
+            "motionStyle": "parent",
+            "lines": [
+              "小朋友们都在等生日会开始。先去和台上的姐姐们打个招呼吧。"
+            ]
+          },
+          {
+            "type": "guest",
+            "room": "hall",
+            "age": "adult",
+            "id": "parent-violet",
+            "x": 30,
+            "y": 22,
+            "sprite": 1,
+            "lines": [
+              "每次听见生日歌，我也会想起小时候。"
             ]
           }
         ],
@@ -425,548 +609,18 @@
           "instruments": "assets/scenes/level1/stage-instruments-v1.png",
           "cover": "assets/scenes/level1/strange-muse-cover.jpg",
           "vanityModules": "assets/scenes/level1/vanity-modules-v1.png",
-          "portalEast": "assets/scenes/level1/star-portal-east-v1.png"
+          "portalEast": "assets/scenes/level1/star-portal-east-v1.png",
+          "birthdayHall": "assets/scenes/level1/birthday-hall-v2.png",
+          "guests": "assets/scenes/level1/party-guests-v2.png",
+          "museCostumes": "assets/scenes/level1/muse-costumes-v4.png",
+          "adultBlue": "assets/scenes/level1/party-adult-walk-v3.png",
+          "childBlue": "assets/scenes/level1/party-child-walk-v3.png",
+          "parent": "assets/scenes/level1/party-parent-walk-v3.png",
+          "childPink": "assets/scenes/level1/party-pink-walk-v3.png",
+          "childYellow": "assets/scenes/level1/party-yellow-walk-v3.png"
         },
         "groundDecorations": [],
         "decorations": [
-          {
-            "kind": "entranceDoor",
-            "art": "seating",
-            "frame": [
-              570,
-              0,
-              680,
-              724
-            ],
-            "x": 0.7,
-            "y": 25.5,
-            "w": 3,
-            "h": 2.5
-          },
-          {
-            "kind": "arch",
-            "art": "ocean",
-            "frame": [
-              0,
-              0,
-              680,
-              670
-            ],
-            "x": 8,
-            "y": 22,
-            "w": 5,
-            "h": 4
-          },
-          {
-            "kind": "welcomeWhale",
-            "art": "ocean",
-            "frame": [
-              0,
-              688,
-              655,
-              550
-            ],
-            "x": 5.5,
-            "y": 24,
-            "w": 3,
-            "h": 2.6
-          },
-          {
-            "kind": "rug",
-            "art": "backstage",
-            "frame": [
-              0,
-              550,
-              512,
-              430
-            ],
-            "x": 5.5,
-            "y": 22,
-            "w": 8,
-            "h": 4
-          },
-          {
-            "kind": "balloons",
-            "art": "games",
-            "frame": [
-              0,
-              512,
-              512,
-              512
-            ],
-            "x": 6,
-            "y": 20.5,
-            "w": 3,
-            "h": 4.8
-          },
-          {
-            "kind": "ringToss",
-            "art": "games",
-            "frame": [
-              512,
-              0,
-              512,
-              512
-            ],
-            "x": 31,
-            "y": 10.5,
-            "w": 6,
-            "h": 5
-          },
-          {
-            "kind": "fishing",
-            "art": "games",
-            "frame": [
-              1024,
-              0,
-              512,
-              512
-            ],
-            "x": 31,
-            "y": 17,
-            "w": 6,
-            "h": 4.5
-          },
-          {
-            "kind": "beanbag",
-            "art": "games",
-            "frame": [
-              512,
-              512,
-              512,
-              512
-            ],
-            "x": 31,
-            "y": 22,
-            "w": 6,
-            "h": 4.5
-          },
-          {
-            "kind": "instrumentBench",
-            "art": "instruments",
-            "frame": [
-              512,
-              512,
-              512,
-              512
-            ],
-            "x": 3,
-            "y": 12,
-            "w": 4.5,
-            "h": 3
-          },
-          {
-            "kind": "costumeRail",
-            "art": "instruments",
-            "frame": [
-              0,
-              512,
-              512,
-              512
-            ],
-            "x": 3,
-            "y": 16.5,
-            "w": 4.5,
-            "h": 3.5
-          },
-          {
-            "kind": "storageTrunk",
-            "art": "games",
-            "frame": [
-              1024,
-              512,
-              512,
-              512
-            ],
-            "x": 3,
-            "y": 1.5,
-            "w": 4,
-            "h": 2.1
-          },
-          {
-            "kind": "whaleMural",
-            "art": "mural",
-            "x": 11.5,
-            "y": 2.8,
-            "w": 15,
-            "h": 3.2
-          },
-          {
-            "kind": "piano",
-            "art": "instruments",
-            "frame": [
-              0,
-              0,
-              512,
-              512
-            ],
-            "x": 12,
-            "y": 4.5,
-            "w": 3.5,
-            "h": 3.5,
-            "collision": {
-              "x": 12,
-              "y": 5,
-              "w": 4,
-              "h": 3
-            }
-          },
-          {
-            "kind": "drums",
-            "art": "instruments",
-            "frame": [
-              512,
-              0,
-              512,
-              512
-            ],
-            "x": 17,
-            "y": 4.5,
-            "w": 3.5,
-            "h": 3.5,
-            "collision": {
-              "x": 17,
-              "y": 5,
-              "w": 4,
-              "h": 3
-            }
-          },
-          {
-            "kind": "guitars",
-            "art": "instruments",
-            "frame": [
-              1024,
-              0,
-              512,
-              512
-            ],
-            "x": 21.5,
-            "y": 5,
-            "w": 2.5,
-            "h": 3,
-            "collision": {
-              "x": 21,
-              "y": 5,
-              "w": 3,
-              "h": 3
-            }
-          },
-          {
-            "kind": "stageCurtains",
-            "art": "curtains",
-            "x": 9,
-            "y": 0,
-            "w": 21,
-            "h": 11,
-            "foreground": true
-          },
-          {
-            "kind": "stageSteps",
-            "x": 18,
-            "y": 10,
-            "w": 3,
-            "h": 1
-          },
-          {
-            "kind": "chair",
-            "x": 12.8,
-            "y": 14.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 15.8,
-            "y": 14.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 18.8,
-            "y": 14.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 21.8,
-            "y": 14.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 24.8,
-            "y": 14.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 12.8,
-            "y": 17.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 15.8,
-            "y": 17.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 18.8,
-            "y": 17.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 21.8,
-            "y": 17.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 24.8,
-            "y": 17.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 12.8,
-            "y": 20.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 15.8,
-            "y": 20.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 18.8,
-            "y": 20.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 21.8,
-            "y": 20.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 24.8,
-            "y": 20.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 12.8,
-            "y": 23.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 15.8,
-            "y": 23.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 18.8,
-            "y": 23.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 21.8,
-            "y": 23.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
-          {
-            "kind": "chair",
-            "x": 24.8,
-            "y": 23.3,
-            "w": 1.4,
-            "h": 1.7,
-            "facing": "north",
-            "art": "seating",
-            "frame": [
-              60,
-              150,
-              460,
-              520
-            ]
-          },
           {
             "kind": "vanity",
             "room": "backstage",
@@ -2019,25 +1673,580 @@
             }
           },
           {
-            "kind": "gramophone",
+            "kind": "piano",
             "room": "hall",
-            "art": "fitting",
-            "frame": [
-              0,
-              512,
-              512,
-              512
-            ],
-            "x": 24,
+            "baked": true,
+            "x": 12,
             "y": 5,
             "w": 3,
-            "h": 3,
+            "h": 2,
             "collision": {
-              "x": 24,
+              "x": 12,
               "y": 5,
               "w": 3,
+              "h": 2
+            }
+          },
+          {
+            "kind": "drums",
+            "room": "hall",
+            "baked": true,
+            "x": 16,
+            "y": 5,
+            "w": 4,
+            "h": 2,
+            "collision": {
+              "x": 16,
+              "y": 5,
+              "w": 4,
+              "h": 2
+            }
+          },
+          {
+            "kind": "guitars",
+            "room": "hall",
+            "baked": true,
+            "x": 23,
+            "y": 5,
+            "w": 3,
+            "h": 2,
+            "collision": {
+              "x": 23,
+              "y": 5,
+              "w": 3,
+              "h": 2
+            }
+          },
+          {
+            "kind": "gramophone",
+            "room": "hall",
+            "baked": true,
+            "x": 27,
+            "y": 5,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 27,
+              "y": 5,
+              "w": 2,
+              "h": 2
+            }
+          },
+          {
+            "kind": "storageShelves",
+            "room": "hall",
+            "baked": true,
+            "x": 1,
+            "y": 1,
+            "w": 7,
+            "h": 2,
+            "collision": {
+              "x": 1,
+              "y": 1,
+              "w": 7,
+              "h": 2
+            }
+          },
+          {
+            "kind": "spareChairs",
+            "room": "hall",
+            "baked": true,
+            "x": 2,
+            "y": 4,
+            "w": 3,
+            "h": 2,
+            "collision": {
+              "x": 2,
+              "y": 4,
+              "w": 3,
+              "h": 2
+            }
+          },
+          {
+            "kind": "recordCabinet",
+            "room": "hall",
+            "baked": true,
+            "x": 7,
+            "y": 3,
+            "w": 1,
+            "h": 4,
+            "collision": {
+              "x": 7,
+              "y": 3,
+              "w": 1,
+              "h": 4
+            }
+          },
+          {
+            "kind": "cakeTable",
+            "room": "hall",
+            "baked": true,
+            "x": 2,
+            "y": 11,
+            "w": 4,
+            "h": 3,
+            "collision": {
+              "x": 2,
+              "y": 11,
+              "w": 4,
               "h": 3
             }
+          },
+          {
+            "kind": "giftTable",
+            "room": "hall",
+            "baked": true,
+            "x": 34,
+            "y": 11,
+            "w": 4,
+            "h": 3,
+            "collision": {
+              "x": 34,
+              "y": 11,
+              "w": 4,
+              "h": 3
+            }
+          },
+          {
+            "kind": "ringToss",
+            "room": "hall",
+            "baked": true,
+            "x": 2,
+            "y": 17,
+            "w": 4,
+            "h": 4,
+            "collision": {
+              "x": 2,
+              "y": 17,
+              "w": 4,
+              "h": 4
+            }
+          },
+          {
+            "kind": "fishing",
+            "room": "hall",
+            "baked": true,
+            "x": 34,
+            "y": 16,
+            "w": 4,
+            "h": 5,
+            "collision": {
+              "x": 34,
+              "y": 16,
+              "w": 4,
+              "h": 5
+            }
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 11,
+            "y": 12,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 11,
+              "y": 12,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 14,
+            "y": 12,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 14,
+              "y": 12,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 17,
+            "y": 12,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 17,
+              "y": 12,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 23,
+            "y": 12,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 23,
+              "y": 12,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 25,
+            "y": 12,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 25,
+              "y": 12,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 28,
+            "y": 12,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 28,
+              "y": 12,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 11,
+            "y": 14,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 11,
+              "y": 14,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 14,
+            "y": 14,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 14,
+              "y": 14,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 17,
+            "y": 14,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 17,
+              "y": 14,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 23,
+            "y": 14,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 23,
+              "y": 14,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 25,
+            "y": 14,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 25,
+              "y": 14,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 28,
+            "y": 14,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 28,
+              "y": 14,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 11,
+            "y": 17,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 11,
+              "y": 17,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 14,
+            "y": 17,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 14,
+              "y": 17,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 17,
+            "y": 17,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 17,
+              "y": 17,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 23,
+            "y": 17,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 23,
+              "y": 17,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 25,
+            "y": 17,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 25,
+              "y": 17,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 28,
+            "y": 17,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 28,
+              "y": 17,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 11,
+            "y": 19,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 11,
+              "y": 19,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 14,
+            "y": 19,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 14,
+              "y": 19,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 17,
+            "y": 19,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 17,
+              "y": 19,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 23,
+            "y": 19,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 23,
+              "y": 19,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 25,
+            "y": 19,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 25,
+              "y": 19,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "chair",
+            "room": "hall",
+            "baked": true,
+            "x": 28,
+            "y": 19,
+            "w": 2,
+            "h": 2,
+            "collision": {
+              "x": 28,
+              "y": 19,
+              "w": 2,
+              "h": 2
+            },
+            "facing": "north"
+          },
+          {
+            "kind": "stageSteps",
+            "room": "hall",
+            "baked": true,
+            "x": 18,
+            "y": 9,
+            "w": 4,
+            "h": 2
+          },
+          {
+            "kind": "stageCurtains",
+            "room": "hall",
+            "baked": true,
+            "x": 9,
+            "y": 0,
+            "w": 26,
+            "h": 10
+          },
+          {
+            "kind": "rug",
+            "room": "hall",
+            "baked": true,
+            "x": 18.5,
+            "y": 10,
+            "w": 3,
+            "h": 15
           }
         ],
         "areas": [
@@ -2045,10 +2254,10 @@
             "id": "hall",
             "title": "生日会礼堂",
             "rect": {
-              "x": -2,
-              "y": -2,
-              "w": 44,
-              "h": 32
+              "x": 0,
+              "y": 0,
+              "w": 40,
+              "h": 28
             },
             "bounds": {
               "x": 0,
@@ -2068,13 +2277,1045 @@
             }
           }
         ],
-        "outdoor": true,
+        "outdoor": false,
         "entryFade": 1.4,
         "stageRect": {
           "x": 10,
-          "y": 5,
-          "w": 19,
+          "y": 4,
+          "w": 25,
           "h": 5
+        },
+        "party": {
+          "background": {
+            "art": "birthdayHall",
+            "x": 0,
+            "y": 0,
+            "w": 40,
+            "h": 28
+          },
+          "sprites": [
+            [
+              [
+                114,
+                34,
+                162,
+                308
+              ],
+              [
+                411,
+                32,
+                174,
+                310
+              ]
+            ],
+            [
+              [
+                699,
+                59,
+                182,
+                283
+              ],
+              [
+                1002,
+                61,
+                194,
+                281
+              ]
+            ],
+            [
+              [
+                90,
+                395,
+                167,
+                296
+              ],
+              [
+                398,
+                395,
+                168,
+                296
+              ]
+            ],
+            [
+              [
+                698,
+                389,
+                185,
+                303
+              ],
+              [
+                1005,
+                389,
+                181,
+                303
+              ]
+            ],
+            [
+              [
+                106,
+                728,
+                129,
+                221
+              ],
+              [
+                409,
+                733,
+                128,
+                216
+              ]
+            ],
+            [
+              [
+                694,
+                728,
+                190,
+                221
+              ],
+              [
+                1004,
+                728,
+                188,
+                221
+              ]
+            ],
+            [
+              [
+                107,
+                979,
+                128,
+                218
+              ],
+              [
+                410,
+                979,
+                130,
+                221
+              ]
+            ],
+            [
+              [
+                716,
+                979,
+                146,
+                218
+              ],
+              [
+                1027,
+                979,
+                145,
+                221
+              ]
+            ]
+          ],
+          "animations": {
+            "adultBlue": {
+              "art": "adultBlue",
+              "height": 40,
+              "width": 20,
+              "frames": [
+                [
+                  [
+                    100,
+                    18,
+                    177,
+                    311,
+                    71.567
+                  ],
+                  [
+                    401,
+                    18,
+                    178,
+                    314,
+                    72.43
+                  ],
+                  [
+                    697,
+                    22,
+                    178,
+                    310,
+                    72.425
+                  ],
+                  [
+                    992,
+                    20,
+                    181,
+                    313,
+                    71.42
+                  ]
+                ],
+                [
+                  [
+                    80,
+                    346,
+                    184,
+                    289,
+                    117.31
+                  ],
+                  [
+                    378,
+                    346,
+                    185,
+                    290,
+                    119.164
+                  ],
+                  [
+                    675,
+                    346,
+                    186,
+                    291,
+                    114.136
+                  ],
+                  [
+                    976,
+                    346,
+                    185,
+                    294,
+                    118.369
+                  ]
+                ],
+                [
+                  [
+                    101,
+                    656,
+                    155,
+                    296,
+                    76.114
+                  ],
+                  [
+                    401,
+                    657,
+                    154,
+                    294,
+                    73.373
+                  ],
+                  [
+                    697,
+                    656,
+                    155,
+                    297,
+                    77.183
+                  ],
+                  [
+                    999,
+                    657,
+                    154,
+                    297,
+                    78.782
+                  ]
+                ],
+                [
+                  [
+                    82,
+                    965,
+                    190,
+                    285,
+                    70.155
+                  ],
+                  [
+                    381,
+                    965,
+                    193,
+                    289,
+                    68.322
+                  ],
+                  [
+                    679,
+                    965,
+                    191,
+                    286,
+                    70.98
+                  ],
+                  [
+                    977,
+                    965,
+                    190,
+                    289,
+                    75.004
+                  ]
+                ]
+              ],
+              "alternateFeet": true
+            },
+            "childBlue": {
+              "art": "childBlue",
+              "height": 25,
+              "width": 15,
+              "frames": [
+                [
+                  [
+                    124,
+                    105,
+                    146,
+                    247,
+                    71.762
+                  ],
+                  [
+                    426,
+                    105,
+                    148,
+                    247,
+                    72.676
+                  ],
+                  [
+                    705,
+                    105,
+                    149,
+                    247,
+                    72.247
+                  ],
+                  [
+                    994,
+                    105,
+                    148,
+                    252,
+                    73.228
+                  ]
+                ],
+                [
+                  [
+                    125,
+                    387,
+                    147,
+                    245,
+                    81.518
+                  ],
+                  [
+                    423,
+                    387,
+                    147,
+                    246,
+                    78.198
+                  ],
+                  [
+                    707,
+                    387,
+                    145,
+                    246,
+                    79.382
+                  ],
+                  [
+                    999,
+                    388,
+                    152,
+                    247,
+                    72.749
+                  ]
+                ],
+                [
+                  [
+                    123,
+                    661,
+                    147,
+                    247,
+                    72.25
+                  ],
+                  [
+                    421,
+                    662,
+                    148,
+                    246,
+                    56.913
+                  ],
+                  [
+                    703,
+                    661,
+                    150,
+                    247,
+                    75.327
+                  ],
+                  [
+                    996,
+                    661,
+                    148,
+                    250,
+                    73.528
+                  ]
+                ],
+                [
+                  [
+                    124,
+                    934,
+                    148,
+                    241,
+                    63.009
+                  ],
+                  [
+                    417,
+                    934,
+                    149,
+                    242,
+                    75.516
+                  ],
+                  [
+                    705,
+                    934,
+                    149,
+                    241,
+                    65.295
+                  ],
+                  [
+                    993,
+                    935,
+                    147,
+                    243,
+                    77.657
+                  ]
+                ]
+              ],
+              "alternateFeet": true
+            },
+            "parent": {
+              "art": "parent",
+              "height": 40,
+              "width": 20,
+              "frames": [
+                [
+                  [
+                    110,
+                    44,
+                    189,
+                    291,
+                    93.117
+                  ],
+                  [
+                    393,
+                    44,
+                    189,
+                    291,
+                    92.79
+                  ],
+                  [
+                    675,
+                    44,
+                    187,
+                    291,
+                    94.919
+                  ],
+                  [
+                    948,
+                    44,
+                    187,
+                    294,
+                    95.273
+                  ]
+                ],
+                [
+                  [
+                    110,
+                    358,
+                    172,
+                    288,
+                    100.225
+                  ],
+                  [
+                    396,
+                    358,
+                    172,
+                    288,
+                    99.869
+                  ],
+                  [
+                    676,
+                    358,
+                    171,
+                    288,
+                    101.976
+                  ],
+                  [
+                    947,
+                    358,
+                    173,
+                    288,
+                    101.056
+                  ]
+                ],
+                [
+                  [
+                    111,
+                    664,
+                    182,
+                    278,
+                    89.241
+                  ],
+                  [
+                    399,
+                    664,
+                    183,
+                    277,
+                    91.598
+                  ],
+                  [
+                    679,
+                    664,
+                    185,
+                    278,
+                    92.77
+                  ],
+                  [
+                    951,
+                    664,
+                    186,
+                    277,
+                    91.925
+                  ]
+                ],
+                [
+                  [
+                    118,
+                    959,
+                    177,
+                    289,
+                    69.248
+                  ],
+                  [
+                    401,
+                    959,
+                    175,
+                    289,
+                    75.479
+                  ],
+                  [
+                    689,
+                    959,
+                    172,
+                    290,
+                    69.874
+                  ],
+                  [
+                    961,
+                    959,
+                    173,
+                    290,
+                    75.754
+                  ]
+                ]
+              ],
+              "alternateFeet": true
+            },
+            "childPink": {
+              "art": "childPink",
+              "height": 25,
+              "width": 15,
+              "frames": [
+                [
+                  [
+                    82,
+                    65,
+                    220,
+                    251,
+                    115.75
+                  ],
+                  [
+                    378,
+                    64,
+                    225,
+                    253,
+                    108.222
+                  ],
+                  [
+                    677,
+                    64,
+                    220,
+                    252,
+                    134.273
+                  ],
+                  [
+                    974,
+                    64,
+                    222,
+                    253,
+                    124.235
+                  ]
+                ],
+                [
+                  [
+                    93,
+                    357,
+                    180,
+                    259,
+                    101.5
+                  ],
+                  [
+                    386,
+                    357,
+                    188,
+                    262,
+                    116.769
+                  ],
+                  [
+                    691,
+                    357,
+                    182,
+                    259,
+                    87.684
+                  ],
+                  [
+                    991,
+                    357,
+                    182,
+                    264,
+                    80.625
+                  ]
+                ],
+                [
+                  [
+                    80,
+                    645,
+                    222,
+                    244,
+                    124.364
+                  ],
+                  [
+                    381,
+                    644,
+                    223,
+                    248,
+                    107.692
+                  ],
+                  [
+                    677,
+                    646,
+                    220,
+                    243,
+                    74.417
+                  ],
+                  [
+                    974,
+                    645,
+                    220,
+                    247,
+                    113.786
+                  ]
+                ],
+                [
+                  [
+                    107,
+                    921,
+                    185,
+                    252,
+                    68.75
+                  ],
+                  [
+                    413,
+                    921,
+                    182,
+                    255,
+                    59.2
+                  ],
+                  [
+                    705,
+                    921,
+                    184,
+                    252,
+                    81.056
+                  ],
+                  [
+                    1007,
+                    921,
+                    188,
+                    254,
+                    76.769
+                  ]
+                ]
+              ],
+              "alternateFeet": true
+            },
+            "childYellow": {
+              "art": "childYellow",
+              "height": 25,
+              "width": 15,
+              "frames": [
+                [
+                  [
+                    99,
+                    84,
+                    171,
+                    272,
+                    87.437
+                  ],
+                  [
+                    403,
+                    84,
+                    171,
+                    275,
+                    84.809
+                  ],
+                  [
+                    698,
+                    84,
+                    170,
+                    272,
+                    87.418
+                  ],
+                  [
+                    1014,
+                    84,
+                    172,
+                    275,
+                    87.527
+                  ]
+                ],
+                [
+                  [
+                    105,
+                    386,
+                    167,
+                    264,
+                    70.799
+                  ],
+                  [
+                    415,
+                    384,
+                    166,
+                    267,
+                    64.397
+                  ],
+                  [
+                    704,
+                    386,
+                    166,
+                    264,
+                    71.46
+                  ],
+                  [
+                    1023,
+                    384,
+                    167,
+                    267,
+                    63.805
+                  ]
+                ],
+                [
+                  [
+                    109,
+                    670,
+                    163,
+                    257,
+                    78.668
+                  ],
+                  [
+                    410,
+                    670,
+                    165,
+                    262,
+                    80.974
+                  ],
+                  [
+                    704,
+                    670,
+                    168,
+                    257,
+                    82.93
+                  ],
+                  [
+                    1018,
+                    670,
+                    165,
+                    263,
+                    81.759
+                  ]
+                ],
+                [
+                  [
+                    96,
+                    948,
+                    166,
+                    253,
+                    99.413
+                  ],
+                  [
+                    403,
+                    947,
+                    168,
+                    255,
+                    96.22
+                  ],
+                  [
+                    707,
+                    947,
+                    166,
+                    255,
+                    96.49
+                  ],
+                  [
+                    1018,
+                    947,
+                    166,
+                    257,
+                    102.707
+                  ]
+                ]
+              ],
+              "alternateFeet": true
+            }
+          },
+          "muses": {
+            "lily": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    112,
+                    25,
+                    157,
+                    243,
+                    77.5
+                  ]
+                ],
+                [
+                  [
+                    806,
+                    25,
+                    118,
+                    243,
+                    62.5
+                  ]
+                ],
+                [
+                  [
+                    562,
+                    25,
+                    155,
+                    243,
+                    77.0
+                  ]
+                ],
+                [
+                  [
+                    359,
+                    25,
+                    118,
+                    243,
+                    53.5
+                  ]
+                ]
+              ]
+            },
+            "haewon": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    117,
+                    275,
+                    145,
+                    238,
+                    72.0
+                  ]
+                ],
+                [
+                  [
+                    806,
+                    275,
+                    118,
+                    238,
+                    65.5
+                  ]
+                ],
+                [
+                  [
+                    569,
+                    275,
+                    141,
+                    238,
+                    70.5
+                  ]
+                ],
+                [
+                  [
+                    357,
+                    275,
+                    118,
+                    238,
+                    53.0
+                  ]
+                ]
+              ]
+            },
+            "sullyoon": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    107,
+                    519,
+                    166,
+                    257,
+                    82.5
+                  ]
+                ],
+                [
+                  [
+                    786,
+                    519,
+                    136,
+                    258,
+                    84.0
+                  ]
+                ],
+                [
+                  [
+                    558,
+                    519,
+                    163,
+                    258,
+                    81.5
+                  ]
+                ],
+                [
+                  [
+                    360,
+                    519,
+                    135,
+                    258,
+                    51.0
+                  ]
+                ]
+              ]
+            },
+            "bae": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    123,
+                    783,
+                    132,
+                    254,
+                    65.5
+                  ]
+                ],
+                [
+                  [
+                    807,
+                    783,
+                    119,
+                    254,
+                    68.5
+                  ]
+                ],
+                [
+                  [
+                    575,
+                    783,
+                    130,
+                    254,
+                    65.0
+                  ]
+                ],
+                [
+                  [
+                    354,
+                    783,
+                    121,
+                    254,
+                    50.5
+                  ]
+                ]
+              ]
+            },
+            "jiwoo": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    113,
+                    1037,
+                    166,
+                    252,
+                    75.0
+                  ]
+                ],
+                [
+                  [
+                    781,
+                    1038,
+                    149,
+                    252,
+                    92.0
+                  ]
+                ],
+                [
+                  [
+                    557,
+                    1040,
+                    164,
+                    250,
+                    82.5
+                  ]
+                ],
+                [
+                  [
+                    351,
+                    1038,
+                    148,
+                    252,
+                    55.5
+                  ]
+                ]
+              ]
+            },
+            "kyujin": {
+              "art": "museCostumes",
+              "height": 40,
+              "detailScale": 1.5,
+              "maxWidth": 34,
+              "frames": [
+                [
+                  [
+                    95,
+                    1296,
+                    189,
+                    230,
+                    94.0
+                  ]
+                ],
+                [
+                  [
+                    786,
+                    1296,
+                    138,
+                    230,
+                    87.0
+                  ]
+                ],
+                [
+                  [
+                    545,
+                    1296,
+                    190,
+                    230,
+                    94.5
+                  ]
+                ],
+                [
+                  [
+                    355,
+                    1296,
+                    139,
+                    230,
+                    50.0
+                  ]
+                ]
+              ]
+            }
+          },
+          "playerMotion": "parent"
         }
       }
     ],
@@ -2082,6 +3323,19 @@
     /* ══════════ 对话稿（GAME_DESIGN.md §8，v0.3 全文） ══════════ */
 
     dialogue: {
+
+  "l1.rings.complete": {
+    "type": "cutscene",
+    "trigger": "interact:ring-toss",
+    "once": true,
+    "lines": [
+      {
+        "s": "bae",
+        "t": "鲸鱼、月亮、星星，全中！第一颗愿望之星就在摊位前，收下吧。第二颗在左上杂物间。"
+      }
+    ]
+  }
+,
       /* ── 序章（自动演出：进入 p0 场景时触发） ── */
       p0: {
         type: 'cutscene',
@@ -2115,7 +3369,7 @@
           { s: 'haewon', t: '别愣着，小寿星。我们六个可是认真化了妆、换了演出服。幼儿园文艺汇演限定版——身体没变小，放心。' },
           { s: 'lily', t: '这里的彩带、椅子、蛋糕，都是照着你记忆里的生日会摆的。可蜡烛都灭了——愿望之星一散，生日会就停在这一刻。' },
           { s: 'haewon', t: '帮我们找回三颗愿望之星吧。集齐了，蜡烛就能重新亮起来。' },
-          { s: 'lily', t: '先收下气球拱门下那颗——小时候的第一颗糖，也是第一颗愿望之星。' },
+          { s: 'lily', t: '第一颗星在左边的套圈摊位，Bae 会教你怎么玩。把鲸鱼、月亮、星星都套中，就能拿到啦。' },
           { s: 'haewon', t: '杂物间按 E 开门，里面有第二颗星。先和六位 Muse 都聊聊，再找齐两颗星——然后去舞台上看看唱片机。' },
           { s: 'haewon', t: '顺带一提，在这个梦里我们都有神话倒影——Lily 是春天，我是冥王。今天冥王也得当幼儿园小主持人。' },
           { s: 'haewon', t: '操作提示：方向键 / WASD 移动，E 或空格互动。手机用屏幕方向键和 A 键。' },
@@ -2126,7 +3380,7 @@
       'l1.star1': {
         type: 'star', trigger: 'star:s1', once: true,
         lines: [
-          { s: 'lily', t: '第一颗愿望之星！小时候的你，也是在这条路上捡到第一颗糖的吧？' },
+          { s: 'lily', t: '第一颗愿望之星！你把三个圈都套中了，像小时候收到第一颗糖一样开心吧？' },
           { s: 'haewon', t: '左上角 HUD 会帮你数星星。别嫌我们啰嗦，幼儿园老师都这样。' },
         ],
       },
@@ -2151,7 +3405,7 @@
         lines: [
           { s: 'haewon', t: '大班主持人兼解说员，Haewon。玩具话筒归我，吐槽也归我。' },
           { s: 'haewon', t: '冥王来幼儿园当主持，是不是很有反差感？' },
-          { s: 'haewon', t: '放心，这个梦不吓人。最多就是椅子矮了点。' },
+          { s: 'haewon', t: '我是今天的鼓手。唱片放在左上杂物间的矮柜上，从南侧木门进去就能看见。先和大家聊聊、找齐两颗星，再拿回来播放吧。' },
         ],
       },
       'l1.npc.sullyoon': {
@@ -2167,7 +3421,7 @@
         lines: [
           { s: 'bae', t: '小园丁 Bae，报到！花环是纸的，向日葵也是纸的，但力气是真的。' },
           { s: 'bae', t: '大地会记住每一颗种下去的心。生日愿望，也是种下去就会开花的。' },
-          { s: 'bae', t: '等会儿吹蜡烛，我帮你一起吹！……开玩笑的，许愿要自己来。' },
+          { s: 'bae', t: '先来玩套圈吧！到左侧摊位前按 E / A，依次套中鲸鱼、月亮和星星，就能拿到第一颗星。没套中也可以重试。第二颗星在左上杂物间，门从南边开。' },
         ],
       },
       'l1.npc.jiwoo': {
@@ -2183,15 +3437,27 @@
         lines: [
           { s: 'kyujin', t: '……小国王 Kyujin。皇冠是纸的，别笑。' },
           { s: 'kyujin', t: '今天你过生日，你说了算。天空看着你呢。' },
-          { s: 'kyujin', t: '许愿的时候别怂。……我会假装没看见你闭眼睛。' },
+          { s: 'kyujin', t: '吉他已经调好音了。还缺杂物间里的唱片——拿回来放到右边唱片机，音乐响起后向右穿过蓝幕布，就到后台了。进去后就沿星光门继续旅程，不能回礼堂。' },
         ],
       },
       'l1.lily.hint': {
         type: 'hint', trigger: 'npc:lily', once: false,
         lines: [
-          { s: 'lily', t: '杂物间按 E 开门。听完六位 Muse 的自我介绍、找到两颗星后，上舞台靠近唱片机。' },
+          { s: 'lily', t: '欢迎来到生日会！先和六位 Muse 聊聊；左边套圈摊位藏着第一颗星，左上杂物间里有第二颗。杂物间从南侧按 E / A 开门，唱片线索问舞台上的鼓手和吉他手。' },
           { s: 'lily', t: '小时候的生日会，本来就是要慢慢过的呀。' },
         ],
+      },
+      'l1.haewon.hint': {
+        type: 'hint', trigger: 'npc:haewon', once: false,
+        lines: [{s:'haewon',t:'唱片在左上杂物间的矮柜上，从南侧门按 E / A 进去。六段自我介绍和套圈、杂物间的两颗星齐备后，再把唱片带回来播放。'}],
+      },
+      'l1.kyujin.hint': {
+        type:'hint', trigger:'npc:kyujin', once:false,
+        lines:[{s:'kyujin',t:'唱片拿回来了吗？放进右边唱片机，等音乐响起再向右走进蓝色幕布。后台不能回礼堂，想玩的先玩好。'}],
+      },
+      'l1.bae.hint': {
+        type:'hint', trigger:'npc:bae', once:false,
+        lines:[{s:'bae',t:'左侧摊位前按 E / A 套圈。光标进入金色区域时投圈，鲸鱼、月亮、星星全部套中就有星星啦！'}],
       },
       'l1.byeori.hint': {
         type: 'hint', trigger: 'npc:byeori', once: false,

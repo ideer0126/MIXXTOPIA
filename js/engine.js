@@ -295,9 +295,12 @@
      */
     constructor(canvas, opts) {
       this.canvas = canvas;
-      canvas.width = VIEW_W;
-      canvas.height = VIEW_H;
+      // 保持 320×224 逻辑坐标，细节缓冲区允许人物使用更细的像素。
+      const detail = opts && Number.isInteger(opts.detailScale) ? Math.max(1, Math.min(3, opts.detailScale)) : 1;
+      canvas.width = VIEW_W * detail;
+      canvas.height = VIEW_H * detail;
       this.ctx = canvas.getContext('2d');
+      if (detail !== 1) this.ctx.scale(detail, detail);
       if ('imageSmoothingEnabled' in this.ctx) this.ctx.imageSmoothingEnabled = false;
       this.atlasCache = new Map();    // 瓦片图集缓存：key = [tilesetId, version, paletteKey]
       this.templateCache = new Map(); // 模板色素材缓存：key = [tilesetId, version, type]

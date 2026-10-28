@@ -30,7 +30,7 @@ test('场景图集路径有效、透明 alpha 保留、所有取样框均在原�
     if (key === 'cover') { assert.equal(png.readUInt16BE(0), 0xffd8); continue; }
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
     dims[key] = [png.readUInt32BE(16), png.readUInt32BE(20)];
-    if (key !== 'mural') assert.equal(png[25], 6, '透明图集必须保留 RGBA');
+    if (!['mural','birthdayHall'].includes(key)) assert.equal(png[25], 6, '透明图集必须保留 RGBA');
   }
   for (const d of level.decorations) {
     for (const [key, frame] of [[d.art, d.frame], [d.litArt, d.litFrame]]) {
@@ -39,6 +39,19 @@ test('场景图集路径有效、透明 alpha 保留、所有取样框均在原�
       assert.ok(x >= 0 && y >= 0 && w > 0 && h > 0 && x + w <= dims[key][0] && y + h <= dims[key][1], d.kind);
     }
   }
+  for (const pair of level.party.sprites) for (const [x,y,w,h] of pair) {
+    assert.ok(x>=0 && y>=0 && w>0 && h>0 && x+w<=dims.guests[0] && y+h<=dims.guests[1], '人物帧不能越过图集边界');
+  }
+  for (const style of Object.values(level.party.animations).concat(Object.values(level.party.muses))) {
+    for (const row of style.frames) for (const [x,y,w,h,anchor] of row) {
+      assert.ok(x>=0 && y>=0 && w>0 && h>0 && x+w<=dims[style.art][0] && y+h<=dims[style.art][1], '新人物帧不能越过图集边界');
+      assert.ok(anchor>=0 && anchor<=w, '脚下锚点须落在人物帧内');
+    }
+  }
+  const muses=level.entities.filter(e=>e.museStyle);
+  assert.equal(muses.length,12);
+  assert.ok(muses.every(e=>e.fixed && !e.path && e.age==='adult'));
+  assert.deepEqual([...new Set(level.entities.filter(e=>e.type==='guest'&&!e.path).map(e=>e.sprite))].sort(),[0,1,2,3,5,7]);
 });
 test('单关不豁免出口顺序，缺失/跳关的 portal.to 仍失败', () => {
   for (const to of [undefined, 1, 3]) {
@@ -103,8 +116,8 @@ test('礼堂 / 后台对话与角色齐全；出口落点不能指向墙体或�
 test('后台修整：20 个等比例单人梳妆位与椅子、右向传送门、成组舞台道具', () => {
   const l = game.levels[0];
   const chairs = l.decorations.filter(d => d.kind === 'chair');
-  assert.equal(chairs.length, 20);
-  assert.ok(chairs.every(d => d.facing === 'north' && d.art === 'seating' && d.y > l.stageRect.y + l.stageRect.h));
+  assert.equal(chairs.length, 24);
+  assert.ok(chairs.every(d => d.facing === 'north' && d.baked && d.y > l.stageRect.y + l.stageRect.h));
   assert.equal(l.entities.some(e => ['box','switch'].includes(e.type)), false);
   const music = l.entities.find(e => e.type === 'gramophone');
   assert.ok(music.x >= l.stageRect.x && music.x < l.stageRect.x + l.stageRect.w && music.y >= l.stageRect.y && music.y < l.stageRect.y + l.stageRect.h);

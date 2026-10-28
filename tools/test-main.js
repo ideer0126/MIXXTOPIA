@@ -59,7 +59,7 @@ const UI_IDS = [
   'login-msg', 'login-account', 'login-email-label', 'login-nickname-label', 'login-account-note',
   'btn-login', 'btn-register', 'btn-logout', 'btn-login-back', 'btn-settings',
   'settings-screen', 'settings-account', 'settings-nickname', 'settings-nickname-count',
-  'avatar-preview', 'avatar-preview-name', 'avatar-options',
+  'avatar-preview', 'avatar-preview-name', 'avatar-preview-face', 'avatar-options',
   'btn-pref-sound', 'btn-pref-touch', 'settings-cloud-note', 'settings-msg',
   'btn-settings-retry', 'btn-settings-save', 'link-delete-account', 'btn-settings-back',
   'stats-time', 'stats-collection', 'stats-achievements', 'stats-status', 'btn-stats-sync',
@@ -222,6 +222,7 @@ vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/auth.js'), 'utf8'), sand
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/account.js'), 'utf8'), sandbox, { filename: 'js/account.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/cloud.js'), 'utf8'), sandbox, { filename: 'js/cloud.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/stats.js'), 'utf8'), sandbox, { filename: 'js/stats.js' });
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/birthday.js'), 'utf8'), sandbox, { filename: 'js/birthday.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/main.js'), 'utf8'), sandbox, { filename: 'js/main.js' });
 
 const main = sandbox.MIXX.main;
@@ -288,7 +289,7 @@ function press(k) {
  * 默认清空 localStorage，保证用例互不污染；跨实例验证存档时传 { keepStorage: true }。
  */
 function makeGame(opts) {
-  opts = opts || {};
+  opts = Object.assign({ renderDetailScale: 1 }, opts || {});
   if (!opts.keepStorage) localStorageStub.clear();
   // 既有用例不关心账户：默认关闭，避免异步 restore 干扰共享 DOM；
   // 账户用例显式传 auth。
@@ -1944,7 +1945,7 @@ test('账户关闭（opts.auth=null）：标题隐藏登录入口', () => {
 
 testAsync('默认账户客户端（#43）：未注入 auth 时使用 js/auth.js 与 ACCOUNT_KEY', async () => {
   localStorageStub.clear();
-  const game = new main.Game(registry.get('game'), { storage: localStorageStub });
+  const game = new main.Game(registry.get('game'), { renderDetailScale: 1, storage: localStorageStub });
   assert.ok(game.auth && typeof game.auth.restore === 'function', '应自动创建 auth 客户端');
   assert.strictEqual(game.auth.key, main.ACCOUNT_KEY);
   await game._authReady;
@@ -2345,31 +2346,30 @@ test('第一关：后台对话/三星保存恢复；重玩重新收前两星即�
       assert.strictEqual(game.stars, 0);
       assert.ok(game._entitiesOf('record')[0].taken);
       assert.ok(!game._entitiesOf('gate')[0].open);
-      level1Run.walkTo(game, 10, 24);
-      level1Run.walkTo(game, 5, 8); game._interact();
-      level1Run.walkTo(game, 4, 4);
+      level1Run.walkTo(game, 7, 21);
+      level1Run.walkTo(game, 6, 8); game._interact();
+      level1Run.walkTo(game, 4, 6);
       game._syncProgressLocks();
       assert.ok(game._entitiesOf('gate')[0].open);
     } finally { game.destroy(); }
   });
 });
 
-test('第一关：阅读告示牌不修改共享对话字典或 played，靠近提示不被更远 NPC 抢走', () => {
-  const data = prologueData();
-  withGAME(data, () => {
-    const game = makeGame();
+test('第一关：信息来自人物对话，无告示牌；儿童闲聊不改写共享字典或 played', () => {
+  withGAME(prologueData(), () => {
+    const game=makeGame();
     try {
-      elt('btn-start').click();
-      level1Run.finishDialogue(game);
-      const before = Object.keys(game.dialogue).length;
-      level1Run.walkTo(game, 3, 23);
-      assert.strictEqual(game._nearInteractable().type, 'sign');
-      assert.ok(game._interact());
-      assert.strictEqual(game._dialog.lines[0].t, game.level.entities.find(e => e.id === 'party-plan').text);
-      level1Run.finishDialogue(game);
-      assert.strictEqual(Object.keys(game.dialogue).length, before);
-      assert.ok(!game._playedNodes.has('sign:party-plan'));
-    } finally { game.destroy(); }
+      game._startNewGame();level1Run.finishDialogue(game);
+      assert.strictEqual(game._entitiesOf('sign').length,0);
+      const guest=game._entitiesOf('guest').find(e=>!e.path),before=JSON.stringify(game.dialogue);
+      level1Run.walkTo(game,guest.x,guest.y);
+      assert.strictEqual(game._nearInteractable().type,'guest');
+      game._interact();level1Run.finishDialogue(game);
+      assert.strictEqual(JSON.stringify(game.dialogue),before);
+      assert.ok(!game._playedNodes.has('guest:'+guest.id));
+      assert.ok(game.dialogue['l1.npc.haewon'].lines.some(l=>l.t.includes('唱片')));
+      assert.ok(game.dialogue['l1.npc.kyujin'].lines.some(l=>l.t.includes('唱片')));
+    } finally {game.destroy();}
   });
 });
 
@@ -2436,7 +2436,7 @@ test('场景素材：按源路径缓存、加载失败降级，礼物盒和星�
   } finally { if (prevImage === undefined) delete sandbox.Image; else sandbox.Image = prevImage; }
 });
 
-test('舞台三格阶梯与乐器碰撞：播放后经右侧幕布渐亮进入后台，往返保留进度', () => {
+test('舞台阶梯与乐器碰撞：向右穿过幕布渐亮进入后台，不能返回舞台', () => {
   withGAME(prologueData(), () => {
     const game = makeGame();
     try {
@@ -2448,14 +2448,14 @@ test('舞台三格阶梯与乐器碰撞：播放后经右侧幕布渐亮进入�
             level1Run.walkTo(g,x,11);
             level1Run.stepTo(g,x,10); level1Run.stepTo(g,x,9);
           }
-          for (const x of [13,18,22,25]) {
-            level1Run.walkTo(g,x,8);
+          for (const x of [13,18,24,28]) {
+            level1Run.walkTo(g,x,7);
             const before={...g.player};
             assert.strictEqual(g._moveAxis(0,-4),false,'乐器完整占地应阻挡玩家');
             assert.deepStrictEqual([g.player.x,g.player.y],[before.x,before.y]);
           }
           level1Run.walkTo(g,27,8); level1Run.walkTo(g,11,8);
-          level1Run.walkTo(g,27,9); // 乐器前两格通道可通行。
+          level1Run.walkTo(g,19,9); // 乐器前通道与阶梯可通行。
         },
         onBackstage(g) {
           assert.strictEqual(g._entryFade,g.level.entryFade);
@@ -2480,11 +2480,10 @@ test('舞台三格阶梯与乐器碰撞：播放后经右侧幕布渐亮进入�
           level1Run.walkTo(g,48,20);level1Run.walkTo(g,65,20); // 南侧过道完整可走。
           level1Run.walkTo(g,41,15);
           assert.strictEqual(g._currentArea().id,'backstage','后台西侧不能被礼堂的摄像机留白抢走');
-          const stars=g.stars, door=g._entitiesOf('roomdoor').find(e=>e.id==='to-hall');
-          level1Run.walkTo(g, door.x, door.y);
-          assert.strictEqual(g._currentArea().id,'hall'); assert.strictEqual(g.stars,stars);
-          assert.ok(g._entitiesOf('gate')[0].open);
-          level1Run.walkTo(g,28,5);assert.strictEqual(g._currentArea().id,'backstage');
+          assert.strictEqual(g._entitiesOf('roomdoor').some(e=>e.id==='to-hall'),false);
+          level1Run.walkTo(g,66,20);
+          assert.strictEqual(g._checkRoomDoors(),false);
+          assert.strictEqual(g._currentArea().id,'backstage');
         },
       });
     } finally { game.destroy(); }
@@ -2658,20 +2657,135 @@ test('第一关互动：已开门与已读黑羊不抢目标，墙体/家具阻�
     const game = makeGame();
     try {
       game._startNewGame(); level1Run.finishDialogue(game);
-      level1Run.walkTo(game, 5, 8);
+      level1Run.walkTo(game, 6, 8);
       assert.strictEqual(game._nearInteractable().id, 'gift-door');
       assert.ok(game._interact());
       assert.notStrictEqual((game._nearInteractable() || {}).id, 'gift-door');
       level1Run.talkTo(game, 'sheep1');
       assert.notStrictEqual((game._nearInteractable() || {}).id, 'sheep1');
       // 杂物间外侧到室内唱片的射线穿过 x=2 墙，走到门内才可互动。
-      game.player = { x: 16, y: 4 * 16 };
+      game.player = { x: 8 * 16, y: 6 * 16 };
       const record = game._entitiesOf('record')[0];
       assert.strictEqual(game._interactionVisible(record), false);
-      game.player = { x: 4 * 16, y: 4 * 16 };
+      game.player = { x: 5 * 16, y: 6 * 16 };
       assert.strictEqual(game._interactionVisible(record), true);
       assert.strictEqual(game._nearInteractable().id, record.id);
     } finally { game.destroy(); }
+  });
+});
+
+test('套圈真实计时：未玩不能拿星，误投可重试，暂停与隐藏页面冻结，成功后存档保留奖励', () => {
+  withGAME(prologueData(),()=>{
+    const game=makeGame();
+    try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      const star=game._entitiesOf('star').find(e=>e.id==='s1');
+      level1Run.walkTo(game,star.x,star.y);assert.ok(!game.collected.includes('s1'));
+      level1Run.walkTo(game,6,21);game._interact();level1Run.finishDialogue(game);
+      const birthday=game.birthday,r=birthday.rings,original=game.input.wasPressed;
+      try{game.input.wasPressed=action=>action==='confirm';game._update(0);}finally{game.input.wasPressed=original;}
+      assert.strictEqual(r.hits,0);assert.ok(r.message.includes('再试'));
+      game._setState(STATE.PAUSED);game._update(.05);assert.strictEqual(r.time,0);
+      game._setState(STATE.PLAYING);documentStub.hidden=true;
+      try{game._update(.05);}finally{documentStub.hidden=false;}
+      assert.strictEqual(r.time,0);birthday.rings=null;
+      level1Run.winRings(game);assert.ok(game._starAvailable(star));
+      level1Run.walkTo(game,star.x,star.y);assert.strictEqual(game.stars,1);
+      game._setState(STATE.PAUSED);game._saveAndQuit();elt('btn-continue').click();
+      assert.ok(game._playedNodes.has('l1.rings.complete'));assert.strictEqual(game.stars,1);
+      assert.strictEqual(game.birthday.rings,null);
+    }finally{game.destroy();}
+  });
+});
+
+test('生日会人物：儿童与成人分开；巡游不改共享路径，对话、暂停和靠近玩家时停止',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();
+    try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      const guest=game._entitiesOf('guest').find(e=>e.path),source=JSON.stringify(game.levels[0]);
+      assert.strictEqual(guest.age,'child');assert.ok(game._entitiesOf('npc').every(e=>e.age==='adult'));
+      const start=[guest.x,guest.y];for(let i=0;i<10;i++)game._update(.05);
+      assert.notDeepStrictEqual([guest.x,guest.y],start);
+      assert.ok(!game.mechanics.blockedAt(guest.x*16,guest.y*16,12));
+      const before=[guest.x,guest.y];game._playNode('guest.test',{node:{lines:[{s:'nar',t:'你好'}]}});
+      game._update(.05);assert.deepStrictEqual([guest.x,guest.y],before);level1Run.finishDialogue(game);
+      game._setState(STATE.PAUSED);game._update(.05);assert.deepStrictEqual([guest.x,guest.y],before);
+      game._setState(STATE.PLAYING);game.player={x:guest.x*16,y:guest.y*16};game._update(.05);
+      assert.deepStrictEqual([guest.x,guest.y],before);
+      assert.strictEqual(JSON.stringify(game.levels[0]),source);
+    }finally{game.destroy();}
+  });
+});
+
+test('后台单向流程：北向移动不触发入口，向右进入后保存继续仍在后台，重玩才回礼堂',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();
+    try{
+      game._startNewGame();level1Run.playLevel1(game,{
+        onMusic(g){
+          const door=g._entitiesOf('roomdoor')[0];
+          g.player={x:door.x*16,y:door.y*16};g.facing={x:0,y:1};
+          assert.strictEqual(g._checkRoomDoors(),false);assert.strictEqual(g._currentArea().id,'hall');
+          g.player={x:(door.x-1)*16,y:door.y*16};
+        },
+        onBackstage(g){
+          assert.ok(g._playedNodes.has('l1.backstage.arrived'));
+          g._setState(STATE.PAUSED);g._saveAndQuit();elt('btn-continue').click();
+          assert.strictEqual(g._currentArea().id,'backstage');assert.strictEqual(g.stars,2);
+          assert.ok(g._entitiesOf('record')[0].taken);
+        }
+      });
+      elt('btn-next').click();elt('btn-continue').click();
+      game._setState(STATE.PAUSED);game._restartLevel();
+      assert.strictEqual(game._currentArea().id,'hall');assert.ok(!game._playedNodes.has('l1.backstage.arrived'));
+    }finally{game.destroy();}
+  });
+});
+
+test('人物动作：四向朝向、行走/停步/撞墙与暂停帧保持一致',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();
+    try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      for(const [k,dir]of [['s',0],['d',1],['w',2],['a',3]]){
+        game.player={x:20*16,y:22*16};
+        key('keydown',k);for(let i=0;i<4;i++)tick(game,50);key('keyup',k);
+        let pose=game.birthday.pose({},true);
+        assert.strictEqual(pose.dir,dir);assert.notStrictEqual(pose.frame,0);
+        assert.strictEqual(pose.style.height,40);
+        game._setState(STATE.PAUSED);const time=game.birthday.playerMotion.time;game._update(.05);
+        assert.strictEqual(game.birthday.playerMotion.time,time);assert.strictEqual(game.birthday.pose({},true).frame,pose.frame);
+        game._setState(STATE.PLAYING);tick(game);
+        assert.strictEqual(game.birthday.pose({},true).frame,0,'松键后回到站立帧');
+      }
+      game.player={x:20*16,y:26*16};const before={...game.player};
+      key('keydown','s');for(let i=0;i<4;i++)tick(game,50);key('keyup','s');
+      assert.deepStrictEqual(game.player,before);assert.strictEqual(game.birthday.pose({},true).frame,0,'撞墙时不原地迈步');
+    }finally{game.destroy();}
+  });
+});
+
+test('六位 Muse 定点：长时间演出及对话转身不改坐标；原有人物用于其他 NPC',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();
+    try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      const muses=game._entitiesOf('npc').filter(e=>e.museStyle),snapshot=muses.map(e=>[e.x,e.y]),source=JSON.stringify(game.levels[0]);
+      for(let i=0;i<600;i++)game._update(.05);
+      assert.deepStrictEqual(muses.map(e=>[e.x,e.y]),snapshot);
+      assert.ok(muses.every(e=>e.fixed&&!e.path&&game.birthday.pose(e,false).frame===0));
+      const lily=muses.find(e=>e.id==='lily'&&e.room==='hall');
+      game.player={x:(lily.x-1)*16,y:lily.y*16};game._interact();
+      assert.strictEqual(game.state,STATE.DIALOGUE);assert.strictEqual(game.birthday.pose(lily,false).dir,3);
+      level1Run.finishDialogue(game);assert.deepStrictEqual(muses.map(e=>[e.x,e.y]),snapshot);
+      assert.ok(game._entitiesOf('guest').some(e=>e.sprite===0&&e.age==='adult'));
+      assert.ok(game._entitiesOf('guest').some(e=>e.sprite===1&&e.age==='adult'));
+      assert.ok(game._entitiesOf('guest').some(e=>e.sprite===2&&e.age==='adult'));
+      assert.ok(game._entitiesOf('guest').some(e=>e.sprite===3&&e.age==='adult'));
+      assert.ok(game._entitiesOf('guest').filter(e=>e.path).every(e=>game.birthday.pose(e,false).style.height===25));
+      assert.strictEqual(JSON.stringify(game.levels[0]),source);
+    }finally{game.destroy();}
   });
 });
 
@@ -2687,6 +2801,9 @@ test('#44 数据：GAME.avatarPresets 六个固定头像，id 合法且默认 mu
     assert.ok(/^[a-z0-9][a-z0-9-]{0,31}$/.test(p.id), '头像 id 必须符合数据库 CHECK 格式');
     assert.ok(/^#[0-9a-f]{6}$/i.test(p.color), '头像占位色必须是 #RRGGBB');
     assert.ok(p.name.length > 0);
+    assert.strictEqual(p.art, 'assets/avatars/muse-portraits-v1.png');
+    assert.ok(fs.existsSync(path.join(repoRoot, p.art)));
+    assert.strictEqual(p.portraitCell.length, 2);
   }
   assert.strictEqual(accountModule.DEFAULT_AVATAR, 'muse-1');
   assert.strictEqual(accountModule.isAvatarAllowed('muse-6', sandbox), true);
@@ -2856,6 +2973,12 @@ testAsync('#44 设置界面：昵称/头像/云端偏好回填，六个固定头
   assert.ok(game._ui.avatarBtns['muse-3'].classList.contains('is-selected'));
   assert.ok(!game._ui.avatarBtns['muse-1'].classList.contains('is-selected'));
   assert.strictEqual(text('avatar-preview-name'), 'Sullyoon');
+  assert.match(elt('avatar-preview-face').style.backgroundImage, /muse-portraits-v1\.png/);
+  assert.strictEqual(elt('avatar-preview-face').style.backgroundPosition, '100% 0%');
+  for (const [i, btn] of Object.values(game._ui.avatarBtns).entries()) {
+    assert.ok(btn.children[0].classList.contains('has-portrait'));
+    assert.strictEqual(btn.children[0].style.backgroundPosition, (i % 3 * 50) + '% ' + Math.floor(i / 3) * 100 + '%');
+  }
   assert.strictEqual(text('btn-pref-touch'), '📱 触屏按键：常开');
   assert.strictEqual(text('btn-pref-sound'), '♪ 声音：关', '新设备采用云端声音偏好');
   assert.strictEqual(game.soundOn, false);
@@ -3068,7 +3191,7 @@ testAsync('#44 切号竞态：旧账号资料请求在途时切到新账号，�
     refresh() { return Promise.resolve(authState.session); },
     restore() { return Promise.resolve(authState.session); },
   };
-  const game = new main.Game(registry.get('game'), {
+  const game = new main.Game(registry.get('game'), { renderDetailScale: 1,
     storage: localStorageStub,
     auth: fakeAuth,
     profile: fakeProfile,
@@ -3113,7 +3236,7 @@ testAsync('#44 资料未就绪：设置页禁用保存，不会用默认值覆�
     refresh() { return Promise.resolve(authState.session); },
     restore() { return Promise.resolve(authState.session); },
   };
-  const game = new main.Game(registry.get('game'), {
+  const game = new main.Game(registry.get('game'), { renderDetailScale: 1,
     storage: localStorageStub,
     auth: fakeAuth,
     profile: fakeProfile,
@@ -3270,7 +3393,7 @@ testAsync('#44 切号：已加载 A 后切 B，立即清空旧资料且旧保存
     refresh() { return Promise.resolve(authState.session); },
     restore() { return Promise.resolve(authState.session); },
   };
-  const game = new main.Game(registry.get('game'), {
+  const game = new main.Game(registry.get('game'), { renderDetailScale: 1,
     storage: localStorageStub,
     auth: fakeAuth,
     profile: fakeProfile,
@@ -3343,7 +3466,7 @@ testAsync('#44 本机写盘失败：保存/切换偏好提示「已生效但刷�
     refresh() { return Promise.resolve(this.getSession()); },
     restore() { return Promise.resolve(this.getSession()); },
   };
-  const game = new main.Game(registry.get('game'), {
+  const game = new main.Game(registry.get('game'), { renderDetailScale: 1,
     storage: brokenStorage,
     auth: fakeAuth,
     profile: fakeProfile,
@@ -3385,7 +3508,7 @@ testAsync('#44 保存期间冻结声音/触屏偏好按钮', async () => {
     refresh() { return Promise.resolve(this.getSession()); },
     restore() { return Promise.resolve(this.getSession()); },
   };
-  const game = new main.Game(registry.get('game'), {
+  const game = new main.Game(registry.get('game'), { renderDetailScale: 1,
     storage: localStorageStub,
     auth: fakeAuth,
     profile: fakeProfile,
@@ -3419,7 +3542,7 @@ testAsync('#44 已登录但资料模块缺失：设置可调整本机偏好，�
     refresh() { return Promise.resolve(this.getSession()); },
     restore() { return Promise.resolve(this.getSession()); },
   };
-  const game = new main.Game(registry.get('game'), {
+  const game = new main.Game(registry.get('game'), { renderDetailScale: 1,
     storage: localStorageStub,
     auth: fakeAuth,
     profile: null,

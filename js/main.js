@@ -91,6 +91,10 @@
 (function (root) {
   'use strict';
 
+  // 从脚本所在的应用根目录解析头像，兼容 /beta/ 和 tools/ 冒烟页面。
+  const assetBase = root.document && root.document.currentScript && root.document.currentScript.src
+    ? new URL('../', root.document.currentScript.src).href : null;
+
   root.MIXX_NO_DEMO = true; // 停用引擎演示模式，本文件接管游戏循环
 
   const engine = root.MIXX && root.MIXX.engine;
@@ -537,7 +541,7 @@
       this.onEvent = opts.onEvent || null;
 
       this.canvas = canvas;
-      this.renderer = engine.createRenderer(canvas, { hudReserve: HUD_RESERVE });
+      this.renderer = engine.createRenderer(canvas, { hudReserve: HUD_RESERVE, detailScale: opts.renderDetailScale || 3 });
       this.camera = engine.createCamera();
       this.input = engine.createInput();
 
@@ -842,9 +846,19 @@
 
     _updatePlaying(dt) {
       if (this.input.wasPressed('pause')) { this._setState(STATE.PAUSED); return; }
+      if (this.birthday && this.birthday.rings) {
+        this.birthday.updateRings(dt);
+        if (this.state === STATE.PLAYING) {
+          this.runTime += dt;
+          if (this.stats) this.stats.tick(dt);
+        }
+        return;
+      }
+      if (this.birthday) this.birthday.update(dt);
       this._syncProgressLocks();
       if (this._checkTriggers()) return;
       const axis = this.input.getAxis();
+      const beforeMove = { x: this.player.x, y: this.player.y };
       if (this.combat && (axis.x || axis.y)) this.combat.face(axis.x, axis.y);
       // #18 攻击：F 轻击 / G 重击；能量满时两者都由 Combat 升级为能量炮
       const light = this.input.wasPressed('light');
@@ -853,6 +867,7 @@
       if (this.input.wasPressed('confirm') && this._interact()) return; // 进入对话
       if (axis.x) this._moveAxis(axis.x * MOVE_SPEED * dt, 0);
       if (axis.y) this._moveAxis(0, axis.y * MOVE_SPEED * dt);
+      if (this.birthday) this.birthday.updatePlayer(this.player.x - beforeMove.x, this.player.y - beforeMove.y, dt);
       this._syncSwitches();
       // 战斗推进：能量回复 / 敌人追击 / 接触伤害（对话与暂停期间冻结）
       if (this.combat) {
@@ -1099,7 +1114,7 @@
       const area = this._currentArea();
       let nearest = null;
       let distance = Infinity;
-      for (const type of ['door', 'record', 'gramophone', 'npc', 'sheep', 'sign', 'box']) {
+      for (const type of ['door', 'record', 'gramophone', 'minigame', 'npc', 'guest', 'sheep', 'sign', 'box']) {
         for (const e of this._entitiesOf(type)) {
           if (area && e.room && e.room !== area.id) continue;
           if (e.carried || e.taken || (type === 'door' && e.open) || (type === 'box' && !e.carryable)) continue;
@@ -1121,7 +1136,7 @@
       const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy)));
       for (let i = 1; i < steps; i++) {
         const x = cx + dx * i / steps, y = cy + dy * i / steps;
-        if (Math.floor(x / TILE) === entity.x && Math.floor(y / TILE) === entity.y) continue;
+        if (Math.floor(x / TILE) === Math.floor(entity.x) && Math.floor(y / TILE) === Math.floor(entity.y)) continue;
         if (this.mechanics.blockedAt(Math.floor(x), Math.floor(y), 1)) return false;
       }
       return true;
@@ -1133,6 +1148,7 @@
       if (this.carriedBox) return this._dropBox();
       const ent = this._nearInteractable();
       if (!ent) return false;
+      if (this.birthday && this.birthday.interact(ent)) return true;
       if (ent.type === 'door') {
         if (!ent.open) { ent.open = true; this._sfx('gate-open'); this._emit('door', { id: ent.id }); }
         return true;
@@ -1141,7 +1157,7 @@
         this._syncProgressLocks();
         const say = text => this._playNode('music.hint', { node: { lines: [{ s: 'nar', t: text }] } });
         if (!this._requirementsMet(ent)) {
-          say('先听完六位 Muse 的自我介绍，再找齐气球下和杂物间的两颗星。唱片机还在等待大家的祝福。');
+          say('先听完六位 Muse 的自我介绍，再找齐套圈摊位和杂物间的两颗星。唱片机还在等待大家的祝福。');
         } else if (ent.type === 'record') {
           this._playNode(ent.dialogue, { onEnd: () => { this._syncProgressLocks(); this._sfx('star'); this._emit('record', { id: ent.id }); } });
         } else if (this._playedNodes.has(ent.dialogue)) {
@@ -1292,7 +1308,9 @@
         const gate = this._entitiesOf('gate').find(g => g.x === e.x && g.y === e.y);
         if (gate && !gate.open) continue;
         if (this.mechanics.overlapsTile(this.player.x, this.player.y, PLAYER_SIZE, e.x, e.y)) {
+          if (e.enterFrom === 'west' && this.facing.x <= 0) continue;
           this.player.x = e.to.x * TILE; this.player.y = e.to.y * TILE;
+          if (e.arrivalNode) this._playedNodes.add(e.arrivalNode);
           if (e.fadeIn) this._entryFade = Number(this.level.entryFade) || 0;
           this._followCamera(); this._refreshHud();
           this._emit('room', { id: e.id }); return true;
@@ -2097,7 +2115,17 @@
       if (this._ui.avatarPreview && this._ui.avatarPreview.style) {
         this._ui.avatarPreview.style.background = preset ? preset.color : '#7FB8E6';
       }
+      this._paintAvatar(this._ui.avatarPreviewFace, preset);
       this._text(this._ui.avatarPreviewName, preset ? preset.name : '');
+    }
+
+    /** 使用本地头像图集；缺少素材元数据时保留原来的色块头像。 */
+    _paintAvatar(face, preset) {
+      if (!face || !face.style || !face.classList) return;
+      const art = preset && preset.art && preset.portraitCell;
+      face.classList.toggle('has-portrait', !!art);
+      face.style.backgroundImage = art ? 'url("' + (assetBase ? new URL(preset.art, assetBase).href : preset.art) + '")' : '';
+      face.style.backgroundPosition = art ? (preset.portraitCell[0] * 50) + '% ' + (preset.portraitCell[1] * 100) + '%' : '';
     }
 
     /** 设置界面登录态 / 忙碌态 / 云端说明（不重填昵称输入框，避免打断输入） */
@@ -2355,6 +2383,8 @@
         const face = doc.createElement('span');
         if (face && face.classList) {
           face.classList.add('avatar-face');
+          this._paintAvatar(face, preset);
+          if (typeof face.setAttribute === 'function') face.setAttribute('aria-hidden', 'true');
           btn.appendChild(face);
         }
         const name = doc.createElement('span');
@@ -2701,6 +2731,7 @@
       });
       this.mechanics = engine.createMechanics(this.level); // #9 碰撞/推箱/开关门
       this.combat = this.level.combat === false ? null : engine.createCombat(this.level);
+      this.birthday = this.level.party && root.MIXX.Birthday ? new root.MIXX.Birthday(this) : null;
       this._hudEnergyPct = -1;
       this._hudHp = -1;
       this._hudEnergyReady = false;
@@ -2732,6 +2763,14 @@
       this.camera.y = 0;
       this._followCamera();
       this._syncProgressLocks();
+      if (restore) {
+        const entrance = this._entitiesOf('roomdoor').find(e => e.arrivalNode && this._playedNodes.has(e.arrivalNode));
+        const gate = entrance && this._entitiesOf('gate').find(g => g.x === entrance.x && g.y === entrance.y);
+        if (entrance && (!gate || gate.open)) {
+          this.player.x = entrance.to.x * TILE; this.player.y = entrance.to.y * TILE;
+          this._followCamera();
+        }
+      }
       this._syncSwitches(true); // 初始化开关/门状态（spawn 压住开关等边界情况）
       this._refreshHud();
       this._setState(STATE.PLAYING);
@@ -2744,6 +2783,7 @@
 
     _restartLevel() {
       if (this.state !== STATE.PAUSED) return;
+      for (const e of this._entitiesOf('roomdoor')) if (e.arrivalNode) this._playedNodes.delete(e.arrivalNode);
       this._loadLevel(this.levelIndex);
     }
 
@@ -3265,7 +3305,8 @@
       if (this.scene || !this.level || this.level.id !== 1) return '';
       const record = this._entitiesOf('record')[0];
       const music = this._entitiesOf('gramophone')[0];
-      const star = this._entitiesOf('star').find(e => e.requiresDialogue);
+      const star = this._entitiesOf('star').find(e => (e.requiresDialogue || []).some(id =>
+        this.dialogue[id] && this.dialogue[id].room === 'backstage'));
       if (!record || !music || !star) return '';
       const intros = record.requiresDialogue || [];
       const missing = intros.filter(id => !this._dialogueComplete(id));
@@ -3280,7 +3321,7 @@
           + '　寻找星星 · ' + found + '/' + stars.length;
       }
       if (found < stars.length) return this.collected.includes('s1')
-        ? '去左上杂物间找星星 · E / A 开门' : '到入口气球拱门下找星星';
+        ? '去左上杂物间找星星 · E / A 开门' : '到左侧套圈摊位赢得星星 · E / A';
       if (!this._dialogueComplete(record.dialogue)) return '到左上杂物间取唱片 · E / A';
       if (!this._dialogueComplete(music.dialogue)) return '回舞台播放唱片 · E / A';
       const area = this._currentArea();
@@ -3501,6 +3542,7 @@
         'settings-nickname-count': 'settingsNicknameCount',
         'avatar-preview': 'avatarPreview',
         'avatar-preview-name': 'avatarPreviewName',
+        'avatar-preview-face': 'avatarPreviewFace',
         'avatar-options': 'avatarOptions',
         'btn-pref-sound': 'btnPrefSound',
         'btn-pref-touch': 'btnPrefTouch',
@@ -3640,7 +3682,7 @@
       this._drawForegroundDecorations();
       if (this.carriedBox) this._drawGift(this.player.x / TILE - 0.2, this.player.y / TILE - 1.1);
       if (this._playedNodes.has('l1.record.take') && !this._playedNodes.has('l1.music.play')) {
-        this._drawRecord(this.camera.x / TILE + 0.4, this.camera.y / TILE + 0.5, 1.6);
+        this._drawRecord(this.camera.x / TILE + 0.4, this.camera.y / TILE + 0.5, 0.8);
       }
       this._drawAttack();  // #18 挥击/能量炮（覆盖在角色之上）
       this.particles.draw(ctx, this.camera); // #9 拾取/开门/传送门粒子（画在角色之上）
@@ -3661,6 +3703,7 @@
         ctx.fillStyle = 'rgb(6,9,20)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
         ctx.restore();
       }
+      if (this.birthday) this.birthday.drawRings();
     }
 
     /** 占位实体绘制：仅用 fillRect（兼容测试桩与后续替换） */
@@ -3689,16 +3732,14 @@
             break;
           }
           case 'npc': {
+            if (this.birthday) break;
             ctx.fillStyle = (this.characters[e.id] || {}).color || 'rgb(255,143,163)';
             ctx.fillRect(sx + 2, sy + 2, 12, 12);
             ctx.fillStyle = 'rgb(255,255,255)';
             ctx.fillRect(sx + 5, sy + 6, 2, 2);
             ctx.fillRect(sx + 9, sy + 6, 2, 2);
             if (this._npcNeedsTalk(e)) {
-              ctx.fillStyle = 'rgb(43,33,64)'; ctx.fillRect(sx + 5, sy - 8, 7, 9);
-              ctx.fillStyle = 'rgb(255,209,102)';
-              ctx.fillRect(sx + 8, sy - 7, 1, 4);
-              ctx.fillRect(sx + 8, sy - 2, 1, 1);
+              this._drawTalkBubble(sx + 8, sy + 2);
             }
             break;
           }
@@ -3735,7 +3776,7 @@
             break;
           }
           case 'record': {
-            if (!e.taken) this._drawRecord(e.x - 0.35, e.y - 0.5, 1.8);
+            if (!e.taken && !this.birthday) this._drawRecord(e.x, e.y, 0.9);
             break;
           }
           case 'gramophone': {
@@ -3794,6 +3835,14 @@
             break;
           }
           case 'door': {
+            if (this.birthday && this.birthday.inHall()) {
+              if (!e.open) {
+                ctx.fillStyle='#a87d58';ctx.fillRect(sx,sy-7,16,23);
+                ctx.fillStyle='#73583f';ctx.fillRect(sx+2,sy-5,12,1);ctx.fillRect(sx+2,sy+5,12,1);
+                ctx.fillStyle='#e2c68d';ctx.fillRect(sx+12,sy+9,2,2);
+              }
+              break;
+            }
             ctx.fillStyle = 'rgb(83,57,54)'; ctx.fillRect(sx - 1, sy - 15, 18, 31);
             ctx.fillStyle = e.open ? 'rgb(28,37,61)' : 'rgb(177,126,88)';
             ctx.fillRect(sx + 1, sy - 13, 14, 28);
@@ -3869,17 +3918,22 @@
     /** 提示最后绘制，避免被人物和前景幕布挡住。 */
     _drawInteractionPrompt() {
       if (this.state !== STATE.PLAYING) return;
+      if (this.birthday && this.birthday.rings) return;
       const ctx = this.renderer.ctx, camX = this.camera.x, camY = this.camera.y;
       const nearby = this.player && this._nearInteractable();
       if ((nearby || this.carriedBox) && typeof ctx.fillText === 'function') {
         const actor = nearby || this.carriedBox;
         const label = this.carriedBox ? '放下礼物盒' : actor.type === 'npc' ? (this.characters[actor.id] || {}).name
+          : actor.type === 'minigame' ? '套圈集星' : actor.type === 'guest' ? '聊聊'
           : actor.type === 'sheep' ? '黑羊' : actor.type === 'door' ? '打开杂物间'
           : actor.type === 'record' ? '取走唱片' : actor.type === 'gramophone' ? '唱片机'
           : actor.type === 'box' ? actor.locked ? '礼物盒尚未解锁' : '拿起礼物盒' : '告示牌';
         const text = (label || '') + ' · E / A';
         const px = this.carriedBox ? this.player.x : actor.x * TILE;
-        const py = this.carriedBox ? this.player.y - 12 : actor.y * TILE;
+        let py = this.carriedBox ? this.player.y - 12 : actor.y * TILE;
+        if (this.birthday && (actor.type === 'npc' || actor.type === 'guest')) {
+          py += (actor.spriteOffsetY || 0) * TILE + 14 - (actor.age === 'child' ? 25 : 40);
+        }
         const x = Math.max(4, Math.min(VIEW_W - 100, px - camX - 24));
         const y = Math.max(12, Math.min(VIEW_H - 4, py - camY - 4));
         ctx.fillStyle = 'rgb(43,33,64)';
@@ -3921,13 +3975,15 @@
 
     /** 前景帘幕在人物之后绘制，使人物走入幕后时自然被遮挡。 */
     _drawForegroundDecorations() {
+      if (this.birthday) this.birthday.drawCurtains();
       for (const d of this.level.decorations || []) {
-        if (d.foreground) this._drawSceneryAsset(d);
+        if (d.foreground && !d.baked) this._drawSceneryAsset(d);
       }
     }
 
     /** 场景地面与家具；尚未加载的图片可降级，不阻塞移动或剧情。 */
     _drawDecorations() {
+      if (this.birthday && this.birthday.drawBackground()) return;
       const ctx = this.renderer.ctx;
       if (this.level.stageRect) {
         const r = this.level.stageRect;
@@ -3974,7 +4030,7 @@
       const decorations = (this.level.decorations || []).slice().sort((a, b) =>
         (a.kind === 'rug' ? -1 : 0) - (b.kind === 'rug' ? -1 : 0));
       for (const d of decorations) {
-        if (d.foreground) continue;
+        if (d.foreground || d.baked) continue;
         const x = Math.round(d.x * TILE - this.camera.x);
         const y = Math.round(d.y * TILE - this.camera.y);
         if (x + (d.w || 2) * TILE < 0 || y + (d.h || 2) * TILE < 0 || x > VIEW_W || y > VIEW_H) continue;
@@ -4156,8 +4212,26 @@
       pass('rgb(255,200,87)', heavy ? 4 : 2);
     }
 
+    /** 白底三点聊天气泡，尾巴指向人物；与当前角色的像素网格一致。 */
+    _drawTalkBubble(centerX, headY) {
+      const ctx = this.renderer.ctx, x = Math.round(centerX + 2), y = Math.round(headY - 13);
+      ctx.fillStyle = 'rgb(35,37,44)';
+      ctx.fillRect(x + 1, y, 10, 1);
+      ctx.fillRect(x, y + 1, 12, 7);
+      ctx.fillRect(x + 1, y + 8, 10, 1);
+      ctx.fillRect(x + 2, y + 9, 4, 1);
+      ctx.fillRect(x + 2, y + 10, 2, 1);
+      ctx.fillStyle = 'rgb(255,253,244)';
+      ctx.fillRect(x + 1, y + 1, 10, 7);
+      ctx.fillRect(x + 2, y + 8, 4, 1);
+      ctx.fillRect(x + 3, y + 9, 1, 1);
+      ctx.fillStyle = 'rgb(35,37,44)';
+      for (const offset of [3, 6, 9]) ctx.fillRect(x + offset, y + 4, 1, 1);
+    }
+
     _drawPlayer() {
       if (!this.player) return;
+      if (this.birthday) { this.birthday.drawActors(); return; }
       const ctx = this.renderer.ctx;
       const px = Math.round(this.player.x - this.camera.x);
       const py = Math.round(this.player.y - this.camera.y);

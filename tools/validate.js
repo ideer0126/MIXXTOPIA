@@ -522,7 +522,7 @@ function rule7(game, R) {
       else if (e.type === 'sheep') sheepById.set(e.id, { entity: e, level: lv });
       else if (e.type === 'star') starById.set(e.id, { entity: e, level: lv });
       else if (e.type === 'trigger') triggerById.set(e.id, { entity: e, level: lv });
-      else if (e.type === 'record' || e.type === 'gramophone') interactById.set(e.id, { entity: e, level: lv });
+      else if (e.type === 'record' || e.type === 'gramophone' || e.type === 'minigame') interactById.set(e.id, { entity: e, level: lv });
     }
   }
 
@@ -546,7 +546,7 @@ function rule7(game, R) {
             const node = dialogue[id];
             const npcId = node && String(node.trigger).replace(/^npc:/, '');
             const action = node && String(node.trigger).startsWith('interact:')
-              && lv.entities.some(e => ['record', 'gramophone'].includes(e.type)
+              && lv.entities.some(e => ['record', 'gramophone', 'minigame'].includes(e.type)
                 && node.trigger === 'interact:' + e.id && e.dialogue === id);
             const actor = node && node.type === 'npc' && lv.entities.some(n => n.type === 'npc' && n.id === npcId
               && (n.room || 'hall') === (node.room || 'hall'));
@@ -558,7 +558,7 @@ function rule7(game, R) {
           }
         }
       }
-      if (e.type === 'record' || e.type === 'gramophone') {
+      if (e.type === 'record' || e.type === 'gramophone' || e.type === 'minigame') {
         const node = dialogue[e.dialogue];
         if (!node || node.type !== 'cutscene' || node.once !== true || node.trigger !== 'interact:' + e.id) {
           R.err('规则 7', tag + ' 道具 "' + e.id + '" 的 dialogue 必须指向自身的 once interact 节点');
@@ -729,7 +729,7 @@ function rule7(game, R) {
     } else if (node.trigger.startsWith('interact:')) {
       const hit = interactById.get(node.trigger.slice(9));
       if (!hit || hit.entity.dialogue !== nodeId || (scope && hit.level.id !== scope.key)) {
-        R.err('规则 7', '道具节点 "' + nodeId + '" 必须与同关 record/gramophone 实体互相引用');
+        R.err('规则 7', '道具节点 "' + nodeId + '" 必须与同关 record/gramophone/minigame 实体互相引用');
       }
     } else if (node.trigger.startsWith('trigger:')) {
       const tid = node.trigger.slice(8);
@@ -994,7 +994,7 @@ function stateSearch(lv, dialogue = {}) {
     const node = dialogue[id];
     const npc = node && lv.entities.find(n =>
       ((n.type === 'npc' && node.trigger === 'npc:' + n.id)
-        || (['record', 'gramophone'].includes(n.type) && node.trigger === 'interact:' + n.id))
+        || (['record', 'gramophone', 'minigame'].includes(n.type) && node.trigger === 'interact:' + n.id))
       && (n.room || 'hall') === (node.room || 'hall'));
     if (!npc) return { status: 'fail', msg: '剧情条件 "' + id + '" 无法由本关 NPC / 道具触发' };
     const intro = Object.entries(dialogue).find(([key, n]) => key.startsWith('l' + lv.id + '.')
@@ -1228,7 +1228,7 @@ function stateSearch(lv, dialogue = {}) {
       if (onewayAt.get(nk) && onewayAt.get(nk) !== dirName) continue;
       let [fx, fy] = resolveWind(px + dx, py + dy, st);
       const room = roomAt.get(fx + ',' + fy);
-      if (room) { fx = room.to.x; fy = room.to.y; }
+      if (room && (!room.enterFrom || (room.enterFrom === 'west' && dx > 0))) { fx = room.to.x; fy = room.to.y; }
       const ns = applyCell(fx, fy, st);
       ns.pos = fx + ',' + fy;
       push(ns);
