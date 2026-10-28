@@ -215,8 +215,8 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 - 礼堂底图采用 birthday-hall-v2.png，人物、唱片、星星与交互均独立实现；家具按脚下深度重画遮挡。
   长欢迎地毯、碎彩带、韩文生日横幅随底图呈现，窗户和告示牌均移除。
 - 同名 NPC 在两区分别声明 room:hall / backstage，对话节点同步按 room 匹配。
-  后台上排 Lily / Haewon / Sullyoon 为 (43,12)、(44,12)、(45,12)，下排 Bae / Jiwoo / Kyujin
-  为 (43,19)、(44,19)、(45,19)，Byeori 在 (45,16)。
+  后台上排 Lily / Haewon / Sullyoon 为 (43,12)、(45,12)、(47,12)，下排 Bae / Jiwoo / Kyujin
+  为 (43,19)、(45,19)、(47,19)，Byeori 在 (45,16)。
 - requiresStars 为同关星 id；requiresDialogue 引用本关可触发的 once NPC 或道具演出节点。
   唱片拾取 l1.record.take、播放 l1.music.play 使用 interact:<实体id>；实体 dialogue 与节点互相引用。
   唱片机 recordNode 指向拾取节点，校验器状态搜索也必须先取唱片才能播放开门。
@@ -549,7 +549,7 @@ dialogue: {
 | l1.clear.2 | haewon | 蜡烛重新亮起来了。下一站的路，也照亮了。 |
 | l1.clear.3 | lily | 许个愿吧，NSWER。不用变回小孩，也可以被当成小孩一样宠爱。 |
 | l1.clear.4 | nar | 你吹灭蜡烛的一瞬间，礼堂的灯一盏一盏亮起来。梦还在继续。 |
-| l1.clear.5 | byeori | 目标达成！舞台幕布后面就是下一关——Jiwoo 在等的「灯油与火焰」。信使要下冥界啦。 |
+| l1.clear.5 | byeori | 目标达成！后台左侧的星光门通往下一关——Jiwoo 在等的「灯油与火焰」。信使要下冥界啦。 |
 
 **6 位缪斯的自我介绍（`npc` 节点各 2–3 句，与两颗星共同解锁唱片拾取）**：
 
