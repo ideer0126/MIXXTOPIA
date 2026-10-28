@@ -422,7 +422,7 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 | PORTAL | 传送门 | 本关星数满且剧情条件满足后激活（粒子 + 音效） | 踩上（接触）进入下一关；`to` 优先于线性下一关 | `{type:'portal',to,requiresStars?:string[],requiresDialogue?:string[],facing?:'east'}` | 1–5 |
 | SWITCH | 压力开关 | 玩家或箱子压住期间开启 target 门；离开即关闭 | 物理（踩上/推箱压上） | `{type:'switch',target}` | 6 |
 | GATE | 门 | 关/开两态；关闭时阻挡通行，`open:true` 为常开；门格不接受箱子落点（门开时玩家可站在门格上） | 由开关、灯柱或 `requiresDialogue` 剧情条件控制；配置剧情条件时可叠加 `requiresStars`，不支持仅用 `requiresStars` 驱动开门 | `{type:'gate',id,open:false,requiresStars?:string[],requiresDialogue?:string[],visual?:string}` | 1、2、6 |
-| DOOR | 杂物间门 | 关闭时阻挡通行；打开后保持开启 | E 打开 | `{type:'door',id,open:false,label?:string}` | 1 |
+| DOOR | 杂物间门 | 关闭时阻挡通行；打开后保持开启 | E 打开 | `{type:'door',id,open:false,label?:string}` | 暂无（第一关已移除） |
 | ROOMDOOR | 房间出入口 | 接触后在同一关卡内移动到 `to` 坐标，保留星星、对话与唱片进度；可与 GATE 同格，由 GATE 阻挡入口 | 接触切换房间 | `{type:'roomdoor',id,to:{x,y},label?:string}` | 1 |
 | BOX | 箱子 | 沿方向推一格，压住开关 | 方向移动 | `{type:'box'}` | 6 |
 | RECORD | 唱片 | 前置满足后拾取，played 记录携带进度 | E 拿取 | `{type:'record',id,dialogue,requiresStars?:string[],requiresDialogue?:string[]}` | 1 |
@@ -865,6 +865,8 @@ Lily、Sullyoon、Byeori 三段全部完成后出现 s3；其余后台台词为�
 ---
 
 ## 11. data.js 数据格式规格（#11/#12 输入）
+
+以下示例为通用字段结构的伪数据，不代表第一关实际地图、坐标或实体配置；第一关以 §5.1 与 `js/data.js` 为准。
 
 ```js
 const GAME = {

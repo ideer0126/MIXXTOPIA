@@ -163,4 +163,31 @@ test('唱片机状态图：唱片被封死时不能直接播放开后台，道�
   bad.levels[0].entities.find(e=>e.type==='gramophone').recordNode='absent';
   const R=v.makeReport();v.rule7(bad,R);assert.ok(R.errors.length);
 });
+test('精确家具搜索复用静态列表；同一关卡修改后重新搜索仍读取最新碰撞', () => {
+  const rows = Array.from({ length: 28 }, () => Array(40).fill('#'));
+  for (let x = 1; x <= 6; x++) rows[1][x] = '·';
+  const decorations = [];
+  let reads = 0;
+  const level = {
+    id: 1, map: { w: 40, h: 28, rows: rows.map(r => r.join('')), legend: { '#': 'wall', '·': 'floor' } },
+    party: { preciseCollision: true, footprint: { x: 0, y: 0, w: 8, h: 8 }, colliders: [] },
+    get decorations() { reads++; return decorations; },
+    entities: [{ type: 'spawn', x: 1, y: 1 }, { type: 'portal', x: 5, y: 1 },
+      ...[2, 3, 4].map(x => ({ type: 'star', id: 's' + x, x, y: 1 }))],
+  };
+  for (const search of [v.stateSearch, v.staticReachability]) {
+    decorations.length = 0;
+    reads = 0;
+    const reachable = result => result.status ? result.status === 'ok' : result.stars.length === 0 && result.goal === null && !result.spawnBlocked;
+    assert.ok(reachable(search(level)));
+    assert.equal(reads, 1, '一次搜索只构建一次家具列表');
+    decorations.push({ room: 'hall', collision: { x: 3, y: 1, w: 1, h: 1 } });
+    assert.ok(!reachable(search(level)), '新增家具阻断通路');
+    decorations[0].room = 'backstage';
+    assert.ok(reachable(search(level)), '后台家具不加入礼堂碰撞');
+    level.party.colliders = [{ x: 3, y: 1, w: 1, h: 1 }];
+    assert.ok(!reachable(search(level)), '替换静态碰撞列表后重新搜索不能使用旧缓存');
+    level.party.colliders = [];
+  }
+});
 console.log('\n全部通过：' + count + ' 项');
