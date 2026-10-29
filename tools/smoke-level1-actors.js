@@ -23,8 +23,9 @@ const output = process.env.MIXX_ACTORS_OUTPUT || '/tmp/mixxtopia-71';
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = 'http://127.0.0.1:' + server.address().port;
-  const browser = await chromium.launch({ executablePath: process.env.MIXX_CHROME || '/opt/google/chrome/chrome', headless: true, args: ['--no-sandbox'] });
+  let browser;
   try {
+    browser = await chromium.launch({ executablePath: process.env.MIXX_CHROME || '/opt/google/chrome/chrome', headless: true, args: ['--no-sandbox'] });
     for (const touch of [false, true]) {
       const name = touch ? 'touch' : 'desktop';
       const context = await browser.newContext(touch
@@ -116,7 +117,10 @@ const output = process.env.MIXX_ACTORS_OUTPUT || '/tmp/mixxtopia-71';
     fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify({ results, errors }, null, 2));
     console.log('全部通过：四向接近、实际互动、巡游恢复、通道、六位 Muse、三星/唱片/后台/结算；desktop + touch');
   } finally {
-    await browser.close();
-    await new Promise(resolve => server.close(resolve));
+    try {
+      if (browser) await browser.close();
+    } finally {
+      if (server.listening) await new Promise(resolve => server.close(resolve));
+    }
   }
 })().catch(err => { console.error(err); process.exitCode = 1; });
