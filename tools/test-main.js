@@ -2703,6 +2703,99 @@ test('礼堂脚底碰撞：椅前横道、列间通道和杂物间开口可走�
   });
 });
 
+test('舞台气球：只挡固定点，球体下方及左右通路可走，遮挡不依赖碰撞',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      const balloons=game.level.decorations.find(d=>d.kind==='stageBalloons');
+      const base=game.level.decorations.find(d=>d.kind==='stageBalloonBase');
+      assert.ok(!balloons.collision,'悬空气球不能扩大地面障碍');
+      for(const [x,y] of [[10.05,5.65],[10.05,7.8],[9.8,6.4],[10.95,6.4],[19,8],[4,6]])
+        assert.strictEqual(game.birthday.blockedAt(x*16,y*16),false,'通路应可走 '+x+','+y);
+      const r=base.collision;
+      assert.strictEqual(game.birthday.blockedAt((r.x+r.w/2)*16-8,(r.y+r.h/2)*16-11.5),true);
+      assert.ok(r.w<.5&&r.h<.25,'固定点仅占一小块地面');
+      game.level.entities=[];game.level.decorations=[balloons,base];
+      game._sceneryImages.set(game.level.sceneryAssets.birthdayHall,{complete:true,naturalWidth:1500,naturalHeight:1049});
+      const order=[];let clips=0,paths=0,saves=0;
+      game.renderer.ctx={
+        save(){saves++;},restore(){saves--;},beginPath(){},moveTo(){paths++;},lineTo(){},closePath(){},clip(){clips++;},
+        drawImage(img,x){order.push(Math.abs(x-balloons.x/40*img.naturalWidth)<.01?'balloons':'base');},
+      };
+      game.birthday.drawSprite=()=>order.push('player');
+      for(const [y,expected] of [[5.65,['player','balloons','base']],[7.8,['balloons','base','player']]]){
+        order.length=0;clips=0;paths=0;
+        game.player={x:10.05*16,y:y*16};game.birthday.drawActors();
+        assert.deepStrictEqual(order,expected,'按固定点与人物脚底排前后');
+        assert.strictEqual(clips,2,'球体和底座均沿轮廓裁剪');
+        assert.strictEqual(paths,balloons.occlusionShapes.length+1,'绳线间隙不作为矩形重画');
+        assert.strictEqual(saves,0,'裁剪状态不能影响后续人物');
+      }
+    }finally{game.destroy()}
+  });
+});
+
+test('杂物仓清洁工具：水桶与木箱挡脚，杆身不挡路，箱前窄道可进出',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      for(const kind of ['cleaningBucket','cleaningRack','spareChairs']){
+        const d=game.level.decorations.find(d=>d.kind===kind),r=d.collision;
+        assert.strictEqual(game.birthday.blockedAt((r.x+r.w/2)*16-8,(r.y+r.h/2)*16-11.5),true,kind+' 底部不能踩入');
+        assert.ok(d.occlusionShape||d.occlusionShapes,'只重画物体轮廓');
+      }
+      for(const [x,y] of [[5.5,5.65],[2.15,5.8]])
+        assert.strictEqual(game.birthday.blockedAt(x*16,y*16),true,'旧踩入位置应被阻挡');
+      assert.strictEqual(game.birthday.blockedAt(5.5*16,4.5*16),false,'拖把上方不扩成地面障碍');
+      const path=level1Run.pathTo(game,4,6);
+      assert.ok(path&&path.some(([x,y])=>!Number.isInteger(x)||!Number.isInteger(y)),'保留真实的非整格通路');
+      level1Run.walkTo(game,4,6);level1Run.walkTo(game,6,8);
+      assert.strictEqual(game.birthday.blockedAt(game.player.x,game.player.y),false);
+    }finally{game.destroy()}
+  });
+});
+
+test('杂物仓左墙：原水桶左侧站位在墙内，移动不能进入，仍能从右侧接近水桶并出仓',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      for(const [x,y] of [[1.45,5.8],[1.45,4.5],[1.8,6]])
+        assert.strictEqual(game.birthday.blockedAt(x*16,y*16),true,'不能把墙内位置当成可走地面');
+      for(const [x,y] of [[2,4.5],[3.25,5.8],[4,6],[6,8]])
+        assert.strictEqual(game.birthday.blockedAt(x*16,y*16),false,'保留墙内侧与开口通路');
+      const wall=game.level.decorations.find(d=>d.kind==='storageWestWall');
+      game.player={x:3.25*16,y:4.5*16};
+      for(let i=0;i<50;i++)game._moveAxis(-1,0);
+      assert.ok(game.player.x+game.level.party.footprint.x>=wall.collision.w*16,'脚底不能跨过可见墙脚');
+      assert.strictEqual(game.birthday.blockedAt(game.player.x,game.player.y),false);
+      const x=game.player.x;game._moveAxis(1,0);assert.ok(game.player.x>x,'可以离开墙边');
+      game._loadLevel(0);level1Run.finishDialogue(game);
+      assert.strictEqual(level1Run.pathTo(game,1.5,5.75),null,'旧水桶左侧站位不能作为正常路线');
+      level1Run.walkTo(game,3.25,5.75);level1Run.walkTo(game,4,6);level1Run.walkTo(game,6,8);
+    }finally{game.destroy()}
+  });
+});
+
+test('蛋糕区：气球仅作遮挡，鲸鱼底部与固定点挡脚，桌前和右侧可绕行',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      const balloons=game.level.decorations.find(d=>d.kind==='cakeBalloons');
+      assert.ok(!balloons.collision,'悬空气球不应整体挡住地面');
+      for(const kind of ['cakeTable','cakeWhale','cakeBalloonBase']){
+        const d=game.level.decorations.find(d=>d.kind===kind),r=d.collision;
+        assert.strictEqual(game.birthday.blockedAt((r.x+r.w/2)*16-8,(r.y+r.h/2)*16-11.5),true,kind+' 落地部分不可踩入');
+        assert.ok(d.occlusionShape||d.occlusionShapes);
+      }
+      for(const [x,y] of [[7.1,11.3],[6.7,12.2],[3.8,11],[8.5,12.5],[7,14],[4,14.2]])
+        assert.strictEqual(game.birthday.blockedAt(x*16,y*16),false,'通路应可走 '+x+','+y);
+      assert.strictEqual(game.birthday.blockedAt(6.7*16,12.7*16),true,'鲸鱼底部挡脚');
+      assert.strictEqual(game.birthday.blockedAt(7.6*16,12.8*16),true,'气球固定点挡脚');
+      for(const [x,y] of [[8.5,12.5],[7,14],[4,14.25]])level1Run.walkTo(game,x,y);
+    }finally{game.destroy()}
+  });
+});
+
 test('普通儿童完整往返：路径始终在地面，避开入口柱子，六位 Muse 不随路线移动',()=>{
   withGAME(prologueData(),()=>{
     const game=makeGame();try{
@@ -2810,6 +2903,8 @@ test('第一关互动：杂物间直接进入、已读黑羊不抢目标，墙�
       const record = game._entitiesOf('record')[0];
       assert.strictEqual(game._interactionVisible(record), false);
       game.player = { x: 5 * 16, y: 6 * 16 };
+      assert.strictEqual(game._interactionVisible(record), false, '拖把木箱也应挡住隔物互动');
+      game.player = { x: 6 * 16, y: 7 * 16 };
       assert.strictEqual(game._interactionVisible(record), true);
       assert.strictEqual(game._nearInteractable().id, record.id);
     } finally { game.destroy(); }

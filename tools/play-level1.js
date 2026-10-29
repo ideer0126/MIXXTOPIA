@@ -10,7 +10,8 @@
   }
 
   function pathTo(game, tx, ty) {
-    const x = Math.round(game.player.x / 16), y = Math.round(game.player.y / 16);
+    const step = game.level.party && game.level.party.preciseCollision ? .25 : 1;
+    const x = Math.round(game.player.x / 16 / step) * step, y = Math.round(game.player.y / 16 / step) * step;
     const start = x + ',' + y;
     const queue = [[x, y]], prev = new Map([[start, null]]);
     for (let i = 0; i < queue.length; i++) {
@@ -22,7 +23,7 @@
         return path.reverse();
       }
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = cx + dx, ny = cy + dy, key = nx + ',' + ny;
+        const nx = cx + dx * step, ny = cy + dy * step, key = nx + ',' + ny;
         if (prev.has(key) || (game.birthday ? game.birthday.blockedAt(nx * 16, ny * 16) : game.mechanics.blockedAt(nx * 16, ny * 16, 16))) continue;
         prev.set(key, cx + ',' + cy); queue.push([nx, ny]);
       }

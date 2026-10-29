@@ -190,4 +190,18 @@ test('精确家具搜索复用静态列表；同一关卡修改后重新搜索�
     level.party.colliders = [];
   }
 });
+test('精确脚底搜索可通过非整格窄道；缝隙窄于脚底时仍拒绝穿过',()=>{
+  const rows=Array.from({length:28},()=>Array(40).fill('#'));
+  for(let y=1;y<=3;y++)for(let x=1;x<=6;x++)rows[y][x]='·';
+  const level={id:1,map:{w:40,h:28,rows:rows.map(r=>r.join('')),legend:{'#':'wall','·':'floor'}},
+    party:{preciseCollision:true,footprint:{x:4,y:9,w:8,h:5},colliders:[
+      {x:3,y:1,w:1,h:1.8},{x:3,y:3.4,w:1,h:.6},
+    ]},entities:[{type:'spawn',x:1,y:2},{type:'portal',x:6,y:2},
+      ...[2,4,5].map(x=>({type:'star',id:'s'+x,x,y:2}))]};
+  assert.equal(v.stateSearch(level).status,'ok');
+  assert.deepEqual(v.staticReachability(level).stars,[]);
+  level.party.colliders[1].y=3.1;level.party.colliders[1].h=.9;
+  assert.equal(v.stateSearch(level).status,'fail');
+  assert.ok(v.staticReachability(level).stars.length>0);
+});
 console.log('\n全部通过：' + count + ' 项');
