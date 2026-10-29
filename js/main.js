@@ -1043,9 +1043,15 @@
       if (!dx && !dy) return false;
       this.facing = { x: Math.sign(dx), y: Math.sign(dy) };
       const p = this.player;
+      if (this.birthday) {
+        const end = root.MIXX.collision.trace(p.x, p.y, dx, dy, (x, y) => this.birthday.blockedAt(x, y));
+        const moved = p.x !== end.x || p.y !== end.y;
+        p.x = end.x; p.y = end.y;
+        return moved;
+      }
       const nx = p.x + dx;
       const ny = p.y + dy;
-      if (!(this.birthday ? this.birthday.blockedAt(nx, ny) : this.mechanics.blockedAt(nx, ny, PLAYER_SIZE))) {
+      if (!this.mechanics.blockedAt(nx, ny, PLAYER_SIZE)) {
         p.x = nx;
         p.y = ny;
         return true;
@@ -3808,7 +3814,7 @@
         ctx.fillStyle = 'rgb(6,9,20)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
         ctx.restore();
       }
-      if (this.birthday) this.birthday.drawRings();
+      if (this.birthday) { this.birthday.drawCollision(); this.birthday.drawRings(); }
     }
 
     /** 占位实体绘制：仅用 fillRect（兼容测试桩与后续替换） */

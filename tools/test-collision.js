@@ -1,0 +1,126 @@
+#!/usr/bin/env node
+'use strict';
+const assert=require('node:assert/strict');
+const C=require('../js/collision.js');
+require('../js/engine.js');
+const engine=globalThis.MIXX.engine;
+const v=require('./validate.js');
+const {pathTo}=require('./play-level1.js');
+const clone=value=>JSON.parse(JSON.stringify(value));
+let count=0;
+function test(name,fn){fn();count++;console.log('  ✓ '+name);}
+function corridor(){
+  const rows=Array.from({length:28},()=>Array(40).fill('#'));
+  for(let x=1;x<=6;x++)rows[1][x]='.';
+  return{id:1,map:{w:40,h:28,rows:rows.map(r=>r.join('')),legend:{'#':'wall','.':'floor'}},
+    party:{preciseCollision:true,footprint:{x:0,y:0,w:8,h:5},colliders:[]},decorations:[],entities:[
+      {type:'spawn',x:1,y:1},{type:'star',id:'a',x:2,y:1},{type:'star',id:'b',x:4,y:1},
+      {type:'star',id:'c',x:5,y:1},{type:'portal',x:6,y:1}]};
+}
+
+test('局部复合矩形与旧世界矩形共存，凹口不被包围盒封死',()=>{
+  const level=corridor();
+  const d={kind:'corner',room:'hall',x:2,y:1,collisionRects:[{x:0,y:0,w:1,h:.25},{x:0,y:.25,w:.25,h:.75}]};
+  level.decorations=[d,{kind:'legacy',room:'hall',collision:{x:5,y:1,w:1,h:.25}}];
+  const compiled=C.compile(level);
+  assert.deepEqual(compiled.errors,[]);
+  assert.equal(C.blockedAt(compiled.rects,40,24,4,4),false,'L 形内凹角可站立');
+  assert.equal(C.blockedAt(compiled.rects,33,24,4,4),true,'侧边实心');
+  assert.equal(C.blockedAt(compiled.rects,82,16,4,4),true,'旧世界矩形仍生效');
+  assert.equal(compiled.rects[0].source,d);
+});
+
+test('几何边界拒绝并用、空数组、坏数值、越界与无效脚底，校验器报告错误',()=>{
+  const base=corridor();
+  for(const shape of [[],null,[null],[{x:0,y:0,w:NaN,h:1}],[{x:0,y:0,w:-1,h:1}],[{x:40,y:0,w:1,h:1}]]){
+    const level=clone(base);level.decorations=[{kind:'bad',room:'hall',x:1,y:1,collisionRects:shape}];
+    assert.ok(C.compile(level).errors.length);
+    const R=v.makeReport();v.rule2({levels:[level]},R);assert.ok(R.errors.length);
+  }
+  const level=clone(base);
+  level.decorations=[{kind:'both',room:'hall',x:1,y:1,collision:{x:1,y:1,w:1,h:1},collisionRects:[{x:0,y:0,w:1,h:1}]}];
+  assert.ok(C.compile(level).errors[0].includes('并用'));
+  level.decorations=[];level.party.footprint.h=0;
+  assert.throws(()=>engine.createMechanics(level),/脚底范围/);
+  level.party.footprint.h=5;level.party.colliders={};
+  assert.ok(C.compile(level).errors[0].includes('数组'));
+});
+
+test('持续位移与斜向移动在 15/30/60/144fps 下不能跨过亚像素薄块',()=>{
+  const rects=[{x:32,y:0,w:.125,h:128}];
+  const blocked=(x,y)=>C.blockedAt(rects,x,y,8,5);
+  for(const fps of [15,30,60,144])for(const diagonal of [false,true]){
+    let x=0,y=16;
+    for(let i=0;i<fps;i++){
+      const end=C.trace(x,y,80/fps,diagonal?40/fps:0,blocked);
+      x=end.x;y=end.y;assert.equal(blocked(x,y),false);
+    }
+    assert.ok(x<=24&&x>23,'停在薄块前最后一个像素内');
+  }
+  assert.equal(C.trace(0,16,64,0,blocked).blocked,true,'大步长也检查中段');
+});
+
+test('相邻块接缝不漏，沿外边缘滑行不误挡',()=>{
+  const rects=[{x:32,y:0,w:4,h:16},{x:32,y:16,w:4,h:16}];
+  assert.equal(C.trace(16,13.5,32,0,(x,y)=>C.blockedAt(rects,x,y,8,5)).blocked,true);
+  assert.equal(C.trace(24,0,0,32,(x,y)=>C.blockedAt(rects,x,y,8,5)).blocked,false);
+});
+
+test('两端可站立但中间有薄障碍时，运行时、路线搜索与两种地图搜索均拒绝跨越',()=>{
+  const level=corridor();level.party.colliders=[{x:1.75,y:1,w:.0625,h:1}];
+  const mechanics=engine.createMechanics(level),blocks=v.furnitureBlocker(level);
+  assert.equal(mechanics.blockedAt(16,16,8,{height:5}),false);
+  assert.equal(mechanics.blockedAt(32,16,8,{height:5}),false);
+  assert.equal(blocks.canStep(1,1,2,1),false);
+  assert.equal(v.stateSearch(level).status,'fail');
+  assert.ok(v.staticReachability(level).stars.length);
+  const game={player:{x:16,y:16},mechanics,birthday:{blockedAt:(x,y)=>mechanics.blockedAt(x,y,8,{height:5})}};
+  assert.equal(pathTo(game,6,1),null);
+});
+
+test('路线工具可通过仅子格位置可走的通道；每一段都实际检查脚底',()=>{
+  const level=corridor();
+  level.party.colliders=[{x:3,y:1,w:.5,h:.375},{x:3,y:1.8125,w:.5,h:.1875}];
+  const mechanics=engine.createMechanics(level);
+  const game={player:{x:16,y:16},mechanics,birthday:{blockedAt:(x,y)=>mechanics.blockedAt(x,y,8,{height:5})}};
+  const path=pathTo(game,6,1);
+  assert.ok(path&&path.some(([x,y])=>y%1!==0),'2px 导航找到偏离整格的通路');
+  let x=16,y=16;
+  for(const [tx,ty] of path){
+    const end=C.trace(x,y,tx*16-x,ty*16-y,(px,py)=>game.birthday.blockedAt(px,py));
+    assert.equal(end.blocked,false);x=end.x;y=end.y;
+  }
+  assert.deepEqual([x,y],[96,16]);
+});
+
+test('真实第一关：静态位置与路径段判定和地图校验一致，椅脚凹口能容纳玩家脚底',()=>{
+  const level=clone(v.loadGame().game.levels[0]),mechanics=engine.createMechanics(level),blocks=v.furnitureBlocker(level);
+  const f=level.party.footprint;
+  const chair=level.decorations.find(d=>d.room==='hall'&&d.kind==='chair');
+  assert.equal(chair.collisionRects.length,3);assert.equal(chair.collision,undefined);
+  const [seat,left]=chair.collisionRects;
+  const x=(chair.x+left.x+left.w)*16+1-f.x,y=(chair.y+seat.y+seat.h)*16+.5-f.y;
+  assert.equal(mechanics.blockedAt(x+f.x,y+f.y,f.w,{height:f.h}),false,'脚底可进入椅脚之间的真实凹口');
+  let points=0;
+  for(let py=8;py<24;py+=.5)for(let px=1;px<39;px+=.5){
+    if(level.entities.some(e=>['gate','door','box'].includes(e.type)&&Math.abs(e.x-px)<1&&Math.abs(e.y-py)<1))continue;
+    assert.equal(blocks(px,py),mechanics.blockedAt(px*16+f.x,py*16+f.y,f.w,{height:f.h}),px+','+py);points++;
+  }
+  assert.ok(points>2000);
+  for(const [px,py,dx,dy] of [[13,18,0,1],[19,10,0,-1],[6,8,0,-1],[17,23,1,0]]){
+    const runtime=C.trace(px*16,py*16,dx*16,dy*16,(x,y)=>mechanics.blockedAt(x+f.x,y+f.y,f.w,{height:f.h}));
+    assert.equal(blocks.canStep(px,py,px+dx,py+dy),!runtime.blocked);
+  }
+});
+
+test('重建关卡会读取最新复合几何，动态门仍随开关状态更新',()=>{
+  const level=corridor();level.entities.push({type:'gate',id:'gate',x:3,y:1});
+  let mechanics=engine.createMechanics(level);
+  assert.equal(mechanics.blockedAt(48,16,8,{height:5}),true);
+  level.entities.at(-1).open=true;
+  assert.equal(mechanics.blockedAt(48,16,8,{height:5}),false);
+  level.decorations.push({kind:'new',room:'hall',x:3,y:1,collisionRects:[{x:0,y:0,w:1,h:1}]});
+  mechanics=engine.createMechanics(level);
+  assert.equal(mechanics.blockedAt(48,16,8,{height:5}),true);
+});
+console.log('\n全部通过：'+count+' 项');

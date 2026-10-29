@@ -21,7 +21,7 @@
         .map(e=>this.footprint(e.x*T,e.y*T,e));
       // 巡游者忽略自身，也把玩家视为占位；互动视线仍只检查地形。
       if(actor&&g._currentArea().id===room)occupied.push(this.footprint(g.player.x,g.player.y));
-      return occupied.some(r=>f.x<r.x+r.w&&f.x+f.w>r.x&&f.y<r.y+r.h&&f.y+f.h>r.y);
+      return occupied.some(r=>root.MIXX.collision.overlaps(f,r));
     }
     updatePlayer(dx,dy,dt){
       this.playerMotion.walking=!!(dx||dy);
@@ -47,9 +47,10 @@
         if(Math.hypot(e.x*T-this.g.player.x,e.y*T-this.g.player.y)<24)continue;
         const step=Math.min(distance,dt*0.9),nx=e.x+dx/distance*step,ny=e.y+dy/distance*step;
         e._dir=this.direction(dx,dy);
-        if(!this.blockedAt(nx*T,ny*T,e)){
-          e.x=nx;e.y=ny;e._walking=true;e._walkDistance=(e._walkDistance||0)+step*T;
-        }else{e._waypoint=((e._waypoint||0)+1)%e.path.length;e._rest=.28;}
+        const end=root.MIXX.collision.trace(e.x*T,e.y*T,(nx-e.x)*T,(ny-e.y)*T,(x,y)=>this.blockedAt(x,y,e));
+        const moved=Math.hypot(end.x-e.x*T,end.y-e.y*T);
+        e.x=end.x/T;e.y=end.y/T;e._walking=moved>0;e._walkDistance=(e._walkDistance||0)+moved;
+        if(end.blocked){e._waypoint=((e._waypoint||0)+1)%e.path.length;e._rest=.28;}
       }
     }
     interact(e){
@@ -229,7 +230,10 @@
       const items=actors.concat(player).map(e=>({foot:e.y+14/T+(e.spriteOffsetY||0),actor:e}));
       if(this.inHall()){
         for(const d of g.level.decorations){
-          if(d.room==='hall'&&d.collision)items.push({foot:d.depth===undefined?d.collision.y+d.collision.h:d.depth,object:d});
+          if(d.room==='hall'&&(d.collision||d.collisionRects)){
+            const bottom=d.collision?d.collision.y+d.collision.h:d.y+Math.max(...d.collisionRects.map(r=>r.y+r.h));
+            items.push({foot:d.depth===undefined?bottom:d.depth,object:d});
+          }
         }
       }
       const record=this.inHall()&&g._entitiesOf('record')[0];
@@ -246,6 +250,35 @@
         ctxDraw(g,img,d);
         if(d.kind==='drums')this.drawDrummerUpperBody(actors.find(e=>e.performance==='drums'));
       }
+    }
+    // Explicit console switch: game.birthday.debugCollision = true (or 'occlusion').
+    drawCollision(){
+      if(!this.debugCollision)return;
+      const g=this.g,c=g.renderer.ctx,area=g._currentArea();
+      c.save();c.lineWidth=.5;
+      const draw=(r,color)=>{c.fillStyle=color;c.fillRect(r.x-g.camera.x,r.y-g.camera.y,r.w,r.h);};
+      for(const r of g.mechanics.staticCollision.rects)draw(r,'rgba(255,65,85,.35)');
+      const a=area.rect;
+      for(let y=a.y;y<a.y+a.h;y++)for(let x=a.x;x<a.x+a.w;x++)
+        if(g.mechanics.isSolidTile(x,y))draw({x:x*T,y:y*T,w:T,h:T},'rgba(255,65,85,.20)');
+      for(const e of g.level.entities){
+        if((e.room||'hall')!==area.id)continue;
+        if(e.type==='npc'||e.type==='guest')draw(this.footprint(e.x*T,e.y*T,e),'rgba(255,205,50,.65)');
+        if((e.type==='gate'||e.type==='door')&&!e.open||e.type==='box'&&!e.carried)
+          draw({x:e.x*T,y:e.y*T,w:T,h:T},'rgba(255,125,40,.5)');
+      }
+      draw(this.footprint(g.player.x,g.player.y),'rgba(30,255,150,.8)');
+      for(const d of g.level.decorations){
+        if(d.room!==area.id)continue;
+        draw({x:d.x*T-1,y:d.y*T-1,w:2,h:2},'#49dcff');
+        if(this.debugCollision!=='occlusion')continue;
+        c.strokeStyle='#76ddff';
+        for(const shape of d.occlusionShapes||(d.occlusionShape?[d.occlusionShape]:[])){
+          c.beginPath();shape.forEach((p,i)=>{const x=(d.x+p[0]*d.w)*T-g.camera.x,y=(d.y+p[1]*d.h)*T-g.camera.y;
+            if(i)c.lineTo(x,y);else c.moveTo(x,y);});c.closePath();c.stroke();
+        }
+      }
+      c.restore();
     }
   }
   function ctxDraw(g,img,d){

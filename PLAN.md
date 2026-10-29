@@ -84,6 +84,7 @@ MIXXTOPIA/
 │   ├── audio.js          # WebAudio 芯片音效 + 每关 BGM 循环
 │   ├── data.js           # 关卡数据：6 关地图 + 对话 + 谜题（数据驱动；含 GAME.avatarPresets）
 │   ├── engine.js         # 引擎：渲染、输入、碰撞、摄像机、粒子、战斗（Combat）
+│   ├── collision.js      # 共享静态碰撞矩形、边界校验与移动路径段采样（#73）
 │   ├── main.js           # 状态机：标题/游玩/对话/暂停/结算/结局 + 存档 + 账户设置 + 战斗接线
 │   └── stats.js          # 游玩统计：独立本机 journal + 幂等云端累加（#46）
 ├── tools/validate.js     # 地图/数据校验脚本（node 运行）
@@ -117,6 +118,8 @@ MIXXTOPIA/
   同时运行 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` +
   `node tools/test-auth.js` + `node tools/test-account.js` + `node tools/test-cloud.js` +
   `node tools/test-stats.js` + `node tools/test-channels.js` + 浏览器冒烟；六关齐备后恢复全量绿门禁。
+  复合碰撞另跑 `node tools/test-collision.js`；浏览器跑 `tools/smoke-level1-collision.js`
+  与 `tools/smoke-level1-actors.js`（通过 `MIXX_PLAYWRIGHT_MODULE` 指定本地 Playwright 模块路径）。
   邮件找回密码另跑 `node tools/test-password-recovery.js` 与
   `node tools/smoke-password-recovery.js`（配置本地 Playwright 模块路径，全走桩，不发真实邮件）。
 - **发布**：测试期（无稳定 tag）`/` 与 `/preview/` 占位，`/beta/` 用 beta/rc tag 或 `main`；
