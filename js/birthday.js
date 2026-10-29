@@ -230,8 +230,8 @@
       const items=actors.concat(player).map(e=>({foot:e.y+14/T+(e.spriteOffsetY||0),actor:e}));
       if(this.inHall()){
         for(const d of g.level.decorations){
-          if(d.room==='hall'&&(d.collision||d.collisionRects)){
-            const bottom=d.collision?d.collision.y+d.collision.h:d.y+Math.max(...d.collisionRects.map(r=>r.y+r.h));
+          if(d.room==='hall'&&(d.collision||d.collisionRects||d.occlusionShape||d.occlusionShapes)){
+            const bottom=d.collision?d.collision.y+d.collision.h:d.collisionRects?d.y+Math.max(...d.collisionRects.map(r=>r.y+r.h)):d.y+d.h;
             items.push({foot:d.depth===undefined?bottom:d.depth,object:d});
           }
         }
@@ -246,7 +246,7 @@
         if(item.actor){this.drawSprite(item.actor,item.actor===player);if(item.actor.performance!=='drums')this.drawPerformers(item.actor);continue;}
         if(!img||!img.complete||!img.naturalWidth)continue;
         const d=item.object;
-        // 原图同位置取样，只重画家具占地，按脚下深度遮挡人物。
+        // 原图同位置取样，沿物体轮廓重画；悬空装饰也按地面锚点遮挡人物。
         ctxDraw(g,img,d);
         if(d.kind==='drums')this.drawDrummerUpperBody(actors.find(e=>e.performance==='drums'));
       }

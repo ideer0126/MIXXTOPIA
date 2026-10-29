@@ -945,17 +945,26 @@ const WIND_CYCLE = ['N', 'E', 'S', 'W'];
  */
 function staticReachability(lv) {
   const furnitureBlocks = furnitureBlocker(lv);
+  const footprint = lv.party && lv.party.preciseCollision && lv.party.footprint;
+  // 精确占地间的通路可能不落在整格上；4px 与通关冒烟的生产移动步长一致。
+  const moveStep = footprint ? .25 : 1;
   const spawn = entitiesOf(lv, 'spawn')[0];
   const waters = entitiesOf(lv, 'water');
   const stones = new Set(entitiesOf(lv, 'stepstone').map(s => s.x + ',' + s.y));
   const oneways = new Map(entitiesOf(lv, 'oneway').map(o => [o.x + ',' + o.y, o.dir]));
 
   const passable = (x, y) => {
-    if (x < 0 || y < 0 || x >= lv.map.w || y >= lv.map.h) return false;
-    if (isWall(lv, x, y) || furnitureBlocks(x, y)) return false;
-    if (isWater(lv, x, y)) {
-      const w = waters.find(w => w.x === x && w.y === y);
-      return stones.has(x + ',' + y) || !!(w && w.shallow === true); // high/low 并集
+    if (furnitureBlocks(x, y)) return false;
+    const x0 = footprint ? Math.floor(x + footprint.x / 16) : x;
+    const y0 = footprint ? Math.floor(y + footprint.y / 16) : y;
+    const x1 = footprint ? Math.floor(x + (footprint.x + footprint.w - .001) / 16) : x;
+    const y1 = footprint ? Math.floor(y + (footprint.y + footprint.h - .001) / 16) : y;
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+      if (tx < 0 || ty < 0 || tx >= lv.map.w || ty >= lv.map.h || isWall(lv, tx, ty)) return false;
+      if (isWater(lv, tx, ty)) {
+        const w = waters.find(w => w.x === tx && w.y === ty);
+        if (!stones.has(tx + ',' + ty) && !(w && w.shallow === true)) return false; // high/low 并集
+      }
     }
     return true;
   };
@@ -963,9 +972,10 @@ function staticReachability(lv) {
     const nx = x + dx;
     const ny = y + dy;
     if (!passable(nx, ny) || !furnitureBlocks.canStep(x,y,nx,ny)) return false;
-    const dir = DIR_BY_DELTA[dx + ',' + dy];
-    if (oneways.get(x + ',' + y) && oneways.get(x + ',' + y) !== dir) return false;
-    if (oneways.get(nx + ',' + ny) && oneways.get(nx + ',' + ny) !== dir) return false;
+    const dir = DIR_BY_DELTA[dx / moveStep + ',' + dy / moveStep];
+    const from = Math.floor(x + .5) + ',' + Math.floor(y + .5), to = Math.floor(nx + .5) + ',' + Math.floor(ny + .5);
+    if (oneways.get(from) && oneways.get(from) !== dir) return false;
+    if (oneways.get(to) && oneways.get(to) !== dir) return false;
     return true;
   };
 
@@ -973,10 +983,10 @@ function staticReachability(lv) {
   if (spawn && passable(spawn.x, spawn.y)) {
     union.add(spawn.x + ',' + spawn.y);
     const queue = [{ x: spawn.x, y: spawn.y }];
-    while (queue.length) {
-      const c = queue.shift();
+    for (let i = 0; i < queue.length; i++) {
+      const c = queue[i];
       for (const dirName of Object.keys(DIRV)) {
-        const [dx, dy] = DIRV[dirName];
+        const dx = DIRV[dirName][0] * moveStep, dy = DIRV[dirName][1] * moveStep;
         if (!canStep(c.x, c.y, dx, dy)) continue;
         const k = (c.x + dx) + ',' + (c.y + dy);
         if (!union.has(k)) {
@@ -1016,6 +1026,8 @@ function stateSearch(lv, dialogue = {}) {
   }
 
   const furnitureBlocks = furnitureBlocker(lv);
+  const footprint = lv.party && lv.party.preciseCollision && lv.party.footprint;
+  const moveStep = footprint ? .25 : 1;
   const starIds = stars.map(s => s.id);
   const required = [...new Set(lv.entities.flatMap(s =>
     (Array.isArray(s.requiresDialogue) ? s.requiresDialogue : []).concat(s.recordNode || [])))];
@@ -1070,25 +1082,33 @@ function stateSearch(lv, dialogue = {}) {
 
   /** 动态可站立判定（st = {pos, boxesSet, lit, waterLevel, windOffset}） */
   const standable = (x, y, st) => {
-    if (x < 0 || y < 0 || x >= lv.map.w || y >= lv.map.h) return false;
-    if (isWall(lv, x, y) || furnitureBlocks(x, y)) return false;
-    const k = x + ',' + y;
-    if (st.boxesSet.has(k)) return false;
-    if (doorAt.has(k) && !st.openDoors.includes(doorAt.get(k).id)) return false;
-    if (isWater(lv, x, y)) {
-      if (st.waterLevel === 'high') return stoneAt.has(k);
-      const w = waterAt.get(k);
-      return !!(w && w.shallow === true);
-    }
-    const g = gatesAt.get(k);
-    if (g) {
-      const ctl = gateCtl.get(g.id) || { switches: [], lamps: [] };
-      let open = !!g.open || (!!g.requiresDialogue && allowed(g, st));
-      if (!open) open = ctl.switches.some(s => allowed(s, st)
-        && ((!g.boxOnly && s.x + ',' + s.y === st.pos) || st.boxesSet.has(s.x + ',' + s.y)));
-      if (!open) open = ctl.lamps.some(l => st.lit.includes(l.id));
-      if (!open && !g.requiresDialogue && ctl.switches.length === 0 && ctl.lamps.length === 0) open = true; // 无控制器门按常开（宽松）
-      return open;
+    if (furnitureBlocks(x, y)) return false;
+    const x0 = footprint ? Math.floor(x + footprint.x / 16) : x;
+    const y0 = footprint ? Math.floor(y + footprint.y / 16) : y;
+    const x1 = footprint ? Math.floor(x + (footprint.x + footprint.w - .001) / 16) : x;
+    const y1 = footprint ? Math.floor(y + (footprint.y + footprint.h - .001) / 16) : y;
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+      if (tx < 0 || ty < 0 || tx >= lv.map.w || ty >= lv.map.h || isWall(lv, tx, ty)) return false;
+      const k = tx + ',' + ty;
+      if (st.boxesSet.has(k)) return false;
+      if (doorAt.has(k) && !st.openDoors.includes(doorAt.get(k).id)) return false;
+      if (isWater(lv, tx, ty)) {
+        if (st.waterLevel === 'high') { if (!stoneAt.has(k)) return false; }
+        else {
+          const w = waterAt.get(k);
+          if (!(w && w.shallow === true)) return false;
+        }
+      }
+      const g = gatesAt.get(k);
+      if (g) {
+        const ctl = gateCtl.get(g.id) || { switches: [], lamps: [] };
+        let open = !!g.open || (!!g.requiresDialogue && allowed(g, st));
+        if (!open) open = ctl.switches.some(s => allowed(s, st)
+          && ((!g.boxOnly && s.x + ',' + s.y === st.pos) || st.boxesSet.has(s.x + ',' + s.y)));
+        if (!open) open = ctl.lamps.some(l => st.lit.includes(l.id));
+        if (!open && !g.requiresDialogue && ctl.switches.length === 0 && ctl.lamps.length === 0) open = true; // 无控制器门按常开（宽松）
+        if (!open) return false;
+      }
     }
     return true;
   };
@@ -1251,11 +1271,11 @@ function stateSearch(lv, dialogue = {}) {
 
     /* 移动（含风带推动） */
     for (const dirName of Object.keys(DIRV)) {
-      const [dx, dy] = DIRV[dirName];
-      const nk = (px + dx) + ',' + (py + dy);
+      const dx = DIRV[dirName][0] * moveStep, dy = DIRV[dirName][1] * moveStep;
       if (!standable(px + dx, py + dy, st) || !furnitureBlocks.canStep(px,py,px+dx,py+dy)) continue;
-      if (onewayAt.get(st.pos) && onewayAt.get(st.pos) !== dirName) continue;
-      if (onewayAt.get(nk) && onewayAt.get(nk) !== dirName) continue;
+      const from = Math.floor(px + .5) + ',' + Math.floor(py + .5), to = Math.floor(px + dx + .5) + ',' + Math.floor(py + dy + .5);
+      if (onewayAt.get(from) && onewayAt.get(from) !== dirName) continue;
+      if (onewayAt.get(to) && onewayAt.get(to) !== dirName) continue;
       let [fx, fy] = resolveWind(px + dx, py + dy, st);
       const room = roomAt.get(fx + ',' + fy);
       if (room && (!room.enterFrom || (room.enterFrom === 'west' && dx > 0))) { fx = room.to.x; fy = room.to.y; }
