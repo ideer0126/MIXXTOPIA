@@ -2358,14 +2358,14 @@ test('第一关：后台对话/三星保存恢复；重玩重新收前两星即�
   });
 });
 
-test('第一关：信息来自人物对话，无告示牌；儿童闲聊不改写共享字典或 played', () => {
+test('第一关：信息来自人物对话，无告示牌；来宾闲聊不改写共享字典或 played', () => {
   withGAME(prologueData(), () => {
     const game=makeGame();
     try {
       game._startNewGame();level1Run.finishDialogue(game);
       assert.strictEqual(game._entitiesOf('sign').length,0);
-      const guest=game._entitiesOf('guest').find(e=>!e.path),before=JSON.stringify(game.dialogue);
-      level1Run.walkTo(game,guest.x,guest.y);
+      const guest=game._entitiesOf('guest').find(e=>e.id==='parent-mustard'),before=JSON.stringify(game.dialogue);
+      level1Run.walkTo(game,guest.x,guest.y+1);
       assert.strictEqual(game._nearInteractable().type,'guest');
       game._interact();level1Run.finishDialogue(game);
       assert.strictEqual(JSON.stringify(game.dialogue),before);
@@ -2600,7 +2600,7 @@ test('第一关目标与标记：Lily 开场不冒充自我介绍，完成对话
       assert.ok(text('hud-objective').includes('0/6'));
       const lily = game._entitiesOf('npc').find(e => e.id === 'lily' && e.room === 'hall');
       assert.ok(game._npcNeedsTalk(lily));
-      level1Run.walkTo(game, lily.x, lily.y);
+      level1Run.walkTo(game, lily.x-1, lily.y);
       const targets = JSON.stringify(game._npcTarget);
       game._nearInteractable(); game._nearInteractable();
       assert.strictEqual(JSON.stringify(game._npcTarget), targets, '提示预览不改变剧情游标');
@@ -2683,7 +2683,7 @@ test('普通儿童完整往返：路径始终在地面，避开入口柱子，�
       for(let i=0;i<1000;i++){
         game.birthday.update(.05);
         for(const e of children){
-          assert.strictEqual(game.birthday.blockedAt(e.x*16,e.y*16,true),false,e.id+' 不能站进障碍');
+          assert.strictEqual(game.birthday.blockedAt(e.x*16,e.y*16,e),false,e.id+' 不能站进障碍');
           for(let j=0;j<e.path.length;j++)if(Math.hypot(e.x-e.path[j][0],e.y-e.path[j][1])<.02)ends.get(e.id).add(j);
           if(e.id==='child-walk')assert.ok(e.y<=21&&e.x<=15,'入口儿童不能走到门框柱上');
         }
@@ -2691,6 +2691,78 @@ test('普通儿童完整往返：路径始终在地面，避开入口柱子，�
       for(const e of children)assert.strictEqual(ends.get(e.id).size,e.path.length,e.id+' 应完整往返');
       assert.strictEqual(JSON.stringify(muses.map(e=>[e.x,e.y])),fixed);
     }finally{game.destroy()}
+  });
+});
+
+test('#71 来宾四向接近：持续移动不能穿身，接触后仍可后退和对话',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      const e=game._entitiesOf('guest').find(e=>e.id==='parent-mustard');
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        game.player={x:e.x*16-dx*16,y:e.y*16-dy*16};
+        assert.equal(game.birthday.blockedAt(game.player.x,game.player.y),false);
+        for(let i=0;i<20;i++)game._moveAxis(dx,dy);
+        assert.ok(dx?Math.abs(game.player.x-e.x*16)>=8:Math.abs(game.player.y-e.y*16)>=5,'脚底不能重叠');
+        assert.equal(game._nearInteractable(),e);
+        assert.ok(game._interact());level1Run.finishDialogue(game);
+        assert.ok(game._moveAxis(-dx*4,-dy*4),'接触后可退开');
+      }
+    }finally{game.destroy();}
+  });
+});
+
+test('#71 人物占位：成人/儿童尺寸、边缘接触、绘制偏移与房间隔离',()=>{
+  const npc={type:'npc',id:'offset',x:10,y:10,room:'hall',spriteOffsetY:-1.5};
+  const child={type:'guest',id:'child',x:15,y:10,age:'child',room:'hall'};
+  let room='hall';
+  const g={level:{party:{footprint:{x:4,y:9,w:8,h:5}},entities:[npc,child]},
+    player:{x:0,y:0},mechanics:{blockedAt:()=>false},_currentArea:()=>({id:room})};
+  const birthday=new sandbox.MIXX.Birthday(g);
+  assert.equal(birthday.blockedAt(160,136),true,'占位跟随绘制脚底');
+  assert.equal(birthday.blockedAt(160,160),false,'未偏移的逻辑格不另设障碍');
+  for(const [dx,dy,blocked] of [[7,0,true],[8,0,false],[0,4,true],[0,5,false]])
+    assert.equal(birthday.blockedAt(160+dx,136+dy),blocked,'成人脚底边缘');
+  assert.equal(birthday.blockedAt(240+6,160),true,'儿童占位宽度参与检测');
+  assert.equal(birthday.blockedAt(240+7,160),false,'儿童旁边可侧身通过');
+  assert.equal(birthday.blockedAt(240,160,child),false,'巡游不碰自己');
+  g.player={x:240,y:160};
+  assert.equal(birthday.blockedAt(240,160,child),true,'巡游检测玩家占位');
+  room='backstage';
+  assert.equal(birthday.blockedAt(240,160),false,'另一个房间的人物不阻挡');
+  assert.equal(birthday.blockedAt(240,160,child),false,'巡游不检测异室玩家');
+});
+
+test('#71 全部 NPC 与来宾都有脚底占位；巡游遇人物折返，移开玩家后恢复',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      const actors=game.level.entities.filter(e=>e.type==='npc'||e.type==='guest');
+      for(const e of actors){
+        game.player={x:e.x*16,y:e.y*16};
+        assert.equal(game.birthday.blockedAt(e.x*16,(e.y+(e.spriteOffsetY||0))*16),true,e.room+':'+e.id);
+      }
+      game.player={x:20*16,y:15*16};
+      const child=game._entitiesOf('guest').find(e=>e.id==='child-blue');
+      const blocker={type:'npc',id:'blocker',room:'hall',x:9,y:18.5};
+      game.level.entities.push(blocker);
+      let furthest=child.y,returned=false;
+      for(let i=0;i<240;i++){
+        game.birthday.update(.05);
+        assert.equal(game.birthday.blockedAt(child.x*16,child.y*16,child),false,'儿童不能进入其他人物');
+        furthest=Math.max(furthest,child.y);
+        if(furthest>17.5&&child.y<17.1)returned=true;
+      }
+      assert.ok(returned,'遇人物不能一直顶住不动，应沿原路线折返');
+      game.level.entities.splice(game.level.entities.indexOf(blocker),1);
+      game.player={x:child.x*16,y:child.y*16+20};
+      const stopped=[child.x,child.y];
+      for(let i=0;i<20;i++)game.birthday.update(.05);
+      assert.deepEqual([child.x,child.y],stopped,'靠近玩家停步');
+      game.player={x:20*16,y:15*16};
+      for(let i=0;i<20;i++)game.birthday.update(.05);
+      assert.notDeepEqual([child.x,child.y],stopped,'玩家移开后恢复巡游');
+    }finally{game.destroy();}
   });
 });
 
@@ -2790,7 +2862,7 @@ test('人物动作：四向朝向、行走/停步/撞墙与暂停帧保持一致
     try{
       game._startNewGame();level1Run.finishDialogue(game);
       for(const [k,dir]of [['s',0],['d',1],['w',2],['a',3]]){
-        game.player={x:20*16,y:22*16};
+        game.player={x:20*16,y:15*16};
         key('keydown',k);for(let i=0;i<4;i++)tick(game,50);key('keyup',k);
         let pose=game.birthday.pose({},true);
         assert.strictEqual(pose.dir,dir);assert.notStrictEqual(pose.frame,0);

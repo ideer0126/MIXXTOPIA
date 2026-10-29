@@ -59,7 +59,7 @@
     const area = game._currentArea();
     const npc = game.level.entities.find(e => e.id === id && (!e.room || e.room === (area ? area.id : 'hall')));
     check(npc, '当前房间没有目标：' + id);
-    const targets=[[npc.x,npc.y],[npc.x-1,npc.y],[npc.x+1,npc.y],[npc.x,npc.y+1],[npc.x,npc.y-1]];
+    const targets=[[npc.x,npc.y],[npc.x,npc.y+1],[npc.x,npc.y-1],[npc.x+1,npc.y],[npc.x-1,npc.y]];
     const target=targets.find(([x,y])=>pathTo(game,x,y)!==null);
     check(target,'没有可接近的互动位置：'+id);
     walkTo(game, target[0], target[1]);
