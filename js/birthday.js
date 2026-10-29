@@ -9,9 +9,19 @@
     }
     inHall(){ return this.g._currentArea().id==='hall'; }
     direction(dx,dy){if(!dx&&!dy)return 0;return Math.abs(dx)>Math.abs(dy)?(dx>0?1:3):(dy>0?0:2);}
-    blockedAt(x,y,child){
-      const f=child?{x:5,y:10,w:6,h:4}:this.g.level.party.footprint;
-      return this.g.mechanics.blockedAt(x+f.x,y+f.y,f.w,{height:f.h});
+    footprint(x,y,actor){
+      const f=actor&&actor.age==='child'?{x:5,y:10,w:6,h:4}:this.g.level.party.footprint;
+      return{x:x+f.x,y:y+f.y+(actor&&actor.spriteOffsetY||0)*T,w:f.w,h:f.h};
+    }
+    blockedAt(x,y,actor){
+      const g=this.g,f=this.footprint(x,y,actor);
+      if(g.mechanics.blockedAt(f.x,f.y,f.w,{height:f.h}))return true;
+      const room=actor?(actor.room||'hall'):g._currentArea().id;
+      const occupied=g.level.entities.filter(e=>e!==actor&&(e.type==='npc'||e.type==='guest')&&(e.room||'hall')===room)
+        .map(e=>this.footprint(e.x*T,e.y*T,e));
+      // 巡游者忽略自身，也把玩家视为占位；互动视线仍只检查地形。
+      if(actor&&g._currentArea().id===room)occupied.push(this.footprint(g.player.x,g.player.y));
+      return occupied.some(r=>f.x<r.x+r.w&&f.x+f.w>r.x&&f.y<r.y+r.h&&f.y+f.h>r.y);
     }
     updatePlayer(dx,dy,dt){
       this.playerMotion.walking=!!(dx||dy);
@@ -37,7 +47,7 @@
         if(Math.hypot(e.x*T-this.g.player.x,e.y*T-this.g.player.y)<24)continue;
         const step=Math.min(distance,dt*0.9),nx=e.x+dx/distance*step,ny=e.y+dy/distance*step;
         e._dir=this.direction(dx,dy);
-        if(!this.blockedAt(nx*T,ny*T,e.age==='child')){
+        if(!this.blockedAt(nx*T,ny*T,e)){
           e.x=nx;e.y=ny;e._walking=true;e._walkDistance=(e._walkDistance||0)+step*T;
         }else{e._waypoint=((e._waypoint||0)+1)%e.path.length;e._rest=.28;}
       }
