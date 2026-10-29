@@ -3411,7 +3411,7 @@
           + '　寻找星星 · ' + found + '/' + stars.length;
       }
       if (found < stars.length) return this.collected.includes('s1')
-        ? '去左上杂物间找星星 · E / A 开门' : '到左侧套圈摊位赢得星星 · E / A';
+        ? '去左上杂物间找星星 · 从南侧敞口进入' : '到左侧套圈摊位赢得星星 · E / A';
       if (!this._dialogueComplete(record.dialogue)) return '到左上杂物间取唱片 · E / A';
       if (!this._dialogueComplete(music.dialogue)) return '回舞台播放唱片 · E / A';
       const area = this._currentArea();

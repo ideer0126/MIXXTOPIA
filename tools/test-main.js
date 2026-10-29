@@ -2632,6 +2632,35 @@ test('第一关目标与标记：Lily 开场不冒充自我介绍，完成对话
   });
 });
 
+test('#68 杂物间指引：s1 后与读档后提示南侧敞口，移动收 s2 后保留唱片互动指引', () => {
+  withGAME(prologueData(), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game);
+      level1Run.talkTo(game, 'lily'); level1Run.talkTo(game, 'lily');
+      for (const id of ['haewon', 'sullyoon', 'bae', 'jiwoo', 'kyujin']) level1Run.talkTo(game, id);
+      assert.strictEqual(text('hud-objective'), '到左侧套圈摊位赢得星星 · E / A');
+      level1Run.winRings(game); level1Run.walkTo(game, 7, 21);
+      assert.deepStrictEqual(Array.from(game.collected), ['s1']);
+      const objective = text('hud-objective');
+      assert.ok(objective.includes('左上杂物间') && objective.includes('南侧敞口'));
+      assert.ok(!/开门|E\s*\/\s*A/.test(objective));
+      game._setState(STATE.PAUSED); game._saveAndQuit(); elt('btn-continue').click();
+      assert.deepStrictEqual(Array.from(game.collected), ['s1']);
+      assert.strictEqual(text('hud-objective'), objective);
+      assert.strictEqual(game._entitiesOf('door').length, 0);
+      // 从南侧敞口进入，全程只移动，不按互动键即可收星。
+      level1Run.walkTo(game, 6, 8); level1Run.walkTo(game, 4, 6);
+      assert.ok(game.collected.includes('s2'));
+      assert.strictEqual(text('hud-objective'), '到左上杂物间取唱片 · E / A');
+      level1Run.talkTo(game, game._entitiesOf('record')[0].id);
+      assert.strictEqual(text('hud-objective'), '回舞台播放唱片 · E / A');
+      level1Run.talkTo(game, game._entitiesOf('gramophone')[0].id);
+      assert.strictEqual(text('hud-objective'), '从舞台右侧帘幕进入化妆间');
+    } finally { game.destroy(); }
+  });
+});
+
 test('第一关禁用战斗：按 F/G 无攻击，无 HP/能量/B/C；保存恢复、重玩与换关正确', () => {
   const data = prologueData();
   data.levels.push(main.buildBootLevels()[1]);
