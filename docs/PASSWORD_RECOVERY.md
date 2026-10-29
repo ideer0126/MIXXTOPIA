@@ -100,4 +100,20 @@ MIXX_PLAYWRIGHT_MODULE=/absolute/path/to/playwright node tools/smoke-password-re
 
 **本次 beta 验收的主要待办已补齐**：真实投递与精确回调、手机本人重置及新密码登录、旧密码拒绝、旧链接拒绝、真实重发限流、异账号会话保留、可见资料/偏好/存档保留、统计同步及上述窄屏测量均已有对应证据。手机操作仍以用户确认为证，不扩大为代理直接观察的自动化结果；未验证所有机型、软键盘或全部网络故障分支。一封 B 邮件进入垃圾邮件的现象保留为投递可达性记录，正式根入口与独立正式后端验收仍属 #47。
 
-A/B/C 三个测试账号仍保留，未执行远端删除；本地生成的初始密码临时夹具已清除。用户随后明确授权提交并推送本次记录，以及仅删除本轮三个测试账号。当前浏览器缺少 Supabase 管理登录态，管理插件尚未接入，删除等待可用的管理连接；授权不等于删除已完成。获得管理访问后，须按本轮精确邮箱/UUID 定位，并在项目所有者上下文核对账户与关联资料、云档、统计的删除结果；不能以匿名或其他账号 RLS 下的空结果代替清理证据。本次未更新 GitHub Issue。
+用户随后明确授权提交并推送本次记录，以及仅删除本轮三个测试账号。验收记录已提交为 `f356aa1` 并推送至 `feat/22-password-recovery-live-acceptance`；首次清理因缺少管理连接而暂缓，后续实际结果如下。本地生成的初始密码临时夹具已清除，本次未更新 GitHub Issue。
+
+### 三个测试账号清理（已完成）
+
+2026-10-29 北京时间 11:23，在新接入的 Supabase 管理连接中完成已授权清理，项目严格限定为 `hlnubesywvcxdghfyoux`。先用精确邮箱查询 A 的 UUID，再逐一核对 A/B/C 的邮箱与 UUID；查询角色为 `postgres`，`rolbypassrls = true`，结果不受匿名权限或其他账号的 RLS 可见性限制。精确目标仅保存在仓库外的交接清单中。
+
+删除前确认 `profiles` / `saves` / `stats`、认证身份及会话相关外键使用 `ON DELETE CASCADE`，四张业务目标表无自定义删除触发器；三者均无拥有的 Storage 对象或桶，也无 SCIM 用户关联。按官方支持的[直接删除账号方式](https://supabase.com/docs/guides/auth/managing-user-data#deleting-users)，通过管理 SQL 以三组精确 UUID **并且**邮箱匹配删除 `auth.users`，返回恰好三个目标账号，其关联记录由现有外键级联清理。
+
+| 账号 | auth.users | public.profiles | public.saves | public.stats | auth.sessions | auth.refresh_tokens | auth.identities |
+|---|---|---|---|---|---|---|---|
+| A | 1 → 0 | 1 → 0 | 1 → 0 | 1 → 0 | 1 → 0 | 1 → 0 | 1 → 0 |
+| B | 1 → 0 | 1 → 0 | 0 → 0 | 1 → 0 | 0 → 0 | 0 → 0 | 1 → 0 |
+| C | 1 → 0 | 1 → 0 | 0 → 0 | 1 → 0 | 2 → 0 | 2 → 0 | 1 → 0 |
+
+11:23:08 另发独立管理查询，按这三个 UUID 确认上表所有删除后计数均为零；`auth.one_time_tokens`、SCIM 关联及拥有的 Storage 对象/桶计数也均为零。已有会话与刷新令牌记录已清理；依据官方说明，先前签发的 JWT 仍可能在到期前通过签名校验，本次不声称已验证所有旧访问令牌即时失效。
+
+完整前置检查、删除返回值、前后计数及 SQL 保存在 `/tmp/mixxtopia-recovery-cleanup-evidence.json`；`/tmp/mixxtopia-recovery-cleanup-targets.json` 已补齐 A 的 UUID 并标记 `deleted_and_owner_verified`。这些临时文件不含密码或令牌。清理执行阶段未修改迁移、RLS、项目配置或其他账号数据。
