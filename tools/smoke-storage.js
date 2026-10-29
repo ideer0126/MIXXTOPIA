@@ -24,7 +24,10 @@ const output = process.env.MIXX_STORAGE_OUTPUT || '/tmp/mixxtopia-storage';
   let browser;
   const errors = [], results = [];
   try {
-    browser = await chromium.launch({ executablePath: process.env.MIXX_CHROME || '/opt/google/chrome/chrome', headless: true, args: ['--no-sandbox'] });
+    browser = await chromium.launch({
+      ...(process.env.MIXX_CHROME ? { executablePath: process.env.MIXX_CHROME } : {}),
+      headless: true, args: ['--no-sandbox'],
+    });
     for (const device of ['desktop', 'touch']) {
       const context = await browser.newContext(device === 'touch'
         ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }
@@ -85,7 +88,8 @@ const output = process.env.MIXX_STORAGE_OUTPUT || '/tmp/mixxtopia-storage';
         }, phase);
         await page.locator('#game').screenshot({ path: path.join(output, device + '-wall-' + phase + '.png') });
       }
-      const wallEdge = await page.evaluate(() => game.level.decorations.find(d => d.kind === 'storageWestWall').collision.w * 16);
+      // Visible wall foot at source-image x=80, mapped from 1500px to the 640px hall.
+      const wallEdge = 80 / 1500 * 640;
       assert.ok(westWall.before.footLeft < wallEdge, 'The former approach enters the visible wall');
       assert.ok(westWall.after.footLeft >= wallEdge, 'The corrected approach stays inside the room');
       assert.equal(westWall.after.blocked, false);
@@ -94,7 +98,7 @@ const output = process.env.MIXX_STORAGE_OUTPUT || '/tmp/mixxtopia-storage';
         const x = game.player.x; game._moveAxis(1, 0);
         const canLeave = game.player.x > x;
         game._loadLevel(0); level1Playthrough.finishDialogue(game); game._entryFade = 0;
-        if (level1Playthrough.pathTo(game, 1.5, 5.75) !== null) return false;
+        if (level1Playthrough.pathTo(game, 2.25, 5.75) !== null) return false;
         level1Playthrough.walkTo(game, 3.25, 5.75);
         level1Playthrough.walkTo(game, 4, 6); level1Playthrough.walkTo(game, 6, 8);
         return canLeave;

@@ -24,7 +24,10 @@ const output = process.env.MIXX_CAKE_OUTPUT || '/tmp/mixxtopia-cake';
   let browser;
   const errors = [], results = [];
   try {
-    browser = await chromium.launch({ executablePath: process.env.MIXX_CHROME || '/opt/google/chrome/chrome', headless: true, args: ['--no-sandbox'] });
+    browser = await chromium.launch({
+      ...(process.env.MIXX_CHROME ? { executablePath: process.env.MIXX_CHROME } : {}),
+      headless: true, args: ['--no-sandbox'],
+    });
     for (const device of ['desktop', 'touch']) {
       const context = await browser.newContext(device === 'touch'
         ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }
