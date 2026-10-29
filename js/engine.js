@@ -534,6 +534,8 @@
       if (!level || !level.map) throw new TypeError('createMechanics: level.map 不能为空');
       this.level = level;
       this.map = level.map;
+      this.staticCollision = root.MIXX.collision.compile(level);
+      if (this.staticCollision.errors.length) throw new TypeError(this.staticCollision.errors.join('; '));
       this.legend = this.map.legend || DEFAULT_LEGEND;
       this._initialGateOpen = new Map();
       const gates = this.entitiesOf('gate');
@@ -592,10 +594,7 @@
       const ignore = opts && opts.ignoreBox;
       if (this.level.party && this.level.party.preciseCollision) {
         const height = opts && opts.height > 0 ? opts.height : size;
-        const rects = (this.level.party.colliders || []).concat((this.level.decorations || [])
-          .filter(d => d.room === 'hall' && d.collision).map(d => d.collision));
-        for (const r of rects) if (px < (r.x + r.w) * TILE && px + size > r.x * TILE
-          && py < (r.y + r.h) * TILE && py + height > r.y * TILE) return true;
+        if (root.MIXX.collision.blockedAt(this.staticCollision.rects, px, py, size, height)) return true;
       }
       const height = opts && opts.height > 0 ? opts.height : size;
       const inset = this.level.party && this.level.party.preciseCollision ? .001 : 1;

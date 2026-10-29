@@ -31,6 +31,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const Collision = require('../js/collision.js');
 
 const ROOT = path.join(__dirname, '..');
 const DATA_FILE = path.join(ROOT, 'js', 'data.js');
@@ -131,15 +132,25 @@ function isWall(level, x, y) {
 /** 每次校验/搜索只构建一次静态家具列表；下次调用重新读取关卡数据。 */
 function furnitureBlocker(level) {
   const party = level.party;
-  if (!party || !party.preciseCollision) return () => false;
+  if (!party || !party.preciseCollision) return Object.assign(() => false, { canStep: () => true });
+  const { rects, errors } = Collision.compile(level);
+  if (errors.length) return Object.assign(() => true, { canStep: () => false });
   const f = party.footprint;
-  if (!f || ![f.x, f.y, f.w, f.h].every(Number.isFinite)) return () => true;
-  const rects = (party.colliders || []).concat((level.decorations || [])
-    .filter(d => d.room === 'hall' && d.collision).map(d => d.collision));
-  return (x, y) => {
-    const px = x + f.x / 16, py = y + f.y / 16, w = f.w / 16, h = f.h / 16;
-    return rects.some(r => px < r.x + r.w && px + w > r.x && py < r.y + r.h && py + h > r.y);
+  const blocks = (x, y) => {
+    const px=x*16+f.x, py=y*16+f.y;
+    if (Collision.blockedAt(rects,px,py,f.w,f.h)) return true;
+    for(let ty=Math.floor(py/16);ty<=Math.floor((py+f.h-.001)/16);ty++)
+      for(let tx=Math.floor(px/16);tx<=Math.floor((px+f.w-.001)/16);tx++)
+        if(isWall(level,tx,ty))return true;
+    return false;
   };
+  const edges = new Map();
+  blocks.canStep = (x,y,nx,ny) => {
+    const key=[x,y,nx,ny].join(',');
+    if(!edges.has(key))edges.set(key,!Collision.trace(x*16,y*16,(nx-x)*16,(ny-y)*16,(px,py)=>blocks(px/16,py/16)).blocked);
+    return edges.get(key);
+  };
+  return blocks;
 }
 
 function isWater(level, x, y) {
@@ -310,23 +321,16 @@ function rule2(game, R) {
         R.err('规则 2', tag + ' ' + label(e) + ' 叠放在水域上，仅允许 WATER/STEPSTONE/浅滩星');
       }
     }
-    if(lv.party && lv.party.preciseCollision){
-      const f=lv.party.footprint;
-      if(!f || ![f.x,f.y,f.w,f.h].every(Number.isFinite) || f.x<0 || f.y<0 || f.w<=0 || f.h<=0 || f.x+f.w>16 || f.y+f.h>16)
-        R.err('规则 2',tag+' 脚底范围必须是人物瓦片内的有效矩形');
-      for(const r of lv.party.colliders||[])if(![r.x,r.y,r.w,r.h].every(Number.isFinite)||r.x<0||r.y<0||r.w<=0||r.h<=0||r.x+r.w>lv.map.w||r.y+r.h>lv.map.h)
-        R.err('规则 2',tag+' 精确墙脚碰撞必须在地图范围内');
-    }
+    for(const error of Collision.compile(lv).errors) R.err('规则 2',tag+' '+error);
     for (const d of lv.decorations || []) {
+      if(lv.party && lv.party.preciseCollision && d.room === 'hall') continue;
       if (!d.collision) continue;
       const r = d.collision;
-      const precise = lv.party && lv.party.preciseCollision && d.room === 'hall';
-      if (![r.x, r.y, r.w, r.h].every(precise ? Number.isFinite : Number.isInteger) || r.w <= 0 || r.h <= 0
+      if (![r.x, r.y, r.w, r.h].every(Number.isInteger) || r.w <= 0 || r.h <= 0
         || r.x < 0 || r.y < 0 || r.x + r.w > lv.map.w || r.y + r.h > lv.map.h) {
-        R.err('规则 2', tag + ' 家具 ' + d.kind + (precise ? ' collision 必须是地图内的有限数值矩形' : ' collision 必须是地图内的整数矩形'));
+        R.err('规则 2', tag + ' 家具 ' + d.kind + ' collision 必须是地图内的整数矩形');
         continue;
       }
-      if (precise) continue;
       let missing = false;
       for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
         if (!isWall(lv, x, y)) missing = true;
@@ -967,7 +971,7 @@ function staticReachability(lv) {
   const canStep = (x, y, dx, dy) => {
     const nx = x + dx;
     const ny = y + dy;
-    if (!passable(nx, ny)) return false;
+    if (!passable(nx, ny) || !furnitureBlocks.canStep(x,y,nx,ny)) return false;
     const dir = DIR_BY_DELTA[dx / moveStep + ',' + dy / moveStep];
     const from = Math.floor(x + .5) + ',' + Math.floor(y + .5), to = Math.floor(nx + .5) + ',' + Math.floor(ny + .5);
     if (oneways.get(from) && oneways.get(from) !== dir) return false;
@@ -1268,7 +1272,7 @@ function stateSearch(lv, dialogue = {}) {
     /* 移动（含风带推动） */
     for (const dirName of Object.keys(DIRV)) {
       const dx = DIRV[dirName][0] * moveStep, dy = DIRV[dirName][1] * moveStep;
-      if (!standable(px + dx, py + dy, st)) continue;
+      if (!standable(px + dx, py + dy, st) || !furnitureBlocks.canStep(px,py,px+dx,py+dy)) continue;
       const from = Math.floor(px + .5) + ',' + Math.floor(py + .5), to = Math.floor(px + dx + .5) + ',' + Math.floor(py + dy + .5);
       if (onewayAt.get(from) && onewayAt.get(from) !== dirName) continue;
       if (onewayAt.get(to) && onewayAt.get(to) !== dirName) continue;
@@ -2130,6 +2134,6 @@ if (require.main === module) main();
 module.exports = {
   loadGame, makeReport, checkBase, rule1, rule2, rule3, rule4, rule5, rule6,
   rule7, rule8, rule9, rule10, scanText, mechanismScope, buildValidGame,
-  stateSearch, staticReachability,
+  stateSearch, staticReachability, furnitureBlocker,
   selectLevel,
 };

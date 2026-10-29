@@ -53,6 +53,7 @@ const output = process.env.MIXX_STORAGE_OUTPUT || '/tmp/mixxtopia-storage';
             .filter(d => !['cleaningBucket', 'cleaningRack'].includes(d.kind))
             .map(d => d.kind !== 'spareChairs' ? d : { ...d, w: 3.2, h: 2.48, depth: 6.32,
               occlusionShapes: undefined, collision: { x: 2.2667, y: 5.4133, w: 3.0133, h: .9067 } });
+          game.mechanics.staticCollision = MIXX.collision.compile(game.level);
         }, phase);
         approaches[phase] = {};
         for (const [name, x, y, dx, dy] of [['bucket', 3.25, 5.8, -.5, 0], ['mops', 5.5, 6.7, 0, -.5], ['chairs', 4.7, 6.1, 0, -.5]]) {
@@ -79,6 +80,7 @@ const output = process.env.MIXX_STORAGE_OUTPUT || '/tmp/mixxtopia-storage';
         westWall[phase] = await page.evaluate(phase => {
           game.level.decorations = phase === 'after' ? storageDecorations
             : storageDecorations.filter(d => d.kind !== 'storageWestWall');
+          game.mechanics.staticCollision = MIXX.collision.compile(game.level);
           game.player = { x: 3.25 * 16, y: 4.5 * 16 }; game.facing = { x: -1, y: 0 };
           for (let i = 0; i < 29; i++) game._moveAxis(-1, 0);
           for (let i = 0; i < 21; i++) game._moveAxis(0, 1);

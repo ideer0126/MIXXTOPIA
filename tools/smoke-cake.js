@@ -53,6 +53,7 @@ const output = process.env.MIXX_CAKE_OUTPUT || '/tmp/mixxtopia-cake';
             .filter(d => !['cakeWhale', 'cakeBalloons', 'cakeBalloonBase'].includes(d.kind))
             .map(d => d.kind !== 'cakeTable' ? d : { ...d, w: 4.8, occlusionShapes: undefined,
               occlusionShape: [[.18,.04],[.68,.04],[.8,.3],[.99,.35],[1,1],[0,1],[0,.35],[.16,.3]] });
+          game.mechanics.staticCollision = MIXX.collision.compile(game.level);
         }, phase);
         approaches[phase] = {};
         for (const [name, x, y, dx, dy] of [['whale', 6.7, 14.1, 0, -.5], ['anchor', 8.5, 12.9, -.5, 0]]) {

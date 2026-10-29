@@ -1,6 +1,7 @@
 /** 第一关确定性通关冒烟：Node/浏览器共用，不传送、不修改机关或收集状态。 */
 'use strict';
 (function (root) {
+  const C=typeof module!=='undefined'&&module.exports?require('../js/collision.js'):root.MIXX.collision;
   function check(ok, message) { if (!ok) throw new Error(message); }
 
   function finishDialogue(game) {
@@ -9,26 +10,29 @@
     check(game.state !== 'dialogue', '对话无法结束');
   }
 
-  function pathTo(game, tx, ty) {
-    const step = game.level.party && game.level.party.preciseCollision ? .25 : 1;
-    const x = Math.round(game.player.x / 16 / step) * step, y = Math.round(game.player.y / 16 / step) * step;
-    const start = x + ',' + y;
-    const queue = [[x, y]], prev = new Map([[start, null]]);
-    for (let i = 0; i < queue.length; i++) {
-      const [cx, cy] = queue[i];
-      if (cx === tx && cy === ty) {
-        const path = [];
-        let key = tx + ',' + ty;
-        while (prev.get(key) !== null) { path.push(key.split(',').map(Number)); key = prev.get(key); }
+  function pathTo(game, tx, ty, spacing = 16) {
+    const blocked=(x,y)=>game.birthday?game.birthday.blockedAt(x,y):game.mechanics.blockedAt(x,y,16);
+    const gx=tx*16,gy=ty*16,x=game.player.x,y=game.player.y;
+    if(blocked(gx,gy))return null;
+    if(spacing===16&&((gx-x)%16||(gy-y)%16))spacing=2;
+    const start=x+','+y,queue=[[x,y]],prev=new Map([[start,null]]);
+    for(let i=0;i<queue.length;i++){
+      const [cx,cy]=queue[i];
+      if(cx===gx&&cy===gy){
+        const path=[];let key=gx+','+gy;
+        while(prev.get(key)!==null){path.push(key.split(',').map(v=>Number(v)/16));key=prev.get(key);}
         return path.reverse();
       }
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = cx + dx * step, ny = cy + dy * step, key = nx + ',' + ny;
-        if (prev.has(key) || (game.birthday ? game.birthday.blockedAt(nx * 16, ny * 16) : game.mechanics.blockedAt(nx * 16, ny * 16, 16))) continue;
-        prev.set(key, cx + ',' + cy); queue.push([nx, ny]);
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const stepX=(gx-cx)*dx>0?Math.min(spacing,Math.abs(gx-cx)):spacing;
+        const stepY=(gy-cy)*dy>0?Math.min(spacing,Math.abs(gy-cy)):spacing;
+        const nx=cx+dx*stepX,ny=cy+dy*stepY;
+        const key=nx+','+ny;
+        if(prev.has(key)||C.trace(cx,cy,nx-cx,ny-cy,blocked).blocked)continue;
+        prev.set(key,cx+','+cy);queue.push([nx,ny]);
       }
     }
-    return null;
+    return spacing===16&&game.birthday?pathTo(game,tx,ty,2):null;
   }
 
   function stepTo(game, tx, ty) {
@@ -36,7 +40,7 @@
     while ((game.player.x !== tx * 16 || game.player.y !== ty * 16) && guard++ < 12) {
       const dx = Math.sign(tx * 16 - game.player.x), dy = Math.sign(ty * 16 - game.player.y);
       check(!dx || !dy, '路线必须逐格正交移动');
-      game._moveAxis(dx * 4, dy * 4); // 与 80px/s、50ms 一帧的生产移动步长相同
+      game._moveAxis(dx * Math.min(4,Math.abs(tx*16-game.player.x)), dy * Math.min(4,Math.abs(ty*16-game.player.y)));
       game._syncSwitches();
       game._checkPickups();
       finishDialogue(game);

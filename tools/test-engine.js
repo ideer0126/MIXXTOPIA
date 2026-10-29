@@ -184,6 +184,7 @@ console.warn = () => {}; // 测试期间静音引擎告警
 
 /* ─────────────────── 加载引擎 ─────────────────── */
 
+require('../js/collision.js');
 require('../js/engine.js');
 const engine = globalThis.MIXX.engine;
 
@@ -285,7 +286,7 @@ test('合并瓦片后刷新所有渲染器和调色板的缓存，保留未覆�
 });
 
 test('精确家具矩形与矮脚底：小数边界和接触边缘不产生整格误挡，旧关卡保持原判定',()=>{
-  const level={map:{w:3,h:3,rows:['...','...','...'],legend:{'.':'floor'}},entities:[],party:{preciseCollision:true,colliders:[]},decorations:[{room:'hall',collision:{x:1,y:1,w:1.5,h:.25}}]};
+  const level={map:{w:3,h:3,rows:['...','...','...'],legend:{'.':'floor'}},entities:[],party:{preciseCollision:true,footprint:{x:4,y:9,w:8,h:5},colliders:[]},decorations:[{room:'hall',collision:{x:1,y:1,w:1.5,h:.25}}]};
   const m=engine.createMechanics(level);
   assert.strictEqual(m.blockedAt(16,12,4,{height:3}),false);
   assert.strictEqual(m.blockedAt(16,12,4,{height:5}),true);

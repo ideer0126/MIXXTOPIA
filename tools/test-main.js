@@ -216,6 +216,7 @@ vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/data.js'), 'utf8'), sand
 // 默认状态机 / 战斗用例使用占位关；真实序章与关 1 由 withGAME 单独安装。
 // 保留账户头像元数据，避免生产地图和自动对话改变既有用例的起始状态。
 sandbox.GAME = { avatarPresets: sandbox.GAME.avatarPresets };
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/collision.js'), 'utf8'), sandbox, { filename: 'js/collision.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/engine.js'), 'utf8'), sandbox, { filename: 'js/engine.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/sprites.js'), 'utf8'), sandbox, { filename: 'js/sprites.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/audio.js'), 'utf8'), sandbox, { filename: 'js/audio.js' });
@@ -2453,7 +2454,9 @@ test('舞台阶梯与乐器碰撞：向右穿过幕布渐亮进入后台，不�
           }
           const resume={...g.player};
           for (const kind of ['piano','drums','guitars','gramophone']) {
-            const r=g.level.decorations.find(d=>d.room==='hall'&&d.kind===kind).collision;
+            const d=g.level.decorations.find(d=>d.room==='hall'&&d.kind===kind);
+            const solid=g.mechanics.staticCollision.rects.filter(r=>r.source===d).reduce((a,b)=>a.y+a.h>b.y+b.h?a:b);
+            const r={x:solid.x/16,y:solid.y/16,w:solid.w/16,h:solid.h/16};
             g.player={x:(r.x+r.w/2)*16-8,y:(r.y+r.h)*16-9+.01};
             assert.strictEqual(g.birthday.blockedAt(g.player.x,g.player.y),false,kind+' 前沿地面可站立');
             const before={...g.player};
@@ -2482,8 +2485,10 @@ test('舞台阶梯与乐器碰撞：向右穿过幕布渐亮进入后台，不�
           level1Run.walkTo(g,65,11);level1Run.walkTo(g,48,11); // 北侧过道完整可走。
           level1Run.walkTo(g,49,12);
           const before={...g.player};
-          assert.strictEqual(g._moveAxis(0,4),false,'不能从过道走到背面的镜子上');
-          assert.deepStrictEqual([g.player.x,g.player.y],[before.x,before.y]);
+          g._moveAxis(0,4);
+          assert.ok(g.player.y<before.y+4,'只能移动到镜子前最后一个可站立位置');
+          assert.strictEqual(g._moveAxis(0,4),false,'不能继续走进背面的镜子');
+          assert.strictEqual(g.player.x,before.x);
           level1Run.walkTo(g,48,20);level1Run.walkTo(g,65,20); // 南侧过道完整可走。
           level1Run.walkTo(g,41,15);
           assert.strictEqual(g._currentArea().id,'backstage','后台西侧不能被礼堂的摄像机留白抢走');
@@ -2695,7 +2700,9 @@ test('礼堂脚底碰撞：椅前横道、列间通道和杂物间开口可走�
       for(const [x,y] of [[9,20.5],[10,20.5],[12,21],[13,18],[16,18],[5,7],[6,7],[4,6],[36,7]])
         assert.strictEqual(game.birthday.blockedAt(x*16,y*16),false,'应可走 '+x+','+y);
       for(const kind of ['chair','entryPostLeft','entryPostRight','recordCabinet']){
-        const r=game.level.decorations.find(d=>d.room==='hall'&&d.kind===kind).collision;
+        const d=game.level.decorations.find(d=>d.room==='hall'&&d.kind===kind);
+        const solid=game.mechanics.staticCollision.rects.find(r=>r.source===d);
+        const r={x:solid.x/16,y:solid.y/16,w:solid.w/16,h:solid.h/16};
         assert.strictEqual(game.birthday.blockedAt((r.x+r.w/2)*16-8,(r.y+r.h/2)*16-11.5),true,kind+' 应阻挡脚底');
       }
       assert.ok(game.level.party.footprint.h<game.level.party.footprint.w);
@@ -2998,7 +3005,10 @@ test('人物动作：四向朝向、行走/停步/撞墙与暂停帧保持一致
       }
       game.player={x:20*16,y:26*16};const before={...game.player};
       key('keydown','s');for(let i=0;i<4;i++)tick(game,50);key('keyup','s');
-      assert.deepStrictEqual(game.player,before);assert.strictEqual(game.birthday.pose({},true).frame,0,'撞墙时不原地迈步');
+      assert.strictEqual(game.player.x,before.x);
+      assert.ok(game.player.y>=before.y&&game.player.y<=27*16-14,'脚底停在墙前');
+      assert.strictEqual(game.birthday.blockedAt(game.player.x,game.player.y),false);
+      assert.strictEqual(game.birthday.pose({},true).frame,0,'撞墙时不原地迈步');
     }finally{game.destroy();}
   });
 });
