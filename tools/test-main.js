@@ -2440,7 +2440,7 @@ test('场景素材：按源路径缓存、加载失败降级，礼物盒和星�
   } finally { if (prevImage === undefined) delete sandbox.Image; else sandbox.Image = prevImage; }
 });
 
-test('舞台阶梯与乐器碰撞：向右穿过幕布渐亮进入后台，不能返回舞台', () => {
+test('舞台阶梯与乐器碰撞：向上穿过幕布渐亮进入后台，不能返回舞台', () => {
   withGAME(prologueData(), () => {
     const game = makeGame();
     try {
@@ -2661,7 +2661,7 @@ test('#68 杂物间指引：s1 后与读档后提示南侧敞口，移动收 s2 
       level1Run.talkTo(game, game._entitiesOf('record')[0].id);
       assert.strictEqual(text('hud-objective'), '回舞台播放唱片 · E / A');
       level1Run.talkTo(game, game._entitiesOf('gramophone')[0].id);
-      assert.strictEqual(text('hud-objective'), '从舞台右侧帘幕进入化妆间');
+      assert.strictEqual(text('hud-objective'), '到右侧蓝幕布入口前 · 向上进入化妆间');
     } finally { game.destroy(); }
   });
 });
@@ -2697,14 +2697,15 @@ test('礼堂脚底碰撞：椅前横道、列间通道和杂物间开口可走�
   withGAME(prologueData(),()=>{
     const game=makeGame();try{
       game._startNewGame();level1Run.finishDialogue(game);
-      for(const [x,y] of [[9,20.5],[10,20.5],[12,21],[13,18],[16,18],[5,7],[6,7],[4,6],[36,7]])
+      for(const [x,y] of [[9,20.5],[10,20.5],[12,21],[13,18],[16,18],[6,7],[4,6],[36,7]])
         assert.strictEqual(game.birthday.blockedAt(x*16,y*16),false,'应可走 '+x+','+y);
-      for(const kind of ['chair','entryPostLeft','entryPostRight','recordCabinet']){
+      for(const kind of ['chair','entryPostLeft','entryPostRight']){
         const d=game.level.decorations.find(d=>d.room==='hall'&&d.kind===kind);
         const solid=game.mechanics.staticCollision.rects.find(r=>r.source===d);
         const r={x:solid.x/16,y:solid.y/16,w:solid.w/16,h:solid.h/16};
         assert.strictEqual(game.birthday.blockedAt((r.x+r.w/2)*16-8,(r.y+r.h/2)*16-11.5),true,kind+' 应阻挡脚底');
       }
+      assert.strictEqual(game.birthday.blockedAt(6.6*16,6*16),false,'唱片旁空地不能被虚构矮柜挡住');
       assert.ok(game.level.party.footprint.h<game.level.party.footprint.w);
     }finally{game.destroy()}
   });
@@ -2717,7 +2718,7 @@ test('舞台气球：只挡固定点，球体下方及左右通路可走，遮�
       const balloons=game.level.decorations.find(d=>d.kind==='stageBalloons');
       const base=game.level.decorations.find(d=>d.kind==='stageBalloonBase');
       assert.ok(!balloons.collision,'悬空气球不能扩大地面障碍');
-      for(const [x,y] of [[10.05,5.65],[10.05,7.8],[9.8,6.4],[10.95,6.4],[19,8],[4,6]])
+      for(const [x,y] of [[10.05,5.65],[10.05,10.6],[9.8,6.4],[10.95,6.4],[19,8],[4,6]])
         assert.strictEqual(game.birthday.blockedAt(x*16,y*16),false,'通路应可走 '+x+','+y);
       const r=base.collision;
       assert.strictEqual(game.birthday.blockedAt((r.x+r.w/2)*16-8,(r.y+r.h/2)*16-11.5),true);
@@ -2735,7 +2736,7 @@ test('舞台气球：只挡固定点，球体下方及左右通路可走，遮�
         game.player={x:10.05*16,y:y*16};game.birthday.drawActors();
         assert.deepStrictEqual(order,expected,'按固定点与人物脚底排前后');
         assert.strictEqual(clips,2,'球体和底座均沿轮廓裁剪');
-        assert.strictEqual(paths,balloons.occlusionShapes.length+1,'绳线间隙不作为矩形重画');
+        assert.strictEqual(paths,balloons.occlusionShapes.length+base.occlusionShapes.length,'绳线间隙不作为矩形重画');
         assert.strictEqual(saves,0,'裁剪状态不能影响后续人物');
       }
     }finally{game.destroy()}
@@ -2768,10 +2769,10 @@ test('杂物仓左墙：原水桶左侧站位在墙内，移动不能进入，�
       game._startNewGame();level1Run.finishDialogue(game);
       for(const [x,y] of [[1.45,5.8],[1.45,4.5],[1.8,6]])
         assert.strictEqual(game.birthday.blockedAt(x*16,y*16),true,'不能把墙内位置当成可走地面');
-      for(const [x,y] of [[2,4.5],[3.25,5.8],[4,6],[6,8]])
+      for(const [x,y] of [[2,3.9],[3.25,5.8],[4,6],[6,8]])
         assert.strictEqual(game.birthday.blockedAt(x*16,y*16),false,'保留墙内侧与开口通路');
       const wall=game.level.decorations.find(d=>d.kind==='storageWestWall');
-      game.player={x:3.25*16,y:4.5*16};
+      game.player={x:3.25*16,y:3.9*16};
       for(let i=0;i<50;i++)game._moveAxis(-1,0);
       assert.ok(game.player.x+game.level.party.footprint.x>=wall.collision.w*16,'脚底不能跨过可见墙脚');
       assert.strictEqual(game.birthday.blockedAt(game.player.x,game.player.y),false);
@@ -2790,12 +2791,16 @@ test('蛋糕区：气球仅作遮挡，鲸鱼底部与固定点挡脚，桌前�
       const balloons=game.level.decorations.find(d=>d.kind==='cakeBalloons');
       assert.ok(!balloons.collision,'悬空气球不应整体挡住地面');
       for(const kind of ['cakeTable','cakeWhale','cakeBalloonBase']){
-        const d=game.level.decorations.find(d=>d.kind===kind),r=d.collision;
+        const d=game.level.decorations.find(d=>d.kind===kind);
+        const solid=game.mechanics.staticCollision.rects.find(r=>r.source===d);
+        const r={x:solid.x/16,y:solid.y/16,w:solid.w/16,h:solid.h/16};
         assert.strictEqual(game.birthday.blockedAt((r.x+r.w/2)*16-8,(r.y+r.h/2)*16-11.5),true,kind+' 落地部分不可踩入');
         assert.ok(d.occlusionShape||d.occlusionShapes);
       }
-      for(const [x,y] of [[7.1,11.3],[6.7,12.2],[3.8,11],[8.5,12.5],[7,14],[4,14.2]])
+      for(const [x,y] of [[7.1,11.3],[3.8,10.7],[8.5,12.5],[7,14],[4,14.2]])
         assert.strictEqual(game.birthday.blockedAt(x*16,y*16),false,'通路应可走 '+x+','+y);
+      for(const [x,y] of [[6.7,12.2],[3.8,11]])
+        assert.strictEqual(game.birthday.blockedAt(x*16,y*16),true,'不能走入礼物或鲸鱼主体');
       assert.strictEqual(game.birthday.blockedAt(6.7*16,12.7*16),true,'鲸鱼底部挡脚');
       assert.strictEqual(game.birthday.blockedAt(7.6*16,12.8*16),true,'气球固定点挡脚');
       for(const [x,y] of [[8.5,12.5],[7,14],[4,14.25]])level1Run.walkTo(game,x,y);
@@ -2829,7 +2834,7 @@ test('#71 来宾四向接近：持续移动不能穿身，接触后仍可后退�
       game._startNewGame();level1Run.finishDialogue(game);
       const e=game._entitiesOf('guest').find(e=>e.id==='parent-mustard');
       for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        game.player={x:e.x*16-dx*16,y:e.y*16-dy*16};
+        game.player={x:e.x*16-dx*12,y:e.y*16-dy*12};
         assert.equal(game.birthday.blockedAt(game.player.x,game.player.y),false);
         for(let i=0;i<20;i++)game._moveAxis(dx,dy);
         assert.ok(dx?Math.abs(game.player.x-e.x*16)>=8:Math.abs(game.player.y-e.y*16)>=5,'脚底不能重叠');
@@ -2849,6 +2854,10 @@ test('#71 人物占位：成人/儿童尺寸、边缘接触、绘制偏移与房
     player:{x:0,y:0},mechanics:{blockedAt:()=>false},_currentArea:()=>({id:room})};
   const birthday=new sandbox.MIXX.Birthday(g);
   assert.equal(birthday.blockedAt(160,136),true,'占位跟随绘制脚底');
+  npc.spriteOffsetX=-0.6;
+  assert.equal(birthday.blockedAt(150.4,136),true,'水平移位后的占位跟随人物');
+  assert.equal(birthday.blockedAt(160,136),false,'原横坐标不残留占位');
+  npc.spriteOffsetX=0;
   assert.equal(birthday.blockedAt(160,160),false,'未偏移的逻辑格不另设障碍');
   for(const [dx,dy,blocked] of [[7,0,true],[8,0,false],[0,4,true],[0,5,false]])
     assert.equal(birthday.blockedAt(160+dx,136+dy),blocked,'成人脚底边缘');
@@ -2869,7 +2878,7 @@ test('#71 全部 NPC 与来宾都有脚底占位；巡游遇人物折返，移�
       const actors=game.level.entities.filter(e=>e.type==='npc'||e.type==='guest');
       for(const e of actors){
         game.player={x:e.x*16,y:e.y*16};
-        assert.equal(game.birthday.blockedAt(e.x*16,(e.y+(e.spriteOffsetY||0))*16),true,e.room+':'+e.id);
+        assert.equal(game.birthday.blockedAt((e.x+(e.spriteOffsetX||0))*16,(e.y+(e.spriteOffsetY||0))*16),true,e.room+':'+e.id);
       }
       game.player={x:20*16,y:15*16};
       const child=game._entitiesOf('guest').find(e=>e.id==='child-blue');
@@ -2925,7 +2934,8 @@ test('套圈真实计时：未玩不能拿星，误投可重试，暂停与隐�
       game._startNewGame();level1Run.finishDialogue(game);
       const star=game._entitiesOf('star').find(e=>e.id==='s1');
       level1Run.walkTo(game,star.x,star.y);assert.ok(!game.collected.includes('s1'));
-      level1Run.walkTo(game,6,21);game._interact();level1Run.finishDialogue(game);
+      const station=game._entitiesOf('minigame')[0];
+      level1Run.walkTo(game,station.x,station.y);game._interact();level1Run.finishDialogue(game);
       const birthday=game.birthday,r=birthday.rings,original=game.input.wasPressed;
       try{game.input.wasPressed=action=>action==='confirm';game._update(0);}finally{game.input.wasPressed=original;}
       assert.strictEqual(r.hits,0);assert.ok(r.message.includes('再试'));
@@ -2962,16 +2972,20 @@ test('生日会人物：儿童与成人分开；巡游不改共享路径，对�
   });
 });
 
-test('后台单向流程：北向移动不触发入口，向右进入后保存继续仍在后台，重玩才回礼堂',()=>{
+test('后台单向流程：仅向上进入，横向/向下不触发，保存继续仍在后台，重玩才回礼堂',()=>{
   withGAME(prologueData(),()=>{
     const game=makeGame();
     try{
       game._startNewGame();level1Run.playLevel1(game,{
         onMusic(g){
           const door=g._entitiesOf('roomdoor')[0];
-          g.player={x:door.x*16,y:door.y*16};g.facing={x:0,y:1};
-          assert.strictEqual(g._checkRoomDoors(),false);assert.strictEqual(g._currentArea().id,'hall');
-          g.player={x:(door.x-1)*16,y:door.y*16};
+          assert.deepStrictEqual([door.x,door.y,door.enterFrom],[33,6,'south']);
+          g.player={x:door.x*16,y:door.y*16};
+          for(const facing of [{x:0,y:1},{x:1,y:0},{x:-1,y:0}]){
+            g.facing=facing;
+            assert.strictEqual(g._checkRoomDoors(),false);assert.strictEqual(g._currentArea().id,'hall');
+          }
+          g.player={x:door.x*16,y:(door.y+1)*16};
         },
         onBackstage(g){
           assert.ok(g._playedNodes.has('l1.backstage.arrived'));
@@ -3021,7 +3035,7 @@ test('六位 Muse 定点：长时间演出及对话转身不改坐标；原有�
       const muses=game._entitiesOf('npc').filter(e=>e.museStyle),snapshot=muses.map(e=>[e.x,e.y]),source=JSON.stringify(game.levels[0]);
       for(let i=0;i<600;i++)game._update(.05);
       assert.deepStrictEqual(muses.map(e=>[e.x,e.y]),snapshot);
-      assert.ok(muses.every(e=>e.fixed&&!e.path&&game.birthday.pose(e,false).frame===0));
+      assert.ok(muses.every(e=>e.fixed&&!e.path&&(e.performance||game.birthday.pose(e,false).frame===0)));
       const lily=muses.find(e=>e.id==='lily'&&e.room==='hall');
       game.player={x:(lily.x-1)*16,y:lily.y*16};game._interact();
       assert.strictEqual(game.state,STATE.DIALOGUE);assert.strictEqual(game.birthday.pose(lily,false).dir,3);
@@ -3033,6 +3047,40 @@ test('六位 Muse 定点：长时间演出及对话转身不改坐标；原有�
       assert.ok(game._entitiesOf('guest').filter(e=>e.path).every(e=>game.birthday.pose(e,false).style.height===25));
       assert.strictEqual(JSON.stringify(game.levels[0]),source);
     }finally{game.destroy();}
+  });
+});
+
+test('舞台演奏：专用帧循环、对话持琴/握棒、暂停与隐藏冻结，后台仍用普通站姿',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();
+    try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      const performers=game._entitiesOf('npc').filter(e=>e.performance);
+      const snapshot=performers.map(e=>[e.x,e.y]);
+      const first=performers.map(e=>game.birthday.pose(e,false).frame);
+      game._update(.18);
+      assert.ok(performers.every((e,i)=>game.birthday.pose(e,false).frame!==first[i]));
+      game._setState(STATE.PAUSED);
+      const time=game.birthday.time,paused=performers.map(e=>game.birthday.pose(e,false).frame);
+      game._update(.5);
+      assert.strictEqual(game.birthday.time,time);
+      assert.deepStrictEqual(performers.map(e=>game.birthday.pose(e,false).frame),paused);
+      game._setState(STATE.PLAYING);documentStub.hidden=true;game._update(.5);documentStub.hidden=false;
+      assert.strictEqual(game.birthday.time,time);
+      for(const e of performers){
+        game._playNode(e.dialogue);e._dir=3;
+        const pose=game.birthday.pose(e,false);
+        assert.strictEqual(pose.style,game.level.party.performances[e.performance]);
+        assert.strictEqual(pose.frame,pose.style.restFrame);
+        assert.strictEqual(pose.dir,0,'交谈不能丢掉手里的乐器');
+        game._update(.5);assert.strictEqual(game.birthday.time,time);
+        level1Run.finishDialogue(game);
+        assert.strictEqual(game.birthday.pose(e,false).frame,paused[performers.indexOf(e)]);
+        const backstage=game.level.entities.find(n=>n.id===e.id&&n.room==='backstage');
+        assert.strictEqual(game.birthday.pose(backstage,false).style,game.level.party.muses[e.id]);
+      }
+      assert.deepStrictEqual(performers.map(e=>[e.x,e.y]),snapshot);
+    }finally{documentStub.hidden=false;game.destroy();}
   });
 });
 

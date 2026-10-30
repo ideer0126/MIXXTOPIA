@@ -97,7 +97,7 @@ const output=process.env.MIXX_COLLISION_OUTPUT||'/tmp/mixxtopia-73';
         game.birthday.debugCollision=false;game._startNewGame();level1Playthrough.finishDialogue(game);
         return level1Playthrough.playLevel1(game,{
           onMusic(g){
-            for(const [x,y] of [[13,18],[16,18],[6,8],[5,7],[19,10],[19,9],[19,8]])level1Playthrough.walkTo(g,x,y);
+            for(const [x,y] of [[13,18],[16,18],[6,8],[6,7],[19,10],[19,9],[19,8]])level1Playthrough.walkTo(g,x,y);
             g._entryFade=0;g._followCamera();g._render();
             window.stageImage=document.getElementById('game').toDataURL();
           },

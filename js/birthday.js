@@ -11,7 +11,7 @@
     direction(dx,dy){if(!dx&&!dy)return 0;return Math.abs(dx)>Math.abs(dy)?(dx>0?1:3):(dy>0?0:2);}
     footprint(x,y,actor){
       const f=actor&&actor.age==='child'?{x:5,y:10,w:6,h:4}:this.g.level.party.footprint;
-      return{x:x+f.x,y:y+f.y+(actor&&actor.spriteOffsetY||0)*T,w:f.w,h:f.h};
+      return{x:x+f.x+(actor&&actor.spriteOffsetX||0)*T,y:y+f.y+(actor&&actor.spriteOffsetY||0)*T,w:f.w,h:f.h};
     }
     blockedAt(x,y,actor){
       const g=this.g,f=this.footprint(x,y,actor);
@@ -107,14 +107,13 @@
       // 图片加载中保留可读的瓦片画面，场景碰撞不依赖图片状态。
       return false;
     }
-    drawCurtains(){
-      if(!this.inHall())return;
-      const g=this.g,img=g._sceneryImages.get(g.level.sceneryAssets.birthdayHall);
-      if(!img||!img.complete||!img.naturalWidth)return;
-      for(const d of [{x:30.2,y:0,w:2.1,h:6},{x:34.4,y:0,w:.8,h:5.6}])ctxDraw(g,img,d);
-    }
     pose(e,player){
       const party=this.g.level.party;
+      if(e.performance&&e.room==='hall'){
+        const style=party.performances[e.performance];
+        const frame=this.g.state==='dialogue'?style.restFrame:Math.floor(this.time*style.fps)%style.frames[0].length;
+        return{style,key:'performance:'+e.performance,dir:0,frame};
+      }
       if(e.museStyle)return{style:party.muses[e.museStyle],key:'muse:'+e.museStyle,dir:e._dir||0,frame:0};
       const key=player?party.playerMotion:e.motionStyle,style=party.animations&&party.animations[key];
       if(!style)return null;
@@ -145,6 +144,17 @@
         }
         rows.push(frames);
       }
+      if(style.motionRegion){
+        const [x,y,w,h]=style.motionRegion.map(value=>Math.round(value*detail));
+        for(const row of rows){
+          const neutral=row[style.restFrame];
+          for(const cell of row){
+            if(cell===neutral)continue;
+            const c=cell.getContext('2d'),hand=c.getImageData(x,y,w,h);
+            c.clearRect(0,0,cacheW,cacheH);c.drawImage(neutral,0,0);c.putImageData(hand,x,y);
+          }
+        }
+      }
       if(style.alternateFeet)this.alternateFeet(rows);
       this.frameCache.set(pose.key,rows);return rows;
     }
@@ -168,7 +178,7 @@
     drawSprite(e,player){
       const g=this.g,ctx=g.renderer.ctx,pose=this.pose(e,player);
       const h=e.age==='child'?25:40;
-      const px=player?g.player.x:e.x*T,py=(player?g.player.y:e.y*T)+(e.spriteOffsetY||0)*T;
+      const px=(player?g.player.x:e.x*T)+(e.spriteOffsetX||0)*T,py=(player?g.player.y:e.y*T)+(e.spriteOffsetY||0)*T;
       let drawn=false;
       if(pose){
         const cached=this.cachedFrames(pose);
@@ -188,40 +198,15 @@
         g._drawTalkBubble(px+8-g.camera.x,py+14-h-g.camera.y);
       }
     }
-    drawPerformers(actor){
-      if(!this.inHall())return;
-      const g=this.g,c=g.renderer.ctx;
-      for(const e of g._entitiesOf('npc')){
-        if(e!==actor||!e.performance||e.room!=='hall'||e._dir)continue;
-        const x=Math.round(e.x*T+8-g.camera.x),y=Math.round(e.y*T+14+(e.spriteOffsetY||0)*T-g.camera.y);
-        if(e.performance==='drums'){
-          const beat=Math.floor(this.time*5)%2;
-          c.fillStyle='#d7bb83';
-          for(let i=0;i<7;i++){c.fillRect(x-10+i,y-18+(beat?Math.floor(i/2):-Math.floor(i/2)),1,1);c.fillRect(x+4+i,y-18+(beat?-Math.floor(i/2):Math.floor(i/2)),1,1);}
-        }else{
-          // 静态抱琴：琴颈、双弧琴身与白色护板，不再移动拨弦像素。
-          for(let i=0;i<12;i++){
-            c.fillStyle='#493441';c.fillRect(x-1+i,y-20-i,3,3);
-            c.fillStyle='#cfb584';c.fillRect(x+i,y-19-i,1,1);
-          }
-          const body=['....dddddd...','...drrrrrrd..','...drrwwsrd..','....drwsrd...','...drrwsrrd..','..drrrwsrrrd.','..drrrwsrrrd.','..drrrwwrrrd.','...drrrrrrd..','....dddddd...'];
-          const colors={d:'#493441',r:'#b73f4f',w:'#eee5d0',s:'#57434a'};
-          body.forEach((row,iy)=>{for(let ix=0;ix<row.length;ix++)if(colors[row[ix]]){
-            c.fillStyle=colors[row[ix]];c.fillRect(x-8+ix,y-19+iy,1,1);
-          }});
-          c.fillStyle='#eed6bd';c.fillRect(x-5,y-12,3,2);
-        }
-      }
-    }
     drawDrummerUpperBody(actor){
       if(!actor)return;
       const g=this.g,c=g.renderer.ctx;
       if(typeof c.clip!=='function')return;
       // 鼓手腿部仍在鼓组后方，上半身和手臂在鼓沿上方完整显示。
-      const x=Math.round(actor.x*T+8-20-g.camera.x);
+      const x=Math.round((actor.x+(actor.spriteOffsetX||0))*T+8-20-g.camera.x);
       const y=Math.round((actor.y+(actor.spriteOffsetY||0))*T+14-40-g.camera.y);
       c.save();c.beginPath();c.rect(x,y,40,30);c.clip();
-      this.drawSprite(actor,false);c.restore();this.drawPerformers(actor);
+      this.drawSprite(actor,false);c.restore();
     }
     drawActors(){
       const g=this.g,area=g._currentArea().id;
@@ -243,12 +228,16 @@
       const img=g._sceneryImages.get(g.level.sceneryAssets.birthdayHall);
       for(const item of items){
         if(item.record){const r=g.level.party.recordVisual;g._drawRecord(r.x,r.y,r.size);continue;}
-        if(item.actor){this.drawSprite(item.actor,item.actor===player);if(item.actor.performance!=='drums')this.drawPerformers(item.actor);continue;}
+        if(item.actor){this.drawSprite(item.actor,item.actor===player);continue;}
         if(!img||!img.complete||!img.naturalWidth)continue;
         const d=item.object;
         // 原图同位置取样，沿物体轮廓重画；悬空装饰也按地面锚点遮挡人物。
         ctxDraw(g,img,d);
-        if(d.kind==='drums')this.drawDrummerUpperBody(actors.find(e=>e.performance==='drums'));
+        if(d.kind==='drums'){
+          this.drawDrummerUpperBody(actors.find(e=>e.performance==='drums'));
+          // 前排通鼓和鼓沿在人物前方，不能被上半身补画抹去。
+          ctxDraw(g,img,{...d,occlusionShapes:d.foregroundShapes});
+        }
       }
     }
     // Explicit console switch: game.birthday.debugCollision = true (or 'occlusion').

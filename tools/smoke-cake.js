@@ -72,7 +72,7 @@ const output = process.env.MIXX_CAKE_OUTPUT || '/tmp/mixxtopia-cake';
             return game.player.x !== at.x || game.player.y !== at.y;
           }, { dx, dy }), 'Can retreat from the display');
         }
-        for (const [name, x, y] of [['balloons', 7.1, 11.3], ['whale-rear', 6.7, 12.2], ['gifts', 5.4, 11.5]]) {
+        for (const [name, x, y] of [['balloons', 7.1, 11.3], ['whale-rear', 6.7, 11.3], ['gifts', 4.1, 10.5]]) {
           assert.equal(await page.evaluate(({ x, y }) => {
             game.player = { x: x * 16, y: y * 16 }; game.facing = { x: 0, y: 1 };
             game._followCamera(); game._render(); return game.birthday.blockedAt(game.player.x, game.player.y);
@@ -118,7 +118,7 @@ const output = process.env.MIXX_CAKE_OUTPUT || '/tmp/mixxtopia-cake';
         assert.deepEqual(result.gap, result.unmaskedHole, kind + ' preserves the actor outside its silhouette');
         visual.push(result);
       }
-      for (const [side, x, y] of [['cake-rear', 3.8, 11], ['gifts-rear', 5.4, 11.5], ['whale-rear', 6.7, 12.2],
+      for (const [side, x, y] of [['cake-rear', 3.8, 10.7], ['gifts-rear', 4.1, 10.5], ['whale-rear', 6.7, 11.3],
         ['balloons-rear', 7.1, 11.3], ['right', 8.5, 12.5], ['front', 7, 14]]) {
         for (const [dir, dx, dy] of [['down', 0, 1], ['left', -1, 0], ['right', 1, 0], ['up', 0, -1]]) {
           for (const walking of [false, true]) {

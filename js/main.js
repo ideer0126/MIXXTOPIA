@@ -1172,7 +1172,7 @@
         } else if (ent.type === 'record') {
           this._playNode(ent.dialogue, { onEnd: () => { this._syncProgressLocks(); this._sfx('star'); this._emit('record', { id: ent.id }); } });
         } else if (this._playedNodes.has(ent.dialogue)) {
-          say('《Strange Muse》唱片正在播放。向右走，穿过帷幕就到后台化妆间了。');
+          say('《Strange Muse》唱片正在播放。到右侧蓝幕布入口前，向上走就到后台化妆间了。');
         } else if (!this._playedNodes.has(ent.recordNode)) {
           if (!this._playedNodes.has('l1.music.ready')) this._playNode('l1.music.ready');
           else say('去左上角的杂物间，按 E 取走《Strange Muse》唱片，再回来播放。');
@@ -1320,6 +1320,7 @@
         if (gate && !gate.open) continue;
         if (this.mechanics.overlapsTile(this.player.x, this.player.y, PLAYER_SIZE, e.x, e.y)) {
           if (e.enterFrom === 'west' && this.facing.x <= 0) continue;
+          if (e.enterFrom === 'south' && this.facing.y >= 0) continue;
           this.player.x = e.to.x * TILE; this.player.y = e.to.y * TILE;
           if (e.arrivalNode) this._playedNodes.add(e.arrivalNode);
           if (e.fadeIn) this._entryFade = Number(this.level.entryFade) || 0;
@@ -3421,7 +3422,7 @@
       if (!this._dialogueComplete(record.dialogue)) return '到左上杂物间取唱片 · E / A';
       if (!this._dialogueComplete(music.dialogue)) return '回舞台播放唱片 · E / A';
       const area = this._currentArea();
-      if (!area || area.id !== 'backstage') return '从舞台右侧帘幕进入化妆间';
+      if (!area || area.id !== 'backstage') return '到右侧蓝幕布入口前 · 向上进入化妆间';
       const blessings = star.requiresDialogue || [];
       const left = blessings.filter(id => !this._dialogueComplete(id));
       if (left.length === 1) {
@@ -4092,9 +4093,8 @@
       return true;
     }
 
-    /** 前景帘幕在人物之后绘制，使人物走入幕后时自然被遮挡。 */
+    /** 独立前景装饰在人物之后绘制。入口两侧幕布留在背景中。 */
     _drawForegroundDecorations() {
-      if (this.birthday) this.birthday.drawCurtains();
       for (const d of this.level.decorations || []) {
         if (d.foreground && !d.baked) this._drawSceneryAsset(d);
       }
