@@ -123,4 +123,35 @@ test('重建关卡会读取最新复合几何，动态门仍随开关状态更�
   mechanics=engine.createMechanics(level);
   assert.equal(mechanics.blockedAt(48,16,8,{height:5}),true);
 });
+test('#66/#76 真实地图：舞台右沿与幕布接缝、角落盆栽、右侧窄缝和钢琴实体均阻挡',()=>{
+  const level=clone(v.loadGame().game.levels[0]),mechanics=engine.createMechanics(level),f=level.party.footprint;
+  const blocked=(x,y)=>mechanics.blockedAt(x+f.x,y+f.y,f.w,{height:f.h});
+  for(const [x,y] of [[1.1,22],[38.25,19],[13,5.5],[31,8],[33,6],[35.1,5.5]])
+    assert.equal(blocked(x*16,y*16),true,'旧穿模位置应阻挡 '+x+','+y);
+  for(const [x,y,dx,dy] of [[3,22,-48,0],[16,5.5,-96,0],[32,7,-64,0],[33,8,0,-80],[37.5,5.7,-64,0],[38,14,0,128]]){
+    assert.equal(blocked(x*16,y*16),false,'测试起点应可站立 '+x+','+y);
+    const end=C.trace(x*16,y*16,dx,dy,blocked);
+    assert.equal(end.blocked,true,'不能跨越实体或墙脚');
+    assert.equal(blocked(end.x,end.y),false,'停在最后一个可站立位置');
+  }
+  for(const [x,y] of [[19,9],[20,8],[29,7],[33,5],[4,22],[32,22]])
+    assert.equal(blocked(x*16,y*16),false,'正常阶梯、幕布入口和摊位前通道保留 '+x+','+y);
+  const probe={player:{x:19*16,y:25*16},mechanics,birthday:{blockedAt:blocked}};
+  assert.ok(pathTo(probe,29,7),'中央阶梯可进入舞台');
+  const left=level.decorations.find(d=>d.kind==='stageFrontLeft').collision;
+  const right=level.decorations.find(d=>d.kind==='stageFrontRight').collision;
+  level.party.colliders.push({x:left.x+left.w,y:left.y,w:right.x-left.x-left.w,h:left.h});
+  const sealed=engine.createMechanics(level);
+  probe.birthday.blockedAt=(x,y)=>sealed.blockedAt(x+f.x,y+f.y,f.w,{height:f.h});
+  assert.equal(pathTo(probe,29,7),null,'封住中央阶梯后，不能再从舞台右沿或幕布接缝绕入');
+});
+
+test('试玩截图位置：凳面、琴身、柱脚、花盆和礼物不可站立，杂物间圈出的地板可通行',()=>{
+  const level=clone(v.loadGame().game.levels[0]),m=engine.createMechanics(level),f=level.party.footprint;
+  for(const [x,y] of [[24,7.8],[14.31,4.76],[15,6.16],[5.74,9.2],[6,21],[33,20],[37.5,20.4],[5.3,10.7]])
+    assert.equal(m.blockedAt(x*16+f.x,y*16+f.y,f.w,{height:f.h}),true,'反馈位置应阻挡 '+x+','+y);
+  for(const [x,y] of [[4,6.3],[3.4,6.3],[6,7],[6,22],[33,21.15],[37.5,21.6]])
+    assert.equal(m.blockedAt(x*16+f.x,y*16+f.y,f.w,{height:f.h}),false,'真实地面与互动点应可达 '+x+','+y);
+});
+
 console.log('\n全部通过：'+count+' 项');

@@ -80,7 +80,8 @@ const output = process.env.MIXX_BALLOON_OUTPUT || '/tmp/mixxtopia-72';
       const approaches = await page.evaluate(() => {
         const base = game.level.decorations.find(d => d.kind === 'stageBalloonBase').collision;
         const cx = (base.x + base.w / 2) * 16 - 8, cy = (base.y + base.h / 2) * 16 - 11.5;
-        return [[0, -24, 0, 1], [0, 6, 0, -1], [24, 0, -1, 0]].map(([ox, oy, dx, dy]) => {
+        // The front side is the stage ledge; approach the base from reachable stage floor.
+        return [[0, -24, 0, 1], [24, 0, -1, 0]].map(([ox, oy, dx, dy]) => {
           game.player = { x: cx + ox, y: cy + oy };
           if (game.birthday.blockedAt(game.player.x, game.player.y)) throw new Error('Approach starts inside an obstacle');
           let steps = 0;
@@ -95,7 +96,7 @@ const output = process.env.MIXX_BALLOON_OUTPUT || '/tmp/mixxtopia-72';
         });
       });
       assert.ok(approaches.every(a => a.blocked && a.canLeave), 'The fixed base must stop movement and allow retreat');
-      for (const [side, x, y] of [['rear', 10.05, 5.65], ['front', 10.05, 7.8], ['left', 9.8, 6.4], ['right', 10.95, 6.4]]) {
+      for (const [side, x, y] of [['rear', 10.05, 5.65], ['front', 10.05, 10.6], ['left', 9.8, 6.4], ['right', 10.95, 6.4]]) {
         for (const [dir, dx, dy] of [['down', 0, 1], ['left', -1, 0], ['right', 1, 0], ['up', 0, -1]]) {
           for (const walking of [false, true]) {
             const blocked = await page.evaluate(({ x, y, dx, dy, walking }) => {

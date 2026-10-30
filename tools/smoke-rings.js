@@ -16,7 +16,7 @@ const server=http.createServer((req,res)=>{
       .replace('</body>',`<script src="tools/play-level1.js"></script><script>
         window.game=MIXX.main.boot({storage:null,auth:null,cloud:null,stats:null});game.stop();
         game._startNewGame();level1Playthrough.finishDialogue(game);
-        level1Playthrough.walkTo(game,6,21);game._interact();level1Playthrough.finishDialogue(game);
+        const station=game._entitiesOf('minigame')[0];level1Playthrough.walkTo(game,station.x,station.y);game._interact();level1Playthrough.finishDialogue(game);
         game.soundOn=false;game._entryFade=0;game.start();
       </script></body>`);
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'}).end(html);return;
@@ -51,7 +51,7 @@ const server=http.createServer((req,res)=>{
         window.game=MIXX.main.boot({auth:null,cloud:null,stats:null});game.stop();game.soundOn=false;
         game._startNewGame();level1Playthrough.finishDialogue(game);
         await Promise.all(Array.from(game._sceneryImages.values(),img=>img.decode()));
-        level1Playthrough.walkTo(game,6,21);game.input.endFrame();game._entryFade=0;
+        const station=game._entitiesOf('minigame')[0];level1Playthrough.walkTo(game,station.x,station.y);game.input.endFrame();game._entryFade=0;
       });
       // Enter via the actual E / mobile A input mapping. The last dialogue key is held.
       if(touch)await page.locator('#tbtn-a').tap();else await page.keyboard.down('e');
@@ -108,7 +108,7 @@ const server=http.createServer((req,res)=>{
         const star=game._entitiesOf('star').find(e=>e.id==='s1');
         if(!game._starAvailable(star))throw new Error('Completed round must unlock s1');
         level1Playthrough.walkTo(game,star.x,star.y);
-        level1Playthrough.walkTo(game,6,21);game._interact();level1Playthrough.finishDialogue(game);
+        const station=game._entitiesOf('minigame')[0];level1Playthrough.walkTo(game,station.x,station.y);game._interact();level1Playthrough.finishDialogue(game);
         if(game.birthday.rings)throw new Error('Completed minigame must not restart');
         game._setState('paused');if(!game._saveAndQuit())throw new Error('Save failed');
         if(game.birthday!==null)throw new Error('Quit retained birthday runtime');

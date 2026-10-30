@@ -38,6 +38,7 @@
   function stepTo(game, tx, ty) {
     let guard = 0;
     while ((game.player.x !== tx * 16 || game.player.y !== ty * 16) && guard++ < 12) {
+      const beforeMove = { ...game.player };
       const dx = Math.sign(tx * 16 - game.player.x), dy = Math.sign(ty * 16 - game.player.y);
       check(!dx || !dy, '路线必须逐格正交移动');
       game._moveAxis(dx * Math.min(4,Math.abs(tx*16-game.player.x)), dy * Math.min(4,Math.abs(ty*16-game.player.y)));
@@ -47,9 +48,9 @@
       game._syncProgressLocks();
       game._checkTriggers();
       finishDialogue(game);
+      if (game._checkRoomDoors(beforeMove)) return;
     }
     check(game.player.x === tx * 16 && game.player.y === ty * 16, '移动被阻挡：' + tx + ',' + ty);
-    game._checkRoomDoors();
     game._checkPortal();
     finishDialogue(game);
   }
@@ -119,7 +120,8 @@
     talkTo(game, 'sheep1');
     walkTo(game, 29, 7);
     check(game._playedNodes.has('l1.music.ready'), '六人 + 两星后靠近唱片机缺少寻找唱片提示');
-    check(!gate.open && pathTo(game, 34, 5) === null, '没播放唱片不能进入后台');
+    const backstage = game._entitiesOf('roomdoor').find(e => e.id === 'to-backstage');
+    check(!gate.open && pathTo(game, backstage.x, backstage.y) === null, '没播放唱片不能进入后台');
     talkTo(game, record.id);
     check(record.taken && game._playedNodes.has(record.dialogue), '唱片没有取走');
     if (options.onRecord) options.onRecord(game);
@@ -128,8 +130,8 @@
     if (options.onMusic) options.onMusic(game);
     walkTo(game, 19, 8);
     check(game._currentArea().id === 'hall', '尚未进入幕后');
-    walkTo(game, 33, 5); stepTo(game, 34, 5);
-    check(game._currentArea().id === 'backstage', '上台右转未进入化妆间');
+    walkTo(game, backstage.x, backstage.y + 1); stepTo(game, backstage.x, backstage.y);
+    check(game._currentArea().id === 'backstage', '蓝幕布入口向上走未进入化妆间');
     check(game._entryFade === game.level.entryFade, '进入后台应使用与关卡入场一致的渐亮');
     check(game.stars === 2 && !game._starAvailable(star3), '后台对话未完成不能提前出星');
     check(game._entitiesOf('npc').filter(e => e.room === 'backstage').length === 7, '化妆间须有六位 Muse 与精灵');
