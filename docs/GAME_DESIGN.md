@@ -870,6 +870,10 @@ Lily、Sullyoon、Byeori 三段全部完成后出现 s3；其余后台台词为�
 
 ---
 
+### 本地 HTML 人物动画兼容（2026-10-30）
+
+直接双击 `index.html` 时，浏览器可能把本地 PNG 绘制后的 Canvas 标为不可读取。人物缓存不得依赖读取该图片的像素；交替步态的前 / 后脚底范围由 `party.animations.*.footBounds` 提供，两组 `[left, right)` 对应朝下 / 朝上，坐标使用 40×40 缓存像素。`alternateFeet` 只裁剪合成这些既定区域，保持现有动画像素。Kyujin 的 `motionRegion` 同样通过 Canvas 裁剪合成到休止帧，不读取像素，保持拨弦区域外逐像素固定。`tools/smoke-local-file.js` 用真实 file:// 页面验证人物缓存、新游戏对话后移动、暂停恢复与持续绘制。
+
 ## 11. data.js 数据格式规格（#11/#12 输入）
 
 以下示例为通用字段结构的伪数据，不代表第一关实际地图、坐标或实体配置；第一关以 §5.1 与 `js/data.js` 为准。

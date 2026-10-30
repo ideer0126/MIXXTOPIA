@@ -148,25 +148,23 @@
         const [x,y,w,h]=style.motionRegion.map(value=>Math.round(value*detail));
         for(const row of rows){
           const neutral=row[style.restFrame];
-          for(const cell of row){
-            if(cell===neutral)continue;
-            const c=cell.getContext('2d'),hand=c.getImageData(x,y,w,h);
-            c.clearRect(0,0,cacheW,cacheH);c.drawImage(neutral,0,0);c.putImageData(hand,x,y);
+          for(let i=0;i<row.length;i++){
+            if(i===style.restFrame)continue;
+            // 只合成拨弦区域，避免 file:// 图片污染画布后读取像素。
+            const cell=g.doc.createElement('canvas');cell.width=cacheW;cell.height=cacheH;
+            const c=cell.getContext('2d');c.imageSmoothingEnabled=false;
+            c.drawImage(neutral,0,0);c.clearRect(x,y,w,h);
+            c.drawImage(row[i],x,y,w,h,x,y,w,h);row[i]=cell;
           }
         }
       }
-      if(style.alternateFeet)this.alternateFeet(rows);
+      if(style.alternateFeet)this.alternateFeet(rows,style.footBounds);
       this.frameCache.set(pose.key,rows);return rows;
     }
-    alternateFeet(rows){
-      // 保留原始 PNG；在原生像素渲染缓存中固定脚底并交替接触腿，避免重复迈同一只脚。
-      for(const dir of [0,2]){
-        const neutral=rows[dir][0],c0=neutral.getContext('2d');
-        if(typeof c0.getImageData!=='function')continue;
-        const data=c0.getImageData(0,39,neutral.width,1).data,occupied=[];
-        for(let x=0;x<neutral.width;x++)if(data[x*4+3]>128)occupied.push(x);
-        if(!occupied.length)continue;
-        const lo=occupied[0],hi=occupied[occupied.length-1]+1,mid=Math.floor((lo+hi)/2);
+    alternateFeet(rows,bounds){
+      // 脚底边界取自图集配置，避免 file:// 图片污染画布后读取像素导致绘制报错。
+      for(const [i,dir] of [0,2].entries()){
+        const neutral=rows[dir][0],[lo,hi]=bounds[i],mid=Math.floor((lo+hi)/2);
         for(const frame of [1,3]){
           const c=rows[dir][frame].getContext('2d'),leftForward=frame===1;
           c.clearRect(0,34,neutral.width,6);
