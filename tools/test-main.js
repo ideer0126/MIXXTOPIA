@@ -2477,7 +2477,7 @@ test('舞台阶梯与乐器碰撞：向上穿过幕布渐亮进入后台，不�
           assert.deepStrictEqual([g.player.x,g.player.y],position);
           assert.strictEqual(g.stars,initialStars);
           assert.ok(g._playedNodes.has('l1.music.play'));
-          assert.strictEqual(g._checkRoomDoors(),false,'落点不应重复触发渐亮');
+          assert.strictEqual(g._checkRoomDoors({...g.player}),false,'落点不应重复触发渐亮');
           assert.strictEqual(g._resolveNpcNode(g._entitiesOf('npc').find(e => e.id === 'lily' && e.room === 'backstage')), 'l1.backstage.lily');
           const bounds=g._currentArea().rect;
           assert.ok(g.camera.x>=bounds.x*16 && g.camera.x+320<=(bounds.x+bounds.w)*16);
@@ -2494,7 +2494,7 @@ test('舞台阶梯与乐器碰撞：向上穿过幕布渐亮进入后台，不�
           assert.strictEqual(g._currentArea().id,'backstage','后台西侧不能被礼堂的摄像机留白抢走');
           assert.strictEqual(g._entitiesOf('roomdoor').some(e=>e.id==='to-hall'),false);
           level1Run.walkTo(g,66,20);
-          assert.strictEqual(g._checkRoomDoors(),false);
+          assert.strictEqual(g._checkRoomDoors({...g.player}),false);
           assert.strictEqual(g._currentArea().id,'backstage');
         },
       });
@@ -2983,8 +2983,18 @@ test('后台单向流程：仅向上进入，横向/向下不触发，保存继�
           g.player={x:door.x*16,y:door.y*16};
           for(const facing of [{x:0,y:1},{x:1,y:0},{x:-1,y:0}]){
             g.facing=facing;
-            assert.strictEqual(g._checkRoomDoors(),false);assert.strictEqual(g._currentArea().id,'hall');
+            assert.strictEqual(g._checkRoomDoors({...g.player}),false);assert.strictEqual(g._currentArea().id,'hall');
           }
+          // 从北侧向下进入重叠区，再掉头向上，仍不能算从南侧跨入。
+          g.player={x:door.x*16,y:door.y*16-14};
+          key('keydown','s');g._update(.05);key('keyup','s');
+          assert.strictEqual(g.player.y,door.y*16-10);
+          key('keydown','w');g._update(.05);key('keyup','w');
+          assert.strictEqual(g._currentArea().id,'hall','门内掉头不能传送');
+          assert.strictEqual(g.player.y,door.y*16-14);
+          g._update(.05);
+          assert.strictEqual(g._currentArea().id,'hall','门内朝北停步不能传送');
+          assert.ok(!g._playedNodes.has('l1.backstage.arrived'));
           g.player={x:door.x*16,y:(door.y+1)*16};
         },
         onBackstage(g){

@@ -885,7 +885,7 @@
       if (this.state !== STATE.PLAYING) return; // 收集触发台词进入对话，本帧不再推进
       this._syncProgressLocks();
       if (this._checkTriggers()) return;
-      this._checkRoomDoors();
+      this._checkRoomDoors(beforeMove);
       this._checkPortal();
       if (this.state !== STATE.PLAYING) return; // 过关台词进入对话，本帧不再计时
       this.runTime += dt;
@@ -1314,13 +1314,17 @@
       this.camera.x += ox; this.camera.y += oy;
     }
 
-    _checkRoomDoors() {
+    /** 根据移动前的位置与当前朝向判断房间入口；南侧入口须从门格外向北跨入。
+     * @param {{x: number, y: number}} beforeMove 本帧移动前的玩家碰撞框左上角（像素）。
+     */
+    _checkRoomDoors(beforeMove) {
       for (const e of this._entitiesOf('roomdoor')) {
         const gate = this._entitiesOf('gate').find(g => g.x === e.x && g.y === e.y);
         if (gate && !gate.open) continue;
         if (this.mechanics.overlapsTile(this.player.x, this.player.y, PLAYER_SIZE, e.x, e.y)) {
           if (e.enterFrom === 'west' && this.facing.x <= 0) continue;
-          if (e.enterFrom === 'south' && this.facing.y >= 0) continue;
+          if (e.enterFrom === 'south'
+            && (this.facing.y >= 0 || beforeMove.y < (e.y + 1) * TILE)) continue;
           this.player.x = e.to.x * TILE; this.player.y = e.to.y * TILE;
           if (e.arrivalNode) this._playedNodes.add(e.arrivalNode);
           if (e.fadeIn) this._entryFade = Number(this.level.entryFade) || 0;

@@ -38,6 +38,7 @@
   function stepTo(game, tx, ty) {
     let guard = 0;
     while ((game.player.x !== tx * 16 || game.player.y !== ty * 16) && guard++ < 12) {
+      const beforeMove = { ...game.player };
       const dx = Math.sign(tx * 16 - game.player.x), dy = Math.sign(ty * 16 - game.player.y);
       check(!dx || !dy, '路线必须逐格正交移动');
       game._moveAxis(dx * Math.min(4,Math.abs(tx*16-game.player.x)), dy * Math.min(4,Math.abs(ty*16-game.player.y)));
@@ -47,9 +48,9 @@
       game._syncProgressLocks();
       game._checkTriggers();
       finishDialogue(game);
+      if (game._checkRoomDoors(beforeMove)) return;
     }
     check(game.player.x === tx * 16 && game.player.y === ty * 16, '移动被阻挡：' + tx + ',' + ty);
-    game._checkRoomDoors();
     game._checkPortal();
     finishDialogue(game);
   }
