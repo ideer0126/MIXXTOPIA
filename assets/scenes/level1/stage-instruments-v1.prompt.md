@@ -1,6 +1,6 @@
 # Stage instruments
 
-Generated with built-in image_gen; original PNG alpha preserved.
+Generated with built-in image_gen; original alpha preserved in lossless WebP.
 
 ```text
 Use case: stylized-concept

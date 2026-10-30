@@ -39,6 +39,10 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Install build tools
+        if: ${{ hashFiles('package-lock.json') != '' }}
+        run: npm ci
+
       - name: Quality gates
         run: |
           set -euo pipefail
@@ -48,6 +52,7 @@ jobs:
           node tools/test-engine.js
           node tools/test-main.js
           node tools/test-channels.js
+          node tools/test-build.js
 
       - name: Resolve channel refs
         id: channels
@@ -154,8 +159,12 @@ jobs:
           grep -q 'name="mixxtopia-channel" content="beta"' _site/beta/index.html
           grep -q 'name="mixxtopia-channel" content="preview"' _site/preview/index.html
 
-          if grep -q 'js/main.js' _site/index.html; then
-            grep -q 'js/channel.js' _site/index.html
+          if grep -Eq 'src="js/(main\.js|game-[a-f0-9]+\.js)"' _site/index.html; then
+            if grep -q 'js/main.js' _site/index.html; then
+              grep -q 'js/channel.js' _site/index.html
+            else
+              test -f _site/build.json
+            fi
             if grep -q 'name="robots"' _site/index.html; then
               echo "::error::stable 游戏页不应带 noindex"
               exit 1
@@ -165,15 +174,23 @@ jobs:
             grep -q 'name="robots"' _site/index.html
           fi
 
-          if grep -q 'js/main.js' _site/preview/index.html; then
-            grep -q 'js/channel.js' _site/preview/index.html
+          if grep -Eq 'src="js/(main\.js|game-[a-f0-9]+\.js)"' _site/preview/index.html; then
+            if grep -q 'js/main.js' _site/preview/index.html; then
+              grep -q 'js/channel.js' _site/preview/index.html
+            else
+              test -f _site/preview/build.json
+            fi
           else
             grep -q '预览版尚未开放' _site/preview/index.html
           fi
           grep -q 'name="robots"' _site/preview/index.html
 
-          if grep -q 'js/main.js' _site/beta/index.html; then
-            grep -q 'js/channel.js' _site/beta/index.html
+          if grep -Eq 'src="js/(main\.js|game-[a-f0-9]+\.js)"' _site/beta/index.html; then
+            if grep -q 'js/main.js' _site/beta/index.html; then
+              grep -q 'js/channel.js' _site/beta/index.html
+            else
+              test -f _site/beta/build.json
+            fi
           elif grep -q '测试版已停用' _site/beta/index.html; then
             echo "beta 已停用占位页 OK"
           else

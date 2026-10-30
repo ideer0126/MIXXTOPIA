@@ -2,9 +2,9 @@
 
 使用内置 image_gen 生成，保留原始图片与透明 alpha；没有通过脚本修改图片。
 
-- `rings-booth-v1.png`：1499×1049，不透明摊位底图。代码分三段映射到 320×224：顶棚 / 招牌、水面、柜台。
-- `rings-toys-v1.png`：2172×724，RGBA 独立道具图集。取样框由 `js/birthday.js` 的 `RINGS.frames` 描述，依次鲸鱼、月亮、星星、浮标、泳圈。
-- `rings-obstacles-v1.png`：2172×724，RGBA 礼物船 / 草莓蛋糕船图集，使用内置 image_gen 生成。由 `RINGS.obstacleFrames` 取样，替换旧道具图集中的条状浮标；旧浮标帧保留但不再绘制。水线处船体保持 26×8px 碰撞，整体绘制 28×22px，底部对齐原水线，保持速度和投掷时机。
+- `rings-booth-v1.webp`：1499×1049，不透明摊位底图。代码分三段映射到 320×224：顶棚 / 招牌、水面、柜台。
+- `rings-toys-v1.webp`：2172×724，RGBA 独立道具图集。取样框由 `js/birthday.js` 的 `RINGS.frames` 描述，依次鲸鱼、月亮、星星、浮标、泳圈。
+- `rings-obstacles-v1.webp`：2172×724，RGBA 礼物船 / 草莓蛋糕船图集，使用内置 image_gen 生成。由 `RINGS.obstacleFrames` 取样，替换旧道具图集中的条状浮标；旧浮标帧保留但不再绘制。水线处船体保持 26×8px 碰撞，整体绘制 28×22px，底部对齐原水线，保持速度和投掷时机。
 - 碰撞区域维持现有逻辑坐标；底图不烘焙活动目标、浮标、泳圈、状态与文字。
 
 ## 摊位提示词

@@ -23,7 +23,7 @@
  * 每个通道根目录带 channel.json；js/channel.js 注入 window.MIXXTOPIA_CHANNEL，
  * main.js 据此派生存档/设置键，避免同一 Pages 域名下三个通道互相覆盖存档。
  *
- * 零依赖：Node 内置 fs/path/child_process + git + tar。
+ * 构建依赖：esbuild（新版本 JS 打包）+ Node 内置模块 + git + tar。
  * 退出码：0 = 成功；1 = 参数/ref/产物校验失败。
  */
 'use strict';
@@ -297,6 +297,11 @@ function buildGame(dest, ref, label, channel, worktree) {
   injectChannelIntoIndex(dest, channel);
   writeChannelJs(dest, info);
   verifyLocalRefs(dest, true);
+  // Older tags retain their own classic-script layout.
+  if (worktree || pathExistsInRef(ref, 'tools/build-site.js')) {
+    require('./build-site').bundleRuntime(dest);
+    verifyLocalRefs(dest, false);
+  }
 
   const rel = path.relative(REPO_ROOT, dest) || '.';
   console.log('[channels] ' + channel.padEnd(7) + ' ' + info.label + ' -> ' + rel + ' (' + commit + ')');
@@ -431,7 +436,8 @@ function verifySite(outDir, expected) {
       fail(channel + ' 缺少通道 meta 标签');
     }
 
-    const isGame = page.html.indexOf('js/main.js') >= 0;
+    const bundled = /src="js\/game-[a-f0-9]+\.js"/.test(page.html);
+    const isGame = bundled || page.html.indexOf('js/main.js') >= 0;
     if (isGame !== !!expected[channel]) {
       fail(channel + ' 产物类型不符：期望 ' + (expected[channel] ? '游戏' : '占位页'));
     }
@@ -448,7 +454,7 @@ function verifySite(outDir, expected) {
     if (info.label === null || info.ref === null) fail(channel + ' 游戏构建 channel.json 缺少 label/ref');
     const channelAt = page.html.indexOf('js/channel.js');
     const mainAt = page.html.indexOf('js/main.js');
-    if (channelAt < 0 || channelAt > mainAt) {
+    if (!bundled && (channelAt < 0 || channelAt > mainAt)) {
       fail(channel + ' 的 channel.js/main.js 注入顺序错误');
     }
     if (channel === 'stable') {

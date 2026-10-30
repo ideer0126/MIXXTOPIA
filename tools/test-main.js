@@ -567,7 +567,7 @@ test('对话头像位（#28）：按说话人加载立绘、nar 隐藏、退出�
   // Byeori 有立绘：src 指向素材目录、头像显示、对话框挂 has-portrait
   assert.strictEqual(
     elt('dialog-portrait').src,
-    'assets/characters/byeori/art/byeori.png'
+    'assets/characters/byeori/art/byeori.webp'
   );
   assert.ok(shown('dialog-portrait'));
   assert.ok(elt('dialog').classList.contains('has-portrait'));
@@ -619,7 +619,7 @@ test('对话头像加载失败：同路径换行保持隐藏、切换其他路�
     press('e'); tick(game);
     assert.strictEqual(game._dialog.idx, i, '翻页进入预期行');
     if (i === 4) {
-      assert.strictEqual(img.src, 'assets/characters/haewon/art/haewon-1.png');
+      assert.strictEqual(img.src, 'assets/characters/haewon/art/haewon-1.webp');
       assert.strictEqual(img.style.transform, 'translateY(' + (55 / 1448 * 100) + '%)');
       assert.ok(shown('dialog-portrait'), '其他头像路径仍正常显示');
       assert.ok(elt('dialog').classList.contains('has-portrait'));
@@ -3130,7 +3130,7 @@ test('#44 数据：GAME.avatarPresets 六个固定头像，id 合法且默认 mu
     assert.ok(/^[a-z0-9][a-z0-9-]{0,31}$/.test(p.id), '头像 id 必须符合数据库 CHECK 格式');
     assert.ok(/^#[0-9a-f]{6}$/i.test(p.color), '头像占位色必须是 #RRGGBB');
     assert.ok(p.name.length > 0);
-    assert.strictEqual(p.art, 'assets/avatars/muse-portraits-v1.png');
+    assert.strictEqual(p.art, 'assets/avatars/muse-portraits-v1.webp');
     assert.ok(fs.existsSync(path.join(repoRoot, p.art)));
     assert.strictEqual(p.portraitCell.length, 2);
   }
@@ -3302,7 +3302,7 @@ testAsync('#44 设置界面：昵称/头像/云端偏好回填，六个固定头
   assert.ok(game._ui.avatarBtns['muse-3'].classList.contains('is-selected'));
   assert.ok(!game._ui.avatarBtns['muse-1'].classList.contains('is-selected'));
   assert.strictEqual(text('avatar-preview-name'), 'Sullyoon');
-  assert.match(elt('avatar-preview-face').style.backgroundImage, /muse-portraits-v1\.png/);
+  assert.match(elt('avatar-preview-face').style.backgroundImage, /muse-portraits-v1\.webp/);
   assert.strictEqual(elt('avatar-preview-face').style.backgroundPosition, '100% 0%');
   for (const [i, btn] of Object.values(game._ui.avatarBtns).entries()) {
     assert.ok(btn.children[0].classList.contains('has-portrait'));

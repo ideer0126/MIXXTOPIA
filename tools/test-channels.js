@@ -67,11 +67,9 @@ function walk(dir, out = []) {
 }
 
 function assertGameIndex(html, label) {
-  const channelAt = html.indexOf('js/channel.js');
-  const mainAt = html.indexOf('js/main.js');
-  assert.ok(channelAt >= 0, label + ' 缺少 channel.js');
-  assert.ok(mainAt >= 0, label + ' 缺少 main.js');
-  assert.ok(channelAt < mainAt, label + ' 必须先加载 channel.js 再加载 main.js');
+  const scripts = [...html.matchAll(/<script src="([^"]+)"/g)];
+  assert.strictEqual(scripts.length, 1, label + ' must load one bundle');
+  assert.match(scripts[0][1], /^js\/game-[a-f0-9]{12}\.js$/);
 }
 
 function assertMeta(html, channel) {
@@ -197,18 +195,19 @@ try {
   });
 
   /* ─────────────── 共用产物检查 ─────────────── */
-  test('channel.js 内容正确且可解析', () => {
-    const sources = [
-      ['beta', read(path.join(testing, 'beta/js/channel.js'))],
-      ['stable', read(path.join(stable, 'js/channel.js'))],
-      ['preview', read(path.join(stable, 'preview/js/channel.js'))],
-    ];
-    for (const [channel, source] of sources) {
-      assert.ok(source.indexOf('"channel":"' + channel + '"') >= 0);
-      new vm.Script(source, { filename: channel + '/js/channel.js' });
+  test('bundle preserves channel injection before main and runtime APIs', () => {
+    for (const [channel, dir] of [['beta', path.join(testing, 'beta')], ['stable', stable], ['preview', path.join(stable, 'preview')]]) {
+      const manifest = readJson(path.join(dir, 'build.json'));
+      const { file, sources } = manifest.entries.game;
+      assert.ok(sources.indexOf('js/channel.js') < sources.indexOf('js/main.js'));
+      const sandbox = vm.createContext({});
+      vm.runInContext('window = globalThis; MIXX_NO_BOOT = true;', sandbox);
+      vm.runInContext(read(path.join(dir, file)), sandbox);
+      assert.strictEqual(sandbox.MIXXTOPIA_CHANNEL, channel);
+      assert.strictEqual(sandbox.MIXXTOPIA_CHANNEL_INFO.channel, channel);
+      for (const mod of ['engine', 'main', 'auth', 'account', 'cloud', 'stats', 'cloudConfig']) assert.ok(sandbox.MIXX[mod], mod);
+      assert.ok(sandbox.GAME.levels.length);
     }
-    assert.ok(sources[0][1].indexOf('channel-badge') >= 0);
-    assert.ok(sources[2][1].indexOf('channel-badge') >= 0);
   });
 
   test('产物不含开发文件或 .gitkeep', () => {
@@ -216,12 +215,11 @@ try {
     assertNoJunk(stable);
   });
 
-  test('每个游戏构建都包含 cloud-config.js / account.js / data.js', () => {
-    for (const name of ['js/cloud-config.js', 'js/account.js', 'js/cloud.js', 'js/data.js']) {
-      for (const rel of ['beta/' + name, name, 'preview/' + name]) {
-        const site = rel.startsWith('beta/') ? testing : stable;
-        assert.ok(fs.existsSync(path.join(site, rel)), '缺少 ' + rel);
-      }
+  test('bundles include all source modules without shipping duplicate scripts', () => {
+    for (const dir of [path.join(testing, 'beta'), stable, path.join(stable, 'preview')]) {
+      const { entries } = readJson(path.join(dir, 'build.json'));
+      for (const name of ['cloud-config', 'account', 'cloud', 'data']) assert.ok(entries.game.sources.includes('js/' + name + '.js'));
+      assert.deepStrictEqual(fs.readdirSync(path.join(dir, 'js')).sort(), [entries.game.file, entries.recovery.file].map(p => path.basename(p)).sort());
     }
   });
 
@@ -233,10 +231,10 @@ try {
       assert.ok(html.includes('content="no-referrer"'));
       assert.ok(hasNoindex(html));
       assert.ok(!html.includes('js/main.js'));
-      for (const name of ['cloud-config.js', 'auth.js', 'password-recovery.js']) {
-        assert.ok(html.includes('src="js/' + name + '"'));
-        assert.ok(fs.existsSync(path.join(dir, 'js', name)));
-      }
+      const { file, sources } = readJson(path.join(dir, 'build.json')).entries.recovery;
+      assert.deepStrictEqual(sources, ['js/cloud-config.js', 'js/auth.js', 'js/password-recovery.js']);
+      assert.ok(html.includes('src="' + file + '" defer'));
+      assert.ok(fs.existsSync(path.join(dir, file)));
     }
     for (const dir of [testing, path.join(testing, 'preview'), path.join(stable, 'beta')]) {
       assert.ok(!fs.existsSync(path.join(dir, 'reset-password.html')), '占位通道不应开放找回页');

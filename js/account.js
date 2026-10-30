@@ -140,7 +140,7 @@
         const id = typeof item.id === 'string' ? item.id.trim() : '';
         if (!AVATAR_ID_RE.test(id) || seen[id]) continue;
         seen[id] = true;
-        const portrait = typeof item.art === 'string' && /^assets\/[a-zA-Z0-9/_-]+\.png$/.test(item.art)
+        const portrait = typeof item.art === 'string' && /^assets\/[a-zA-Z0-9/_-]+\.webp$/.test(item.art)
           && Array.isArray(item.portraitCell) && item.portraitCell.length === 2
           && Number.isInteger(item.portraitCell[0]) && item.portraitCell[0] >= 0 && item.portraitCell[0] < 3
           && Number.isInteger(item.portraitCell[1]) && item.portraitCell[1] >= 0 && item.portraitCell[1] < 2

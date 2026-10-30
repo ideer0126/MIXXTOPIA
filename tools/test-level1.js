@@ -26,11 +26,21 @@ test('场景图集路径有效、透明 alpha 保留、所有取样框均在原�
   const level = game.levels[0];
   const dims = {};
   for (const [key, src] of Object.entries(level.sceneryAssets)) {
-    const png = fs.readFileSync(path.join(__dirname, '..', src));
-    if (key === 'cover') { assert.equal(png.readUInt16BE(0), 0xffd8); continue; }
-    assert.equal(png.subarray(1, 4).toString(), 'PNG');
-    dims[key] = [png.readUInt32BE(16), png.readUInt32BE(20)];
-    if (!['mural','birthdayHall','ringsBooth'].includes(key)) assert.equal(png[25], 6, '透明图集必须保留 RGBA');
+    const webp = fs.readFileSync(path.join(__dirname, '..', src));
+    assert.ok(src.endsWith('.webp'));
+    assert.equal(webp.toString('ascii', 0, 4), 'RIFF');
+    assert.equal(webp.toString('ascii', 8, 12), 'WEBP');
+    // Skip optional metadata chunks, then inspect the lossless VP8L header.
+    let offset = 12;
+    while (offset < webp.length && webp.toString('ascii', offset, offset + 4) !== 'VP8L') {
+      const size = webp.readUInt32LE(offset + 4);
+      offset += 8 + size + (size & 1);
+    }
+    assert.ok(offset + 13 <= webp.length, key + ': expected lossless VP8L');
+    assert.equal(webp[offset + 8], 0x2f);
+    const bits = webp.readUInt32LE(offset + 9);
+    dims[key] = [(bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1];
+    if (!['cover','mural','birthdayHall','ringsBooth'].includes(key)) assert.equal((bits >>> 28) & 1, 1, '透明图集必须保留 alpha');
   }
   for (const d of level.decorations) {
     for (const [key, frame] of [[d.art, d.frame], [d.litArt, d.litFrame]]) {

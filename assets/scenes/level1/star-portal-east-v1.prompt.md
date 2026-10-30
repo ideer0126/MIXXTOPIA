@@ -1,6 +1,6 @@
 # East-facing star portal
 
-Edited with built-in image_gen from star-portal-v1.png. Original transparency preserved; saved as a new sibling asset.
+Edited with built-in image_gen from star-portal-v1.webp. Original transparency preserved; saved as a new sibling asset.
 
 ```text
 Use case: precise-object-edit

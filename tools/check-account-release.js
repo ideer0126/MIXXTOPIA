@@ -9,7 +9,8 @@ const repo = path.resolve(__dirname, '..');
 const base = 'https://ideer0126.github.io/MIXXTOPIA/';
 // Match build-channels.js's source allowlist. Generated channel metadata is excluded.
 const runtimePaths = ['index.html', 'reset-password.html', 'styles.css', 'js', 'assets',
-  'CNAME', 'robots.txt', 'favicon.ico', 'manifest.webmanifest'];
+  'CNAME', 'robots.txt', 'favicon.ico', 'manifest.webmanifest',
+  'package.json', 'package-lock.json', 'tools/build-site.js', 'tools/build-channels.js'];
 function git(args) {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
@@ -44,9 +45,19 @@ async function checkRelease({ read: get = read, expectedCommit = git(['rev-parse
     return { prefix, meta, html };
   }));
   for (const { prefix, meta, html } of snapshots) {
-    const info = json(meta), game = !!html.text && html.text.includes('js/main.js');
+    const info = json(meta);
+    const bundled = html.text && html.text.match(/src="(js\/game-[a-f0-9]{12}\.js)"/);
+    const game = !!html.text && (!!bundled || html.text.includes('js/main.js'));
+    let sources = null;
+    if (bundled) {
+      const build = json(await get(base + prefix + 'build.json'));
+      const entry = build?.entries?.game;
+      // Validate downloaded metadata once; never execute downloaded JS.
+      sources = entry?.file === bundled[1] && Array.isArray(entry.sources) && entry.sources.every(src => typeof src === 'string')
+        ? entry.sources : [];
+    }
     const required = ['auth', 'account', 'cloud', 'stats'];
-    const missing = game ? required.filter(name => !html.text.includes('src="js/' + name + '.js"')) : [];
+    const missing = game ? required.filter(name => sources ? !sources.includes('js/' + name + '.js') : !html.text.includes('src="js/' + name + '.js"')) : [];
     const item = { url: base + prefix, status: html.status, metadata: info, game, missingScripts: missing };
     report.channels.push(item);
     if (meta.status !== 200 || html.status !== 200 || !info) report.blockers.push(item.url + ': unreadable deployment');
@@ -60,10 +71,10 @@ async function checkRelease({ read: get = read, expectedCommit = git(['rev-parse
       if (info && info.commit) report.blockers.push(item.url + ': missing scripts main');
       continue;
     }
-    const config = await get(item.url + 'js/cloud-config.js');
+    const config = await get(item.url + (bundled ? bundled[1] : 'js/cloud-config.js'));
     // Parse public constants only; never execute downloaded JavaScript.
-    const host = config.text && config.text.match(/url:\s*'(https:\/\/[a-z0-9-]+\.supabase\.co)'/);
-    const key = config.text && config.text.match(/anonKey:\s*'(sb_publishable_[A-Za-z0-9_-]+)'/);
+    const host = config.text && config.text.match(/url:\s*["'](https:\/\/[a-z0-9-]+\.supabase\.co)["']/);
+    const key = config.text && config.text.match(/anonKey:\s*["'](sb_publishable_[A-Za-z0-9_-]+)["']/);
     if (!host || !key) { report.blockers.push(item.url + ': cannot inspect public backend configuration'); continue; }
     item.backendUrl = host[1];
     if (report.backends.some(backend => backend.url === host[1])) continue;
