@@ -10,7 +10,7 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# 依赖（本项目零依赖，若未来引入构建再调整）
+# 构建依赖（浏览器运行时零依赖）
 node_modules/
 
 # 本地临时
@@ -20,3 +20,6 @@ node_modules/
 
 # Pages 部署产物（CI 内生成）
 _site/
+
+# 单站点 / 离线构建产物
+dist/

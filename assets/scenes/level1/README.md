@@ -1,10 +1,10 @@
 # 第一关场景美术
 
-内置 image_gen 生成，2026-10-25。原始 PNG 完整保留；两份图集保留透明 alpha，运行时按 frame 取样。场景布局与碰撞依据 js/data.js，人物不在本次范围。
+内置 image_gen 生成，2026-10-25。已统一转换为无损 WebP，保持原尺寸与解码像素；两份图集保留透明 alpha，运行时按 frame 取样。场景布局与碰撞依据 js/data.js，人物不在本次范围。
 
 参考：用户提供的幼儿园文艺汇演照片，用于海洋蓝、鲸鱼、生日蛋糕与气球摆设；不识别或转绘照片中的人物。
 
-## classroom-props-v1.png
+## classroom-props-v1.webp
 
 ```text
 Use case: stylized-concept
@@ -19,7 +19,7 @@ Style/medium: Genuine high-quality hand-placed pixel-art appearance, clean pixel
 Constraints: Real transparent alpha everywhere outside props, isolated objects, no background scene, no characters, no photorealism, no typography, no watermark. All twelve props present and in the exact cells described.
 ```
 
-## whale-mural-v1.png
+## whale-mural-v1.webp
 
 ```text
 Use case: stylized-concept
@@ -33,7 +33,7 @@ Lighting/mood: Slightly dim indoor stage light, nostalgic, gentle dreamcore, col
 Constraints: No text or lettering, no Korean banner, no logos, no real people, no UI or watermarks. Opaque rectangular mural. The reference photo is guidance for the design, not an edit target.
 ```
 
-## ocean-party-v1.png
+## ocean-party-v1.webp
 
 ```text
 Use case: stylized-concept

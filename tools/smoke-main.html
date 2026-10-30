@@ -420,7 +420,7 @@
       ok('→ dialogue', game.state === 'dialogue' && shown('dialog') && text('dialog-name') === 'Byeori');
       ok('对话背景虚化层显示', shown('dialog-backdrop'));
       var portrait = document.getElementById('dialog-portrait');
-      ok('头像 src 指向素材', portrait.getAttribute('src') === '../assets/characters/byeori/art/byeori.png');
+      ok('头像 src 指向素材', portrait.getAttribute('src') === '../assets/characters/byeori/art/byeori.webp');
       ok('头像显示 + has-portrait', !portrait.classList.contains('hidden')
         && document.getElementById('dialog').classList.contains('has-portrait'));
       var fullLine = 'NSWER！欢迎来到 MIXXTOPIA！我是星星精灵 Byeori。';

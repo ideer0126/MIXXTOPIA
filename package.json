@@ -1,0 +1,17 @@
+{
+  "name": "mixxtopia",
+  "private": true,
+  "version": "0.0.0",
+  "description": "MIXXTOPIA static game build tools (no runtime dependencies)",
+  "scripts": {
+    "build": "node tools/build-site.js --out dist",
+    "build:channels": "node tools/build-channels.js",
+    "test:build": "node tools/test-build.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

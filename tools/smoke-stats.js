@@ -30,7 +30,7 @@ const B = '22222222-2222-2222-2222-222222222222';
       if (!name.startsWith(repo + path.sep)) { res.writeHead(403).end(); return; }
       fs.readFile(name, (err, body) => {
         if (err) { res.writeHead(404).end(); return; }
-        const mime = { '.js': 'text/javascript', '.html': 'text/html', '.css': 'text/css', '.png': 'image/png' };
+        const mime = { '.js': 'text/javascript', '.html': 'text/html', '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png' };
         res.writeHead(200, { 'Content-Type': mime[path.extname(name)] || 'application/octet-stream' }); res.end(body);
       });
     });

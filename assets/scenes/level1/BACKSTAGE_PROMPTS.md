@@ -1,8 +1,8 @@
 # 舞台 / 化妆间与搬礼物盒素材
 
-内置 image_gen，2026-10-25。三个 PNG 保留生成原图与透明 alpha；不覆盖旧版图集。
+内置 image_gen，2026-10-25。三份素材以无损 WebP 保留生成原像素与透明 alpha；不覆盖旧版图集。
 
-## backstage-props-v1.png
+## backstage-props-v1.webp
 
 ```text
 Use case: stylized-concept
@@ -20,7 +20,7 @@ Style: Exquisite readable hand-placed pixel clusters, 1990s adventure game craft
 Constraints: True transparent alpha outside every object; maintain exact 3x2 grid and item order. Each object must remain clear when scaled to 24-64 logical game pixels.
 ```
 
-## star-portal-v1.png
+## star-portal-v1.webp
 
 ```text
 Use case: stylized-concept
@@ -31,7 +31,7 @@ Composition: Single centered complete object, generous transparent padding, port
 Constraints: True transparent alpha outside the sprite; partially transparent magic in the center; no text, characters, labels, logos, watermark or UI.
 ```
 
-## seating-entrance-v1.png
+## seating-entrance-v1.webp
 
 ```text
 Use case: stylized-concept

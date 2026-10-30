@@ -102,6 +102,10 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Install build tools
+        if: ${{ hashFiles('package-lock.json') != '' }}
+        run: npm ci
+
       - name: Syntax check
         run: |
           set -euo pipefail
@@ -114,6 +118,7 @@ jobs:
           set -euo pipefail
           node tools/test-engine.js
           node tools/test-main.js
+          if [[ -f tools/test-build.js ]]; then node tools/test-build.js; fi
 
       - name: Build release package
         id: package
@@ -123,26 +128,30 @@ jobs:
           set -euo pipefail
           NAME="MIXXTOPIA-${VERSION}"
           STAGE="dist/${NAME}"
-          mkdir -p "$STAGE"
-          rsync -a \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.ds' \
-            --exclude='.vscode' \
-            --exclude='.idea' \
-            --exclude='.coderabbit.yaml' \
-            --exclude='.gitkeep' \
-            --exclude='dist' \
-            --exclude='_site' \
-            --exclude='docs' \
-            --exclude='tools' \
-            --exclude='supabase' \
-            --exclude='*.md' \
-            --exclude='LICENSE' \
-            --exclude='.gitignore' \
-            --exclude='.DS_Store' \
-            ./ "$STAGE/"
-          cp README.md LICENSE "$STAGE/"
+          if [[ -f tools/build-site.js ]]; then
+            node tools/build-site.js --out "$STAGE"
+          else
+            mkdir -p "$STAGE"
+            rsync -a \
+              --exclude='.git' \
+              --exclude='.github' \
+              --exclude='.ds' \
+              --exclude='.vscode' \
+              --exclude='.idea' \
+              --exclude='.coderabbit.yaml' \
+              --exclude='.gitkeep' \
+              --exclude='dist' \
+              --exclude='_site' \
+              --exclude='docs' \
+              --exclude='tools' \
+              --exclude='supabase' \
+              --exclude='*.md' \
+              --exclude='LICENSE' \
+              --exclude='.gitignore' \
+              --exclude='.DS_Store' \
+              ./ "$STAGE/"
+            cp README.md LICENSE "$STAGE/"
+          fi
           ( cd dist && zip -qr "${NAME}.zip" "$NAME" )
           ( cd dist && sha256sum "${NAME}.zip" > "${NAME}.zip.sha256" )
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
@@ -153,11 +162,15 @@ jobs:
         run: |
           set -euo pipefail
           STAGE="dist/${NAME}"
-          for file in index.html styles.css README.md LICENSE js/*.js; do
+          for file in index.html styles.css README.md LICENSE; do
             if [[ ! -f "${STAGE}/${file}" ]]; then
               echo "::error::发布包缺少 ${file}"
               exit 1
             fi
+          done
+          for file in "${STAGE}"/js/*.js; do
+            test -f "$file"
+            node --check "$file"
           done
           unzip -Z1 "dist/${NAME}.zip" > dist/zip-list.txt
           if ! grep -Fqx "${NAME}/index.html" dist/zip-list.txt; then

@@ -197,13 +197,13 @@ test('头像白名单：来自 GAME.avatarPresets；非法条目过滤、未知 
 test('头像美术元数据：保留本地 PNG 与合法格子；非法元数据不改变白名单', () => {
   const { sandbox, account } = setup();
   const item = sandbox.GAME.avatarPresets[0];
-  item.art = 'assets/avatars/muse-portraits-v1.png'; item.portraitCell = [2, 1];
+  item.art = 'assets/avatars/muse-portraits-v1.webp'; item.portraitCell = [2, 1];
   const preset = account.avatarPresets(sandbox)[0];
   assert.strictEqual(preset.art, item.art);
   assert.deepStrictEqual(Array.from(preset.portraitCell), [2, 1]);
   preset.portraitCell[0] = 0;
   assert.strictEqual(item.portraitCell[0], 2, '不能修改共享头像配置');
-  for (const [art, cell] of [['https://example.com/avatar.png', [0, 0]], ['assets/../avatar.png', [0, 0]], [item.art, [3, 0]], [item.art, [0, -1]]]) {
+  for (const [art, cell] of [['https://example.com/avatar.webp', [0, 0]], ['assets/../avatar.webp', [0, 0]], [item.art, [3, 0]], [item.art, [0, -1]]]) {
     item.art = art; item.portraitCell = cell;
     const result = account.avatarPresets(sandbox)[0];
     assert.strictEqual(result.art, undefined);

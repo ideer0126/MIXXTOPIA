@@ -1,6 +1,6 @@
 # Smaller stage bass — built-in image_gen local edit
 
-Reference/edit target: the 180×155 crop at (820,150) in `birthday-hall-v2.png`, enlarged four times for editing. Only the returned region corresponding to original pixels x843–902 / y180–284 is used in `birthday-hall-v3.png`; pixels outside this rectangle retain the exact original RGB bytes. The original v2 remains in the repository. The black amplifier is outside the replacement rectangle.
+Reference/edit target: the 180×155 crop at (820,150) in `birthday-hall-v2.webp`, enlarged four times for editing. Only the returned region corresponding to original pixels x843–902 / y180–284 is used in `birthday-hall-v3.webp`; pixels outside this rectangle retain the exact original RGB bytes. The original v2 remains in the repository. The black amplifier is outside the replacement rectangle.
 
 ## Complete prompt
 

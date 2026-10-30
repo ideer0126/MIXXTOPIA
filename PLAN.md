@@ -12,7 +12,7 @@
 | 名称 | MIXXTOPIA |
 | 类型 | 俯视角像素剧情冒险 RPG（网页版） |
 | 主题 | NMIXX 第六张迷你专辑《Strange Muse》（2026/10/19 发行，主打《긴 소원 (Birthday Wish)》） |
-| 技术栈 | 纯 HTML / CSS / JavaScript（Canvas 渲染），零依赖、零构建 |
+| 技术栈 | 纯 HTML / CSS / JavaScript（Canvas 渲染），零运行时依赖，esbuild 构建 |
 | 部署 | GitHub Pages，静态托管，移动端可玩 |
 | 定位 | 粉丝同人作品，非官方、非商用 |
 
@@ -64,7 +64,7 @@ NSWER 在生日夜被一道星光带入梦境世界 **MIXXTOPIA**。六位缪斯
 - **修改密码**（#22 扩展，已实现、尚未发布）：登录后在设置页验证当前密码并设置新密码；当前客户端的真实 REST 验收通过，部署页面尚待验证，详细行为见 `docs/ACCOUNT_SYSTEM.md` §12。
 - **云存档**：跨设备同步进度（沿用 GAME_DESIGN.md §10 数据结构，以云端 `version` 乐观锁 + 本地 `mixxtopia.cloud.v1` 逐档同步基线做冲突检测）。
 - **资料统计**：游戏时长、成就、收集率；隐私最小化收集。
-- **技术路线（2026-10-24 已定）**：后端 **Supabase**（Postgres + Auth），前端**手写 `fetch` 封装**直连 GoTrue / PostgREST、**不引 SDK**，保持零依赖与 Pages 静态部署；RLS 仅本人可读写，游客数据仅存本地。放弃 Firebase（须引 SDK，与零依赖约定冲突）。
+- **技术路线（2026-10-24 已定）**：后端 **Supabase**（Postgres + Auth），前端**手写 `fetch` 封装**直连 GoTrue / PostgREST、**不引 SDK**，保持零运行时依赖与 Pages 静态部署；RLS 仅本人可读写，游客数据仅存本地。放弃 Firebase（须引 SDK，与零依赖约定冲突）。
 - 规格已并入 `docs/GAME_DESIGN.md` §10；数据模型、同步时序与隐私要求见 `docs/ACCOUNT_SYSTEM.md`；实现子任务见 #42–#47。
 
 ---
@@ -90,6 +90,8 @@ MIXXTOPIA/
 ├── tools/validate.js     # 地图/数据校验脚本（node 运行）
 ├── tools/test-auth.js    # 账户 Auth 单测（fetch 桩，不连真实后端）
 ├── tools/test-account.js # 账户资料（profiles）单测（fetch 桩，不连真实后端）（#44）
+├── tools/build-site.js   # esbuild 单文件产物与 build.json 清单（#93）
+├── package.json / package-lock.json # 仅构建依赖，无运行时依赖
 ├── tools/build-channels.js  # 三通道站点组装（stable/beta/preview）
 ├── tools/test-channels.js   # 三通道构建测试
 ├── docs/
@@ -108,7 +110,7 @@ MIXXTOPIA/
 - **提交规范**（Conventional Commits）：`feat:` / `fix:` / `docs:` / `style:` / `refactor:` / `chore:` / `content:` / `art:` / `audio:` / `test:`。
 - **任务跟踪**：一个任务 = 一个 GitHub Issue；分支与 PR 关联 Issue；合并后自动关闭。
 - **质量门禁**（每次合并前）：
-  1. `node --check` 全部 JS 通过；
+  1. `npm ci` 安装锁定的构建依赖，`node --check` 全部 JS 通过；
   2. `node tools/validate.js` 地图/数据校验通过；
   3. 本地静态服务器冒烟测试（页面可加载、无控制台报错）。
 - **分步验收（2026-10-25）**：#11 已接入序章与关 1，`node tools/validate.js --level 1`
@@ -257,7 +259,7 @@ MIXXTOPIA/
 | 移动端操作 | 待测试 | M4 虚拟按键 + M5 真机/仿真验证 |
 | Google Fonts 离线 | 有风险 | 提供 monospace 回退字体，不影响可玩性 |
 | Pages 域名 | 已上线 | 正式地址 `https://ideer0126.github.io/MIXXTOPIA/`，可绑定自定义域名（见 §10） |
-| 账户系统技术选型 | 已决策（2026-10-24） | **A2：Supabase + 手写 `fetch` 封装**（不引 SDK，保持零依赖）；放弃 Firebase（须引 SDK）。云存档要点已并入 GAME_DESIGN.md §10，实现子任务 #42–#47 已建（详见 `docs/ACCOUNT_SYSTEM.md`） |
+| 账户系统技术选型 | 已决策（2026-10-24） | **A2：Supabase + 手写 `fetch` 封装**（不引 SDK，保持零运行时依赖）；放弃 Firebase（须引 SDK）。云存档要点已并入 GAME_DESIGN.md §10，实现子任务 #42–#47 已建（详见 `docs/ACCOUNT_SYSTEM.md`） |
 | 选关取消 / GitHub Issue #10 | 已决策（2026-10-24） | 不做选关，改为 3 存档位「选择存档」并并入 #8；仓库文档已同步，**GitHub Issue #10 文案与状态待人工同步**（智能体不自行改远端） |
 | 存档策略 | 已定（2026-10-24） | 手动存档制：仅 ESC「保存并退出」与通关自动存档写盘；「回到标题（不保存）」/刷新丢弃未保存进度；3 档位，继续=最新档 |
 

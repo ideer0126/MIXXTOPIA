@@ -24,7 +24,7 @@ const user = { id: '11111111-1111-1111-1111-111111111111', email: 'recovery@exam
       if (!filename.startsWith(build + path.sep)) { res.writeHead(403).end(); return; }
       fs.readFile(filename, (err, body) => {
         if (err) { res.writeHead(404).end(); return; }
-        const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png' };
+        const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png' };
         res.writeHead(200, { 'Content-Type': types[path.extname(filename)] || 'application/octet-stream' }).end(body);
       });
     });
