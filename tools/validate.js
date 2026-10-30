@@ -1278,7 +1278,7 @@ function stateSearch(lv, dialogue = {}) {
       if (onewayAt.get(to) && onewayAt.get(to) !== dirName) continue;
       let [fx, fy] = resolveWind(px + dx, py + dy, st);
       const room = roomAt.get(fx + ',' + fy);
-      if (room && (!room.enterFrom || (room.enterFrom === 'west' && dx > 0))) { fx = room.to.x; fy = room.to.y; }
+      if (room && (!room.enterFrom || (room.enterFrom === 'west' && dx > 0) || (room.enterFrom === 'south' && dy < 0))) { fx = room.to.x; fy = room.to.y; }
       const ns = applyCell(fx, fy, st);
       ns.pos = fx + ',' + fy;
       push(ns);

@@ -42,11 +42,17 @@ test('场景图集路径有效、透明 alpha 保留、所有取样框均在原�
   for (const pair of level.party.sprites) for (const [x,y,w,h] of pair) {
     assert.ok(x>=0 && y>=0 && w>0 && h>0 && x+w<=dims.guests[0] && y+h<=dims.guests[1], '人物帧不能越过图集边界');
   }
-  for (const style of Object.values(level.party.animations).concat(Object.values(level.party.muses))) {
+  for (const style of Object.values(level.party.animations).concat(Object.values(level.party.muses), Object.values(level.party.performances))) {
     for (const row of style.frames) for (const [x,y,w,h,anchor] of row) {
       assert.ok(x>=0 && y>=0 && w>0 && h>0 && x+w<=dims[style.art][0] && y+h<=dims[style.art][1], '新人物帧不能越过图集边界');
       assert.ok(anchor>=0 && anchor<=w, '脚下锚点须落在人物帧内');
     }
+  }
+  for (const e of level.entities.filter(e => e.performance)) {
+    const style = level.party.performances[e.performance];
+    assert.ok(style && e.room === 'hall');
+    assert.ok(style.fps > 0 && Number.isInteger(style.restFrame));
+    assert.ok(style.restFrame >= 0 && style.restFrame < style.frames[0].length);
   }
   const muses=level.entities.filter(e=>e.museStyle);
   assert.equal(muses.length,12);

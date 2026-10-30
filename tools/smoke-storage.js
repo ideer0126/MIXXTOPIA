@@ -56,7 +56,7 @@ const output = process.env.MIXX_STORAGE_OUTPUT || '/tmp/mixxtopia-storage';
           game.mechanics.staticCollision = MIXX.collision.compile(game.level);
         }, phase);
         approaches[phase] = {};
-        for (const [name, x, y, dx, dy] of [['bucket', 3.25, 5.8, -.5, 0], ['mops', 5.5, 6.7, 0, -.5], ['chairs', 4.7, 6.1, 0, -.5]]) {
+        for (const [name, x, y, dx, dy] of [['bucket', 3.25, 5.8, -.5, 0], ['mops', 5.7, 6.7, 0, -.5], ['chairs', 4.7, 6.1, 0, -.5]]) {
           approaches[phase][name] = await page.evaluate(({ x, y, dx, dy }) => {
             game.player = { x: x * 16, y: y * 16 }; game.facing = { x: dx, y: dy };
             if (game.birthday.blockedAt(game.player.x, game.player.y)) throw new Error('Approach starts inside obstacle');
@@ -81,7 +81,7 @@ const output = process.env.MIXX_STORAGE_OUTPUT || '/tmp/mixxtopia-storage';
           game.level.decorations = phase === 'after' ? storageDecorations
             : storageDecorations.filter(d => d.kind !== 'storageWestWall');
           game.mechanics.staticCollision = MIXX.collision.compile(game.level);
-          game.player = { x: 3.25 * 16, y: 4.5 * 16 }; game.facing = { x: -1, y: 0 };
+          game.player = { x: 3.25 * 16, y: 3.9 * 16 }; game.facing = { x: -1, y: 0 };
           for (let i = 0; i < 29; i++) game._moveAxis(-1, 0);
           for (let i = 0; i < 21; i++) game._moveAxis(0, 1);
           game._followCamera(); game._render();
