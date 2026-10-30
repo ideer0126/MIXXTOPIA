@@ -30,7 +30,7 @@ test('场景图集路径有效、透明 alpha 保留、所有取样框均在原�
     if (key === 'cover') { assert.equal(png.readUInt16BE(0), 0xffd8); continue; }
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
     dims[key] = [png.readUInt32BE(16), png.readUInt32BE(20)];
-    if (!['mural','birthdayHall'].includes(key)) assert.equal(png[25], 6, '透明图集必须保留 RGBA');
+    if (!['mural','birthdayHall','ringsBooth'].includes(key)) assert.equal(png[25], 6, '透明图集必须保留 RGBA');
   }
   for (const d of level.decorations) {
     for (const [key, frame] of [[d.art, d.frame], [d.litArt, d.litFrame]]) {

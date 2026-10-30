@@ -595,6 +595,9 @@
           "seating": "assets/scenes/level1/seating-entrance-v1.png",
           "curtains": "assets/scenes/level1/stage-curtains-v1.png",
           "games": "assets/scenes/level1/party-games-v1.png",
+          "ringsBooth": "assets/scenes/level1/rings-booth-v1.png",
+          "ringsToys": "assets/scenes/level1/rings-toys-v1.png",
+          "ringsObstacles": "assets/scenes/level1/rings-obstacles-v1.png",
           "fitting": "assets/scenes/level1/dressing-music-v1.png",
           "instruments": "assets/scenes/level1/stage-instruments-v1.png",
           "cover": "assets/scenes/level1/strange-muse-cover.jpg",
@@ -5749,7 +5752,7 @@
         lines: [
           { s: 'bae', t: '小园丁 Bae，报到！花环是纸的，向日葵也是纸的，但力气是真的。' },
           { s: 'bae', t: '大地会记住每一颗种下去的心。生日愿望，也是种下去就会开花的。' },
-          { s: 'bae', t: '先来玩套圈吧！到左侧摊位前按 E / A，依次套中鲸鱼、月亮和星星，就能拿到第一颗星。没套中也可以重试。第二颗星在左上杂物间，从南侧开口直接进去。' },
+          { s: 'bae', t: '先来玩套圈吧！到左侧摊位前按 E / A，依次套中鲸鱼、月亮和星星，就能拿到第一颗星。预判移动目标，避开礼物船和蛋糕船！三关共享三次失败机会，用完就从鲸鱼重新开始。第二颗星在左上杂物间，从南侧开口直接进去。' },
         ],
       },
       'l1.npc.jiwoo': {
@@ -5785,7 +5788,7 @@
       },
       'l1.bae.hint': {
         type:'hint', trigger:'npc:bae', once:false,
-        lines:[{s:'bae',t:'左侧摊位前按 E / A 套圈。光标进入金色区域时投圈，鲸鱼、月亮、星星全部套中就有星星啦！'}],
+        lines:[{s:'bae',t:'左侧摊位前按 E / A 套圈。预判目标和来回移动的礼物船、蛋糕船，按键沿直线投圈。鲸鱼、月亮、星星逐关提速，三关共享三次失败机会，用完从鲸鱼重来；全中就有星星啦！'}],
       },
       'l1.byeori.hint': {
         type: 'hint', trigger: 'npc:byeori', once: false,

@@ -2892,6 +2892,7 @@
       this._dialog = null;
       this.mechanics = null;
       this.combat = null;
+      this.birthday = null;
       this.particles.clear();
       this._portalWasActive = false;
       this._pendingNextIndex = -1;
