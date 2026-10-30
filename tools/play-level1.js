@@ -77,14 +77,16 @@
     const station=game.level.entities.find(e=>e.type==='minigame');
     walkTo(game,station.x,station.y);check(game._interact(),'不能开始套圈');finishDialogue(game);
     if(!game.birthday||!game.birthday.rings)throw new Error('套圈界面没有打开');
+    // Test-only timings inside each stage's real, unobstructed flight window.
+    const waits=[.85,.45,.2];
     let guard=0;
-    while(game.birthday.rings&&guard++<400){
-      const r=game.birthday.rings, center=[.2,.5,.8][r.hits];
-      if(Math.abs(game.birthday.marker()-center)<.08){
+    while(game.birthday.rings&&guard++<800){
+      const r=game.birthday.rings;
+      if(r.phase==='ready'&&r.time>=waits[r.stage]){
         const original=game.input.wasPressed;
-        try{game.input.wasPressed=action=>action==='confirm';game._update(0);}
-        finally{game.input.wasPressed=original;}
-      }else game._update(.05);
+        game.input.wasPressed=action=>action==='confirm';game._update(0);
+        game.input.wasPressed=original;
+      }else game._update(.025);
     }
     check(!game.birthday.rings,'套圈无法完成');finishDialogue(game);
     check(game._playedNodes.has(station.dialogue),'套圈成功没有发放奖励资格');

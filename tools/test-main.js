@@ -2936,17 +2936,41 @@ test('套圈真实计时：未玩不能拿星，误投可重试，暂停与隐�
       level1Run.walkTo(game,star.x,star.y);assert.ok(!game.collected.includes('s1'));
       const station=game._entitiesOf('minigame')[0];
       level1Run.walkTo(game,station.x,station.y);game._interact();level1Run.finishDialogue(game);
-      const birthday=game.birthday,r=birthday.rings,original=game.input.wasPressed;
+      const r=game.birthday.rings,original=game.input.wasPressed;
       try{game.input.wasPressed=action=>action==='confirm';game._update(0);}finally{game.input.wasPressed=original;}
-      assert.strictEqual(r.hits,0);assert.ok(r.message.includes('再试'));
-      game._setState(STATE.PAUSED);game._update(.05);assert.strictEqual(r.time,0);
+      assert.strictEqual(r.hits,0);assert.strictEqual(r.phase,'flight');
+      const frozen=JSON.stringify(r);
+      game._setState(STATE.PAUSED);game._update(.05);assert.strictEqual(JSON.stringify(r),frozen);
       game._setState(STATE.PLAYING);documentStub.hidden=true;
       try{game._update(.05);}finally{documentStub.hidden=false;}
-      assert.strictEqual(r.time,0);birthday.rings=null;
+      assert.strictEqual(JSON.stringify(r),frozen);
+      for(let i=0;i<50&&r.phase==='flight';i++)game._update(.025);
+      assert.strictEqual(r.failures,1);assert.strictEqual(r.phase,'feedback');
+      game._setState(STATE.PAUSED);const feedback=JSON.stringify(r);game._update(.05);
+      assert.strictEqual(JSON.stringify(r),feedback);
+      game._restartLevel();level1Run.finishDialogue(game);assert.strictEqual(game.birthday.rings,null);
       level1Run.winRings(game);assert.ok(game._starAvailable(star));
       level1Run.walkTo(game,star.x,star.y);assert.strictEqual(game.stars,1);
       game._setState(STATE.PAUSED);game._saveAndQuit();elt('btn-continue').click();
       assert.ok(game._playedNodes.has('l1.rings.complete'));assert.strictEqual(game.stars,1);
+      assert.strictEqual(game.birthday.rings,null);
+    }finally{game.destroy();}
+  });
+});
+
+test('#69 旧完成存档与已收集 s1 存档不重开小游戏；退出清理未完成轮次',()=>{
+  withGAME(prologueData(),()=>{
+    const game=makeGame();
+    try{
+      game._startNewGame();level1Run.finishDialogue(game);
+      const station=game._entitiesOf('minigame')[0];
+      game._playedNodes.add(station.dialogue);game.birthday.interact(station);
+      level1Run.finishDialogue(game);assert.strictEqual(game.birthday.rings,null);
+      const star=game._entitiesOf('star').find(e=>e.id==='s1');assert.ok(game._starAvailable(star));
+      game._playedNodes.delete(station.dialogue);game.collected.push('s1');game.birthday.interact(station);
+      level1Run.finishDialogue(game);assert.strictEqual(game.birthday.rings,null);
+      game.birthday.startRings(2,2);game._setState(STATE.PAUSED);game._quitToTitle();
+      assert.strictEqual(game.birthday,null);game._startNewGame();level1Run.finishDialogue(game);
       assert.strictEqual(game.birthday.rings,null);
     }finally{game.destroy();}
   });

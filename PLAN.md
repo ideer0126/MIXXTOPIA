@@ -117,7 +117,7 @@ MIXXTOPIA/
   总关数 / 总星数及关 1 指向关 2 的出口引用；不视为本次回归，也不代表全量发布验收通过。
   同时运行 `node --check` + `node tools/test-engine.js` + `node tools/test-main.js` +
   `node tools/test-auth.js` + `node tools/test-account.js` + `node tools/test-cloud.js` +
-  `node tools/test-stats.js` + `node tools/test-channels.js` + 浏览器冒烟；六关齐备后恢复全量绿门禁。
+  `node tools/test-stats.js` + `node tools/test-channels.js` + `node tools/test-rings.js` + 浏览器冒烟；六关齐备后恢复全量绿门禁。
   复合碰撞另跑 `node tools/test-collision.js`；浏览器跑 `tools/smoke-level1-collision.js`
   与 `tools/smoke-level1-actors.js`（通过 `MIXX_PLAYWRIGHT_MODULE` 指定本地 Playwright 模块路径）。
   试玩截图与演奏局部动画另跑 `tools/smoke-level1-visual.js`，检查轮廓外不重画背景、入口鲸鱼遮挡与 Kyujin 手部区域外逐像素固定。
@@ -184,6 +184,7 @@ MIXXTOPIA/
 ## 8. 当前进度与后续节奏
 
 **已完成（截至 2026-10-30）**
+- [x] #69 套圈重制（本地验收完成）：鲸鱼 → 月亮 → 星星横向循环，固定向上投圈、礼物船 / 蛋糕船双移动障碍、三阶段 1 / 1.25 / 1.5 倍提速；按实际飞行相对扫掠判定，三阶段共享三次失败，第三次失败整轮归零。沿用 s1 完成 / 收集存档；规则、Bae 提示与设计文档同步。美术已更换为独立摊位底图和透明道具图集，加入水纹、泳圈旋转、水花及命中星光。新增 `tools/test-rings.js` 七组定向检查与 `tools/smoke-rings.js` 桌面 E / 手机 A 实测，覆盖完整成功、三败重开、暂停、存档及完整第一关；`--preview` 可本地直接试玩。全量地图仍为 48 项既有错误。
 - [x] #74 舞台演奏姿态（2026-10-30，本地实现）：Haewon 坐姿握棒、四帧交替击鼓，前排通鼓与鼓沿按轮廓回绘；Kyujin 背带与持琴双手、小幅拨弦，移至吉他架左前方 (21,7)。专用透明图集保留原人物与背景素材；交谈保持持乐器休止姿态，暂停 / 隐藏页面冻结，后台沿用原站姿。已按试玩反馈完成本地验证，未发布。
 - [x] #74 用户视觉修订（2026-10-30，本地实现）：Haewon 水平偏移 -0.6 格居中；背景备用吉他局部替换为更小四弦贝斯，60×105 替换框外像素与原背景完全一致，音箱保留，贝斯碰撞与遮挡同步校准。
 - [x] #66 / #76 第一关穿模（2026-10-30，本地实现）：补齐舞台右沿 / 幕布接缝、下半区两侧墙脚、角落花盆、三张摊位凳与钓竿桶占位；钢琴琴身保持实心，叶片与凳脚按轮廓遮挡。中央阶梯、唱片 / 蓝幕布前置流程和后台入口保留。已完成本地验证，未发布。
