@@ -4827,7 +4827,8 @@
                   ]
                 ]
               ],
-              "alternateFeet": true
+              "alternateFeet": true,
+              "footBounds": [[17, 24], [16, 25]]
             },
             "childBlue": {
               "art": "childBlue",
@@ -4955,7 +4956,8 @@
                   ]
                 ]
               ],
-              "alternateFeet": true
+              "alternateFeet": true,
+              "footBounds": [[16, 24], [17, 24]]
             },
             "parent": {
               "art": "parent",
@@ -5083,7 +5085,8 @@
                   ]
                 ]
               ],
-              "alternateFeet": true
+              "alternateFeet": true,
+              "footBounds": [[15, 24], [18, 24]]
             },
             "childPink": {
               "art": "childPink",
@@ -5211,7 +5214,8 @@
                   ]
                 ]
               ],
-              "alternateFeet": true
+              "alternateFeet": true,
+              "footBounds": [[17, 22], [17, 22]]
             },
             "childYellow": {
               "art": "childYellow",
@@ -5339,7 +5343,8 @@
                   ]
                 ]
               ],
-              "alternateFeet": true
+              "alternateFeet": true,
+              "footBounds": [[16, 23], [16, 24]]
             }
           },
           "muses": {

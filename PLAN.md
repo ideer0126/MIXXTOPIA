@@ -120,6 +120,7 @@ MIXXTOPIA/
   `node tools/test-stats.js` + `node tools/test-channels.js` + `node tools/test-rings.js` + 浏览器冒烟；六关齐备后恢复全量绿门禁。
   复合碰撞另跑 `node tools/test-collision.js`；浏览器跑 `tools/smoke-level1-collision.js`
   与 `tools/smoke-level1-actors.js`（通过 `MIXX_PLAYWRIGHT_MODULE` 指定本地 Playwright 模块路径）。
+  本地双击 HTML 的人物绘制与对话后操作另跑 `node tools/smoke-local-file.js`（桌面 / 模拟触屏，使用真实 file:// 页面）。
   邮件找回密码另跑 `node tools/test-password-recovery.js` 与
   `node tools/smoke-password-recovery.js`（配置本地 Playwright 模块路径，全走桩，不发真实邮件）。
 - **发布**：测试期（无稳定 tag）`/` 与 `/preview/` 占位，`/beta/` 用 beta/rc tag 或 `main`；
@@ -182,6 +183,7 @@ MIXXTOPIA/
 
 **已完成（截至 2026-10-30）**
 - [x] #69 套圈重制（本地验收完成）：鲸鱼 → 月亮 → 星星横向循环，固定向上投圈、礼物船 / 蛋糕船双移动障碍、三阶段 1 / 1.25 / 1.5 倍提速；按实际飞行相对扫掠判定，三阶段共享三次失败，第三次失败整轮归零。沿用 s1 完成 / 收集存档；规则、Bae 提示与设计文档同步。美术已更换为独立摊位底图和透明道具图集，加入水纹、泳圈旋转、水花及命中星光。新增 `tools/test-rings.js` 七组定向检查与 `tools/smoke-rings.js` 桌面 E / 手机 A 实测，覆盖完整成功、三败重开、暂停、存档及完整第一关；`--preview` 可本地直接试玩。全量地图仍为 48 项既有错误。
+- [x] 本地 HTML 卡死修复（2026-10-30，本地实现，未发布）：复现 file:// 下人物行走缓存读取外部图片像素触发 SecurityError；脚底范围改为图集元数据，缓存合成保持原样，80 帧与修复前逐像素一致。新增直接打开 index.html 的桌面 / 模拟触屏回归，覆盖新游戏、对话结束、真实行走、暂停恢复与持续绘制。
 - [x] #22 邮件找回真实 beta 主流程及主要边界（2026-10-29，`v0.5.0-beta.2`）：真实投递、精确回调、手机本人重置及新密码登录通过；资料/偏好与存档可见值保留、统计同步、旧链接拒绝、真实重发限流、异账号会话保留与窄屏无横向溢出均有证据。独立 C 对照确认同一个初始密码重置前登录 HTTP 200、重置后 HTTP 400 / `invalid_credentials`；初始密码临时夹具及私有目录已删除。手机操作由用户确认；一封 B 邮件进入垃圾邮件。A/B/C 测试账号已于北京时间 11:23 按授权删除，管理上下文核对账号、资料、云档、统计及认证会话/刷新令牌均归零。详细边界与清理计数见 [PASSWORD_RECOVERY.md](docs/PASSWORD_RECOVERY.md) 文末；不是 #47 正式环境验收完成。
 - [x] #22 邮件找回密码（2026-10-28，本地实现）：登录页入口 + 独立重置页，沿用手写 REST；恢复令牌仅留内存、验证前清除 URL，不替换游戏原登录态或触发云同步。新密码确认、失效链接、发信限流及写入结果不确定均有处理；找回页随活动通道构建。具体接口、验证命令及尚待授权的 SMTP / 回调配置与真实邮件验收见 [PASSWORD_RECOVERY.md](docs/PASSWORD_RECOVERY.md)；本次不写真实后端。
 - [x] M0 项目基建：仓库、CI（pages.yml）、README/LICENSE/.gitignore、Milestones/Labels/Issues 落地
