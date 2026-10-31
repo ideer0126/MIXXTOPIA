@@ -337,6 +337,38 @@ function rule2(game, R) {
       }
       if (missing) R.err('规则 2', tag + ' 家具 ' + d.kind + ' 的碰撞范围存在可通行瓦片');
     }
+    // 礼堂轮廓碰撞由 1px 小方块合并成大块：坐标必须落在 1/16 格，块之间不能重叠或还能再并。
+    if (lv.party && lv.party.preciseCollision) {
+      for (const d of lv.decorations || []) {
+        if (d.room !== 'hall' || !Array.isArray(d.collisionRects)) continue;
+        const name = '家具 ' + d.kind;
+        for (const r of d.collisionRects) {
+          if (!r || !['x', 'y', 'w', 'h'].every(k => Number.isFinite(r[k])) || r.w <= 0 || r.h <= 0) {
+            R.err('规则 2', tag + ' ' + name + ' 碰撞块必须是有限正尺寸矩形');
+            continue;
+          }
+          for (const k of ['x', 'y', 'w', 'h']) {
+            const scaled = r[k] * 16;
+            if (Math.abs(scaled - Math.round(scaled)) > 1e-6) {
+              R.err('规则 2', tag + ' ' + name + ' 碰撞块 ' + k + ' 必须落在 1/16 瓦片格上');
+            }
+          }
+        }
+        for (let i = 0; i < d.collisionRects.length; i++) for (let j = i + 1; j < d.collisionRects.length; j++) {
+          const a = d.collisionRects[i], b = d.collisionRects[j];
+          if (!a || !b) continue;
+          if (a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y) {
+            R.err('规则 2', tag + ' ' + name + ' 碰撞块不能重叠');
+          }
+          if (a.y === b.y && a.h === b.h && (a.x + a.w === b.x || b.x + b.w === a.x)) {
+            R.err('规则 2', tag + ' ' + name + ' 同高相邻碰撞块应合并');
+          }
+          if (a.x === b.x && a.w === b.w && (a.y + a.h === b.y || b.y + b.h === a.y)) {
+            R.err('规则 2', tag + ' ' + name + ' 同宽相邻碰撞块应合并');
+          }
+        }
+      }
+    }
   }
 }
 

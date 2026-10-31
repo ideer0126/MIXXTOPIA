@@ -550,24 +550,6 @@
       this.scene = null;       // 独立序章，不计入关卡、星数或关卡用时
       this._sceneImages = new Map();
       this._sceneryImages = new Map();
-      for (const id of Object.keys(this.scenes)) {
-        const scene = this.scenes[id];
-        if (scene.background && typeof this.root.Image === 'function') {
-          const img = new this.root.Image();
-          img.src = scene.background;
-          this._sceneImages.set(id, img); // 提前加载；失败时台词仍可完整播放
-        }
-      }
-      if (typeof this.root.Image === 'function') {
-        for (const level of this.levels) {
-          for (const src of Object.values(level.sceneryAssets || {})) {
-            if (this._sceneryImages.has(src)) continue;
-            const img = new this.root.Image();
-            img.src = src;
-            this._sceneryImages.set(src, img);
-          }
-        }
-      }
       this.characters = data.characters;
       this.dialogue = data.dialogue;
       this.dataSource = data.source;
@@ -661,6 +643,29 @@
       this._setState(STATE.TITLE);
       if (this.stats) this._statsTask = this.stats.connect('');
       this._initAuth();
+    }
+
+    // Generated derivatives retain source dimensions so authored frame coordinates stay intact.
+    _imageAsset(src) {
+      return this.root.MIXX_RUNTIME_IMAGES?.[src] || { src };
+    }
+
+    _loadSceneryAssets(group) {
+      if (typeof this.root.Image !== 'function') return;
+      group = group || (this.level.areas ? this._currentArea().id : 'level');
+      const keys = this.level.sceneryGroups
+        ? (this.level.sceneryGroups[group] || []) : Object.keys(this.level.sceneryAssets || {});
+      for (const key of keys) {
+        const src = this.level.sceneryAssets[key];
+        if (this._sceneryImages.has(src)) continue;
+        const asset = this._imageAsset(src);
+        const img = new this.root.Image();
+        img.decoding = 'async';
+        img._mixxSourceWidth = asset.width;
+        img._mixxSourceHeight = asset.height;
+        img.src = asset.src;
+        this._sceneryImages.set(src, img);
+      }
     }
 
     /* ── 游戏循环 ── */
@@ -1326,6 +1331,7 @@
           if (e.enterFrom === 'south'
             && (this.facing.y >= 0 || beforeMove.y < (e.y + 1) * TILE)) continue;
           this.player.x = e.to.x * TILE; this.player.y = e.to.y * TILE;
+          this._loadSceneryAssets();
           if (e.arrivalNode) this._playedNodes.add(e.arrivalNode);
           if (e.fadeIn) this._entryFade = Number(this.level.entryFade) || 0;
           this._followCamera(); this._refreshHud();
@@ -2220,7 +2226,8 @@
       if (!face || !face.style || !face.classList) return;
       const art = preset && preset.art && preset.portraitCell;
       face.classList.toggle('has-portrait', !!art);
-      face.style.backgroundImage = art ? 'url("' + (assetBase ? new URL(preset.art, assetBase).href : preset.art) + '")' : '';
+      const src = art && this._imageAsset(preset.art).src;
+      face.style.backgroundImage = art ? 'url("' + (assetBase ? new URL(src, assetBase).href : src) + '")' : '';
       face.style.backgroundPosition = art ? (preset.portraitCell[0] * 50) + '% ' + (preset.portraitCell[1] * 100) + '%' : '';
     }
 
@@ -2535,6 +2542,12 @@
         return;
       }
       this.scene = Object.assign({ id: 'p0' }, scene);
+      if (scene.background && !this._sceneImages.has('p0') && typeof this.root.Image === 'function') {
+        const img = new this.root.Image();
+        img.decoding = 'async';
+        img.src = this._imageAsset(scene.background).src;
+        this._sceneImages.set('p0', img);
+      }
       this.level = null;
       this.player = null;
       this.mechanics = null;
@@ -2867,6 +2880,7 @@
           this._followCamera();
         }
       }
+      this._loadSceneryAssets();
       this._syncSwitches(true); // 初始化开关/门状态（spawn 压住开关等边界情况）
       this._refreshHud();
       this._setState(STATE.PLAYING);
@@ -3205,7 +3219,7 @@
       };
       if (this._portraitSrc !== src) {
         this._portraitSrc = src;
-        img.src = src;
+        img.src = this._imageAsset(src).src;
       }
     }
 
@@ -4091,8 +4105,11 @@
       const src = (this.level.sceneryAssets || {})[lit ? d.litArt : d.art];
       const img = this._sceneryImages.get(src);
       if (!img || !img.complete || img.naturalWidth <= 0) return false;
-      const frame = (lit ? d.litFrame : d.frame) || [0, 0, img.naturalWidth, img.naturalHeight];
-      this.renderer.ctx.drawImage(img, frame[0], frame[1], frame[2], frame[3],
+      const sourceWidth = img._mixxSourceWidth || img.naturalWidth;
+      const sourceHeight = img._mixxSourceHeight || img.naturalHeight;
+      const sx = img.naturalWidth / sourceWidth, sy = img.naturalHeight / sourceHeight;
+      const frame = (lit ? d.litFrame : d.frame) || [0, 0, sourceWidth, sourceHeight];
+      this.renderer.ctx.drawImage(img, frame[0] * sx, frame[1] * sy, frame[2] * sx, frame[3] * sy,
         Math.round(d.x * TILE - this.camera.x), Math.round(d.y * TILE - this.camera.y),
         Math.round(d.w * TILE), Math.round(d.h * TILE));
       return true;

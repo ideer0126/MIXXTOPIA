@@ -89,6 +89,7 @@
       return true;
     }
     startRings(stage=0,failures=0){
+      this.g._loadSceneryAssets('rings');
       const scale=RINGS.stages[stage].scale;
       this.rings={stage,hits:stage,failures,time:0,visualTime:0,phase:'ready',armed:false,shot:null,
         message:'预判移动，避开两艘小船',feedback:0,result:null,
@@ -164,15 +165,21 @@
       const hasToys=toys&&toys.complete&&toys.naturalWidth;
       const boats=g._sceneryImages.get(g.level.sceneryAssets.ringsObstacles);
       const hasBoats=boats&&boats.complete&&boats.naturalWidth;
+      // Reuse original frame coordinates for smaller runtime atlases.
+      const draw=(image,frame,...target)=>{
+        const sx=image._mixxSourceWidth?image.naturalWidth/image._mixxSourceWidth:1;
+        const sy=image._mixxSourceHeight?image.naturalHeight/image._mixxSourceHeight:1;
+        c.drawImage(image,frame[0]*sx,frame[1]*sy,frame[2]*sx,frame[3]*sy,...target);
+      };
       const feedback=r.phase==='feedback',hit=feedback&&r.result==='hit';
       const effect=feedback?Math.min(1,(r.failures===3?1.65:.95)-r.feedback):0;
       c.save();
       c.fillStyle='#193e57';c.fillRect(0,0,320,224);
       if(booth&&booth.complete&&booth.naturalWidth){
         // Fit the image's three bands around the unchanged playable coordinates.
-        c.drawImage(booth,0,0,1499,356,0,0,320,76);
-        c.drawImage(booth,0,356,1499,404,0,76,320,105);
-        c.drawImage(booth,0,760,1499,289,0,181,320,43);
+        draw(booth,[0,0,1499,356],0,0,320,76);
+        draw(booth,[0,356,1499,404],0,76,320,105);
+        draw(booth,[0,760,1499,289],0,181,320,43);
       }else{
         c.fillStyle='#f5deb0';c.fillRect(38,32,244,35);
         c.fillStyle='#235c78';c.fillRect(24,76,272,105);
@@ -186,7 +193,7 @@
         const x=82+i*67,done=i<r.hits,active=i===r.stage;
         c.globalAlpha=done||active?1:.42;
         if(active&&!done){c.fillStyle='#fff2ce';c.fillRect(x-22,48,58,16);}
-        if(hasToys){const f=RINGS.frames[i];c.drawImage(toys,...f,x-19,49,14,13);}
+        if(hasToys){const f=RINGS.frames[i];draw(toys,f,x-19,49,14,13);}
         c.fillStyle=done?'#376652':active?'#68432d':'#8c7558';
         c.font=active?'bold 9px sans-serif':'9px sans-serif';
         c.fillText(RINGS.stages[i].name,x+9,60);
@@ -214,7 +221,7 @@
       }
       if(hasToys){
         const f=RINGS.frames[r.stage],w=r.stage===0?29:23,h=r.stage===0?25:24;
-        c.drawImage(toys,...f,tx-w/2,ty+7-h,w,h);
+        draw(toys,f,tx-w/2,ty+7-h,w,h);
       }else{c.fillStyle='#ffe2a0';c.fillRect(tx-12,ty-7,24,14);}
       for(const [i,o] of r.obstacles.entries()){
         const x=Math.round(o.x),y=o.y;
@@ -222,7 +229,7 @@
         c.strokeStyle='rgba(185,235,226,.65)';c.lineWidth=.6;
         c.beginPath();c.ellipse(x,y+4,15+Math.sin(r.visualTime*3+y),3,0,0,Math.PI);c.stroke();
         // Decorative tops sit above the 26×8px collision hull at the waterline.
-        if(hasBoats)c.drawImage(boats,...RINGS.obstacleFrames[i],x-14,y-18,28,22);
+        if(hasBoats)draw(boats,RINGS.obstacleFrames[i],x-14,y-18,28,22);
         else{c.fillStyle='#f3a18f';c.fillRect(x-13,y-4,26,8);}
       }
       if(r.phase==='flight'){
@@ -234,11 +241,11 @@
         }
         c.save();c.translate(160,r.shot.y);c.rotate(travelled*4);
         const size=12-travelled*2;
-        if(hasToys)c.drawImage(toys,...RINGS.frames[4],-size/2,-size/2,size,size);
+        if(hasToys)draw(toys,RINGS.frames[4],-size/2,-size/2,size,size);
         c.restore();
       }else if(feedback&&r.shot){
         if(hit){
-          if(hasToys)c.drawImage(toys,...RINGS.frames[4],tx-14,ty+1,28,10);
+          if(hasToys)draw(toys,RINGS.frames[4],tx-14,ty+1,28,10);
           for(let i=0;i<9;i++){
             const angle=i*Math.PI*2/9,d=10+effect*25;
             const x=tx+Math.cos(angle)*d,y=ty-5+Math.sin(angle)*d*.65-effect*5;
@@ -252,14 +259,14 @@
             const spread=(i-3)*effect*11;
             c.fillStyle='#dbfff0';c.fillRect(160+spread,r.shot.y-Math.sin(effect*Math.PI)*10+(i%2)*3,1.5,2.5);
           }
-          if(hasToys)c.drawImage(toys,...RINGS.frames[4],155,r.shot.y+effect*10-5,10,10*(1-effect*.65));
+          if(hasToys)draw(toys,RINGS.frames[4],155,r.shot.y+effect*10-5,10,10*(1-effect*.65));
         }
       }
       c.restore();c.globalAlpha=1;
       // The remaining rings live on the counter, rather than in a dashboard.
       for(let i=0;i<3;i++){
         const x=43+i*14;c.globalAlpha=i<3-r.failures?1:.2;
-        if(hasToys)c.drawImage(toys,...RINGS.frames[4],x-5,203,10,10);
+        if(hasToys)draw(toys,RINGS.frames[4],x-5,203,10,10);
       }
       c.globalAlpha=1;c.textAlign='left';c.font='8px sans-serif';
       c.fillStyle='#fff0ce';c.shadowColor='#573d32';c.shadowBlur=2;
@@ -267,7 +274,7 @@
       c.textAlign='right';c.fillText('E / A 投圈 · Esc 暂停',283,211);
       if(r.phase==='ready'){
         c.fillStyle='rgba(40,69,74,.25)';c.beginPath();c.ellipse(160,175,10,2,0,0,Math.PI*2);c.fill();
-        if(hasToys)c.drawImage(toys,...RINGS.frames[4],153,167,14,14);
+        if(hasToys)draw(toys,RINGS.frames[4],153,167,14,14);
       }
       c.textAlign='center';c.font='bold 9px sans-serif';
       c.fillStyle=feedback?(hit?'#ebffd7':'#ffe1bd'):'#fff2cf';
@@ -303,6 +310,8 @@
       const g=this.g,style=pose.style,img=g._sceneryImages.get(g.level.sceneryAssets[style.art]);
       if(!img||!img.complete||!img.naturalWidth||!g.doc||!g.doc.createElement)return null;
       const detail=style.detailScale||1,cacheW=40*detail,cacheH=40*detail;
+      const imageSX=img._mixxSourceWidth?img.naturalWidth/img._mixxSourceWidth:1;
+      const imageSY=img._mixxSourceHeight?img.naturalHeight/img._mixxSourceHeight:1;
       const rows=[];
       for(const row of style.frames){
         const maxW=Math.max(...row.map(f=>f[2])),maxH=Math.max(...row.map(f=>f[3]));
@@ -313,7 +322,7 @@
           if(typeof cell.getContext!=='function')return null;
           cell.width=cacheW;cell.height=cacheH;const c=cell.getContext('2d');if(!c)return null;
           c.imageSmoothingEnabled=false;
-          c.drawImage(img,f[0],f[1],f[2],f[3],Math.round(cacheW/2-f[4]*sx*detail),Math.round(cacheH-f[3]*sy*detail),Math.round(f[2]*sx*detail),Math.round(f[3]*sy*detail));
+          c.drawImage(img,f[0]*imageSX,f[1]*imageSY,f[2]*imageSX,f[3]*imageSY,Math.round(cacheW/2-f[4]*sx*detail),Math.round(cacheH-f[3]*sy*detail),Math.round(f[2]*sx*detail),Math.round(f[3]*sy*detail));
           frames.push(cell);
         }
         rows.push(frames);
@@ -387,7 +396,10 @@
       const items=actors.concat(player).map(e=>({foot:e.y+14/T+(e.spriteOffsetY||0),actor:e}));
       if(this.inHall()){
         for(const d of g.level.decorations){
-          if(d.room==='hall'&&(d.collision||d.collisionRects||d.occlusionShape||d.occlusionShapes)){
+          // Only real foreground silhouettes redraw actors. Collision-only props stay
+          // in the baked background; otherwise their full sampling rectangle would
+          // erase everyone standing behind a thin post.
+          if(d.room==='hall'&&(d.occlusionShape||d.occlusionShapes)){
             const bottom=d.collision?d.collision.y+d.collision.h:d.collisionRects?d.y+Math.max(...d.collisionRects.map(r=>r.y+r.h)):d.y+d.h;
             items.push({foot:d.depth===undefined?bottom:d.depth,object:d});
           }

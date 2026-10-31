@@ -6,7 +6,7 @@ let passed=0;
 function test(name,fn){fn();passed++;console.log('✓ '+name);}
 function setup(stage=0,failures=0){
   const g={held:false,pressed:false,completed:0,input:{isDown:()=>g.held,wasPressed:()=>g.pressed},
-    _sfx(){},_refreshHud(){},_emit(){},_playNode(id,options){assert.equal(id,'l1.rings.complete');g.completed++;options.onEnd();}};
+    _loadSceneryAssets(){},_sfx(){},_refreshHud(){},_emit(){},_playNode(id,options){assert.equal(id,'l1.rings.complete');g.completed++;options.onEnd();}};
   const b=new MIXX.Birthday(g);b.startRings(stage,failures);return {b,g};
 }
 function fire(b,g){g.pressed=true;b.updateRings(0);g.pressed=false;}
