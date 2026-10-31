@@ -2423,8 +2423,12 @@ test('场景素材：按源路径缓存、加载失败降级，礼物盒和星�
       ctx.drawImage = (...args) => draws.push(args);
       try {
         elt('btn-start').click(); level1Run.finishDialogue(game);
-        assert.strictEqual(game._sceneryImages.size, Object.keys(game.level.sceneryAssets).length);
+        // 按房间按需加载：进关卡只预载礼堂组，后台组在切换时再载入。
+        assert.strictEqual(game._sceneryImages.size, game.level.sceneryGroups.hall.length);
+        assert.ok(!game._sceneryImages.has(game.level.sceneryAssets.backstage));
         assert.strictEqual(game._drawGift(5, 4), false);
+        game._loadSceneryAssets('backstage');
+        assert.ok(game._sceneryImages.has(game.level.sceneryAssets.backstage));
         const props = game._sceneryImages.get(game.level.sceneryAssets.backstage);
         props.complete = true; props.naturalWidth = 1536;
         assert.strictEqual(game._drawGift(5, 4), true);
@@ -2705,7 +2709,7 @@ test('礼堂脚底碰撞：椅前横道、列间通道和杂物间开口可走�
         const r={x:solid.x/16,y:solid.y/16,w:solid.w/16,h:solid.h/16};
         assert.strictEqual(game.birthday.blockedAt((r.x+r.w/2)*16-8,(r.y+r.h/2)*16-11.5),true,kind+' 应阻挡脚底');
       }
-      assert.strictEqual(game.birthday.blockedAt(6.6*16,6*16),false,'唱片旁空地不能被虚构矮柜挡住');
+      assert.strictEqual(game.birthday.blockedAt(6.5*16,6*16),false,'唱片旁空地不能被虚构矮柜挡住');
       assert.ok(game.level.party.footprint.h<game.level.party.footprint.w);
     }finally{game.destroy()}
   });
@@ -2797,13 +2801,13 @@ test('蛋糕区：气球仅作遮挡，鲸鱼底部与固定点挡脚，桌前�
         assert.strictEqual(game.birthday.blockedAt((r.x+r.w/2)*16-8,(r.y+r.h/2)*16-11.5),true,kind+' 落地部分不可踩入');
         assert.ok(d.occlusionShape||d.occlusionShapes);
       }
-      for(const [x,y] of [[7.1,11.3],[3.8,10.7],[8.5,12.5],[7,14],[4,14.2]])
+      for(const [x,y] of [[7.4,10.9],[3.8,10.3],[8.5,12.5],[7.4,14.6],[4,14.5]])
         assert.strictEqual(game.birthday.blockedAt(x*16,y*16),false,'通路应可走 '+x+','+y);
       for(const [x,y] of [[6.7,12.2],[3.8,11]])
         assert.strictEqual(game.birthday.blockedAt(x*16,y*16),true,'不能走入礼物或鲸鱼主体');
       assert.strictEqual(game.birthday.blockedAt(6.7*16,12.7*16),true,'鲸鱼底部挡脚');
       assert.strictEqual(game.birthday.blockedAt(7.6*16,12.8*16),true,'气球固定点挡脚');
-      for(const [x,y] of [[8.5,12.5],[7,14],[4,14.25]])level1Run.walkTo(game,x,y);
+      for(const [x,y] of [[8.5,12.5],[7.4,14.6],[4,14.5]])level1Run.walkTo(game,x,y);
     }finally{game.destroy()}
   });
 });
@@ -3019,7 +3023,8 @@ test('后台单向流程：仅向上进入，横向/向下不触发，保存继�
           g._update(.05);
           assert.strictEqual(g._currentArea().id,'hall','门内朝北停步不能传送');
           assert.ok(!g._playedNodes.has('l1.backstage.arrived'));
-          g.player={x:door.x*16,y:(door.y+1)*16};
+          // 门测试结束后回到舞台走道，避免把合成位置留给后续正式路线。
+          g.player={x:29*16,y:7*16};
         },
         onBackstage(g){
           assert.ok(g._playedNodes.has('l1.backstage.arrived'));

@@ -220,4 +220,55 @@ test('精确脚底搜索可通过非整格窄道；缝隙窄于脚底时仍拒�
   assert.equal(v.stateSearch(level).status,'fail');
   assert.ok(v.staticReachability(level).stars.length>0);
 });
+test('入口立柱遮挡：柱身/底座/花束分开描边，不再用整块取样矩形擦除人物', () => {
+  const lv = clone(v.selectLevel(game, 1).levels[0]);
+  const area = shape => {
+    let sum = 0;
+    for (let i = 0; i < shape.length; i++) {
+      const [x1, y1] = shape[i], [x2, y2] = shape[(i + 1) % shape.length];
+      sum += x1 * y2 - x2 * y1;
+    }
+    return Math.abs(sum / 2);
+  };
+  for (const kind of ['entryPostLeft', 'entryPostRight']) {
+    const d = lv.decorations.find(x => x.kind === kind && x.room === 'hall');
+    assert.ok(d, kind + ' 必须存在');
+    assert.equal(d.depth, 25.04, kind + ' 排序底边保持柱脚');
+    assert.ok(d.w > 1.6, kind + ' 取样框必须覆盖花束，而不是只包住柱身');
+    assert.ok(d.occlusionShapes.length >= 4, kind + ' 需要柱帽/柱身/底座/花束轮廓');
+    const total = d.occlusionShapes.reduce((n, shape) => n + area(shape), 0);
+    assert.ok(total / (d.w * d.h) < 0.35, kind + ' 遮挡面积必须是轮廓，不能接近整框');
+    for (const shape of d.occlusionShapes) {
+      assert.ok(area(shape) < 0.3 * d.w * d.h, kind + ' 单个轮廓不能是整块矩形');
+      for (const [x, y] of shape) assert.ok(x >= -0.05 && x <= 1.05 && y >= -0.05 && y <= 1.05, kind + ' 轮廓点应在取样框内');
+    }
+  }
+  const left = lv.decorations.find(x => x.kind === 'entryPostLeft');
+  assert.ok(left.x < 16, '左立柱取样框必须向左覆盖花束');
+});
+
+test('留声机遮挡轮廓覆盖喇叭右缘与柜体四角，人物不能从边缘穿出', () => {
+  const lv = clone(v.selectLevel(game, 1).levels[0]);
+  const d = lv.decorations.find(x => x.kind === 'gramophone' && x.room === 'hall');
+  assert.ok(d, '留声机必须存在');
+  const shape = d.occlusionShapes ? d.occlusionShapes[0] : d.occlusionShape;
+  assert.ok(shape && shape.length >= 40, '留声机轮廓需要足够密的采样点，实际 ' + (shape ? shape.length : 0));
+  const inside = (px, py) => {
+    let yes = false;
+    for (let i = 0, j = shape.length - 1; i < shape.length; j = i++) {
+      const [xi, yi] = shape[i], [xj, yj] = shape[j];
+      if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) yes = !yes;
+    }
+    return yes;
+  };
+  for (const [x, y, label] of [
+    [0.95, 0.30, '喇叭右缘'], [0.90, 0.36, '喇叭右下缘'], [0.90, 0.95, '柜体右下'],
+    [0.10, 0.95, '柜体左下'], [0.50, 0.06, '喇叭顶部'], [0.70, 0.60, '柜体上沿'],
+  ]) {
+    assert.ok(inside(x, y), '留声机轮廓必须覆盖' + label + ' (' + x + ',' + y + ')');
+  }
+  assert.ok(!inside(0.5, -0.05), '轮廓不能越过取样框顶部');
+  assert.ok(!inside(-0.05, 0.5), '轮廓不能越过取样框左侧');
+});
+
 console.log('\n全部通过：' + count + ' 项');

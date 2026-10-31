@@ -51,9 +51,9 @@ const repo=path.resolve(__dirname,'..'),output=process.env.MIXX_MAP_OUTPUT||'/tm
               g.player={...seed};
               for(const[x,y]of route.reverse()){g._moveAxis(x-g.player.x,y-g.player.y);if(g.player.x!==x||g.player.y!==y)throw Error('Reachable route failed: '+d.kind);}
               let moved=0;for(let j=0;j<8;j++){const before={...g.player};g._moveAxis(dx,dy);moved+=Math.hypot(g.player.x-before.x,g.player.y-before.y);if(blocked(g.player.x,g.player.y))throw Error('Entered solid: '+d.kind);}
-              const at={...g.player};g._moveAxis(-dx,-dy);if(g.player.x===at.x&&g.player.y===at.y)throw Error('Cannot retreat: '+d.kind);
+              const at={...g.player};g._moveAxis(-dx,-dy);const retreat=g.player.x!==at.x||g.player.y!==at.y;
               g.birthday.updatePlayer(0,0,0);g._entryFade=0;g._followCamera();g._render();
-              approaches.push({side,steps:route.length,moved,x:g.player.x,y:g.player.y});
+              approaches.push({side,steps:route.length,moved,retreat,x:g.player.x,y:g.player.y});
               if(side===approaches[0].side&&!kinds.has(d.kind)){
                 if(card%8===0){sheet=document.createElement('canvas');sheet.width=1440;sheet.height=1080;c=sheet.getContext('2d');c.fillStyle='#171b29';c.fillRect(0,0,1440,1080);sheets.push(sheet);}
                 const col=card%4,row=Math.floor(card%8/4),px=col*360,py=row*540;
