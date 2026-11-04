@@ -172,6 +172,11 @@
         c.drawImage(image,frame[0]*sx,frame[1]*sy,frame[2]*sx,frame[3]*sy,...target);
       };
       const feedback=r.phase==='feedback',hit=feedback&&r.result==='hit';
+      const drawRing=(x,y,w,h)=>{
+        if(hasToys){draw(toys,RINGS.frames[4],x,y,w,h);return;}
+        c.save();c.strokeStyle='#fff2ae';c.lineWidth=2;
+        c.beginPath();c.ellipse(x+w/2,y+h/2,w/2-1,h/2-1,0,0,Math.PI*2);c.stroke();c.restore();
+      };
       const effect=feedback?Math.min(1,(r.failures===3?1.65:.95)-r.feedback):0;
       c.save();
       c.fillStyle='#193e57';c.fillRect(0,0,320,224);
@@ -241,11 +246,11 @@
         }
         c.save();c.translate(160,r.shot.y);c.rotate(travelled*4);
         const size=12-travelled*2;
-        if(hasToys)draw(toys,RINGS.frames[4],-size/2,-size/2,size,size);
+        drawRing(-size/2,-size/2,size,size);
         c.restore();
       }else if(feedback&&r.shot){
         if(hit){
-          if(hasToys)draw(toys,RINGS.frames[4],tx-14,ty+1,28,10);
+          drawRing(tx-14,ty+1,28,10);
           for(let i=0;i<9;i++){
             const angle=i*Math.PI*2/9,d=10+effect*25;
             const x=tx+Math.cos(angle)*d,y=ty-5+Math.sin(angle)*d*.65-effect*5;
@@ -259,14 +264,14 @@
             const spread=(i-3)*effect*11;
             c.fillStyle='#dbfff0';c.fillRect(160+spread,r.shot.y-Math.sin(effect*Math.PI)*10+(i%2)*3,1.5,2.5);
           }
-          if(hasToys)draw(toys,RINGS.frames[4],155,r.shot.y+effect*10-5,10,10*(1-effect*.65));
+          drawRing(155,r.shot.y+effect*10-5,10,10*(1-effect*.65));
         }
       }
       c.restore();c.globalAlpha=1;
       // The remaining rings live on the counter, rather than in a dashboard.
       for(let i=0;i<3;i++){
         const x=43+i*14;c.globalAlpha=i<3-r.failures?1:.2;
-        if(hasToys)draw(toys,RINGS.frames[4],x-5,203,10,10);
+        drawRing(x-5,203,10,10);
       }
       c.globalAlpha=1;c.textAlign='left';c.font='8px sans-serif';
       c.fillStyle='#fff0ce';c.shadowColor='#573d32';c.shadowBlur=2;
@@ -274,7 +279,7 @@
       c.textAlign='right';c.fillText('E / A 投圈 · Esc 暂停',283,211);
       if(r.phase==='ready'){
         c.fillStyle='rgba(40,69,74,.25)';c.beginPath();c.ellipse(160,175,10,2,0,0,Math.PI*2);c.fill();
-        if(hasToys)draw(toys,RINGS.frames[4],153,167,14,14);
+        drawRing(153,167,14,14);
       }
       c.textAlign='center';c.font='bold 9px sans-serif';
       c.fillStyle=feedback?(hit?'#ebffd7':'#ffe1bd'):'#fff2cf';

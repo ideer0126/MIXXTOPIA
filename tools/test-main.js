@@ -2413,6 +2413,38 @@ test('附近互动：无节点或已播完的 NPC 不遮挡告示牌，可重复
   });
 });
 
+test('场景图片失败后移除缓存，下次进入可重试，加载中和成功图片仍复用', () => {
+  const previousImage = sandbox.Image;
+  const requested = [];
+  sandbox.Image = class { set src(value) { requested.push(value); } };
+  try {
+    withGAME(prologueData(), () => {
+      const game = makeGame();
+      try {
+        game._startNewGame(); level1Run.finishDialogue(game);
+        game._loadSceneryAssets('rings');
+        const src = game.level.sceneryAssets.ringsToys;
+        const failed = game._sceneryImages.get(src);
+        const booth = game._sceneryImages.get(game.level.sceneryAssets.ringsBooth);
+        const before = requested.length;
+        game._loadSceneryAssets('rings');
+        assert.strictEqual(requested.length, before, '加载中的图片不重复请求');
+        failed.onerror();
+        assert.strictEqual(game._sceneryImages.has(src), false, '失败图片必须移出缓存');
+        game.birthday.startRings();
+        const retry = game._sceneryImages.get(src);
+        assert.notStrictEqual(retry, failed, '重新开始小游戏会重试失败图片');
+        assert.strictEqual(requested.length, before + 1, '只重试失败资源');
+        assert.strictEqual(game._sceneryImages.get(game.level.sceneryAssets.ringsBooth), booth);
+        retry.complete = true; retry.naturalWidth = 1024;
+        game.birthday.startRings(1);
+        assert.strictEqual(game._sceneryImages.get(src), retry, '成功资源继续复用');
+        assert.strictEqual(requested.length, before + 1);
+      } finally { game.destroy(); }
+    });
+  } finally { if (previousImage === undefined) delete sandbox.Image; else sandbox.Image = previousImage; }
+});
+
 test('场景素材：按源路径缓存、加载失败降级，礼物盒和星光门使用独立素材', () => {
   const prevImage = sandbox.Image;
   sandbox.Image = class { constructor() { this.complete = false; this.naturalWidth = 0; } };

@@ -663,8 +663,9 @@
         img.decoding = 'async';
         img._mixxSourceWidth = asset.width;
         img._mixxSourceHeight = asset.height;
-        img.src = asset.src;
+        img.onerror = () => this._sceneryImages.delete(src);
         this._sceneryImages.set(src, img);
+        img.src = asset.src;
       }
     }
 

@@ -44,7 +44,8 @@ const repo=path.resolve(__dirname,'..'),output=process.env.MIXX_MAP_OUTPUT||'/tm
             const r=solids.length?{x:Math.min(...solids.map(r=>r.x)),y:Math.min(...solids.map(r=>r.y)),right:Math.max(...solids.map(r=>r.x+r.w)),bottom:Math.max(...solids.map(r=>r.y+r.h))}:d.collision?{x:d.collision.x*16,y:d.collision.y*16,right:(d.collision.x+d.collision.w)*16,bottom:(d.collision.y+d.collision.h)*16}:{x:(d.x+d.w/2)*16-2,y:(d.depth??d.y+d.h)*16-2,right:(d.x+d.w/2)*16+2,bottom:(d.depth??d.y+d.h)*16+2};
             const cx=(r.x+r.right)/2,cy=(r.y+r.bottom)/2,approaches=[];
             for(const[side,tx,ty,dx,dy]of[['north',cx-8,r.y-15,0,1],['south',cx-8,r.bottom-8,0,-1],['west',r.x-13,cy-11.5,1,0],['east',r.right-3,cy-11.5,-1,0]]){
-              const candidates=nodes.filter(([x,y])=>side==='north'?y+14<=r.y:side==='south'?y+9>=r.bottom:side==='west'?x+12<=r.x:x+4>=r.right);
+              // Start with room to step back; a seed flush against another wall is not a directional approach.
+              const candidates=nodes.filter(([x,y])=>(side==='north'?y+14<=r.y:side==='south'?y+9>=r.bottom:side==='west'?x+12<=r.x:x+4>=r.right)&&!C.trace(x,y,-dx,-dy,blocked).blocked);
               const target=candidates.reduce((best,n)=>!best||Math.hypot(n[0]-tx,n[1]-ty)<Math.hypot(best[0]-tx,best[1]-ty)?n:best,null);
               if(!target||Math.hypot(target[0]-tx,target[1]-ty)>48)continue;
               const route=[];let k=target.join(',');while(previous.get(k)!==null){route.push(k.split(',').map(Number));k=previous.get(k);}
@@ -52,6 +53,7 @@ const repo=path.resolve(__dirname,'..'),output=process.env.MIXX_MAP_OUTPUT||'/tm
               for(const[x,y]of route.reverse()){g._moveAxis(x-g.player.x,y-g.player.y);if(g.player.x!==x||g.player.y!==y)throw Error('Reachable route failed: '+d.kind);}
               let moved=0;for(let j=0;j<8;j++){const before={...g.player};g._moveAxis(dx,dy);moved+=Math.hypot(g.player.x-before.x,g.player.y-before.y);if(blocked(g.player.x,g.player.y))throw Error('Entered solid: '+d.kind);}
               const at={...g.player};g._moveAxis(-dx,-dy);const retreat=g.player.x!==at.x||g.player.y!==at.y;
+              if(!retreat)throw Error('Cannot retreat: '+d.kind+' #'+index+' from '+side);
               g.birthday.updatePlayer(0,0,0);g._entryFade=0;g._followCamera();g._render();
               approaches.push({side,steps:route.length,moved,retreat,x:g.player.x,y:g.player.y});
               if(side===approaches[0].side&&!kinds.has(d.kind)){

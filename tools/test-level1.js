@@ -237,9 +237,15 @@ test('入口立柱遮挡：柱身/底座/花束分开描边，不再用整块取
     assert.ok(d.w > 1.6, kind + ' 取样框必须覆盖花束，而不是只包住柱身');
     assert.ok(d.occlusionShapes.length >= 4, kind + ' 需要柱帽/柱身/底座/花束轮廓');
     const total = d.occlusionShapes.reduce((n, shape) => n + area(shape), 0);
-    assert.ok(total / (d.w * d.h) < 0.35, kind + ' 遮挡面积必须是轮廓，不能接近整框');
+    assert.ok(total < 0.75, kind + ' 归一化遮挡总面积必须小于 0.75，不能接近整框');
     for (const shape of d.occlusionShapes) {
-      assert.ok(area(shape) < 0.3 * d.w * d.h, kind + ' 单个轮廓不能是整块矩形');
+      assert.ok(area(shape) < 0.45, kind + ' 单个归一化轮廓面积必须小于 0.45，不能是整框');
+      for (let i = 0; i < shape.length; i++) for (let j = i + 2; j < shape.length; j++) {
+        if (i === 0 && j === shape.length - 1) continue;
+        const [a,b] = [shape[i],shape[(i+1)%shape.length]], [c,d] = [shape[j],shape[(j+1)%shape.length]];
+        const cross = (p,q,r) => (q[0]-p[0])*(r[1]-p[1])-(q[1]-p[1])*(r[0]-p[0]);
+        assert.ok(!(cross(a,b,c)*cross(a,b,d)<0 && cross(c,d,a)*cross(c,d,b)<0), kind + ' 非相邻轮廓边不能交叉: ' + i + ',' + j);
+      }
       for (const [x, y] of shape) assert.ok(x >= -0.05 && x <= 1.05 && y >= -0.05 && y <= 1.05, kind + ' 轮廓点应在取样框内');
     }
   }
