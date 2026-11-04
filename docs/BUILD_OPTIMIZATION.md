@@ -2,6 +2,8 @@
 
 Issue：https://github.com/ideer0126/MIXXTOPIA/issues/93
 
+本文保留 #93 的原始验收数据；后续按场景加载和运行小图的当前行为见 [IMAGE_LOADING.md](IMAGE_LOADING.md)（#95）。
+
 本次基于最新 `main` / `55acfab`。源码继续按 `js/*.js` 拆分维护，发布时用锁定版本的 esbuild 合并压缩，不增加浏览器运行时依赖。
 
 ## 构建与发布

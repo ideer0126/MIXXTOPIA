@@ -90,6 +90,7 @@ MIXXTOPIA/
 ├── tools/validate.js     # 地图/数据校验脚本（node 运行）
 ├── tools/test-auth.js    # 账户 Auth 单测（fetch 桩，不连真实后端）
 ├── tools/test-account.js # 账户资料（profiles）单测（fetch 桩，不连真实后端）（#44）
+├── tools/build-runtime-images.py # 运行图导出与源尺寸映射（#95）
 ├── tools/build-site.js   # esbuild 单文件产物与 build.json 清单（#93）
 ├── package.json / package-lock.json # 仅构建依赖，无运行时依赖
 ├── tools/build-channels.js  # 三通道站点组装（stable/beta/preview）

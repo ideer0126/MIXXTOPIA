@@ -250,6 +250,8 @@ NSWER 在生日夜对流星许下长愿，被星光引入梦境世界 MIXXTOPIA�
 - 新素材与完整提示词见 assets/scenes/level1/SKETCH_ASSETS.md；使用内置 image_gen 生成场景素材。
   node tools/validate.js --level 1 与 tools/play-level1.js 验证新流程；默认全量门禁仍要求 6 关 / 25 星。
 
+**图片加载与运行尺寸（#95）**：标题不请求场景图片；序章、礼堂、套圈、后台按阶段加载并复用缓存。美术源文件保留原尺寸和原取样坐标，浏览器使用 `assets/runtime/` 的小图，绘制时按源/运行尺寸映射取样；世界坐标、脚底、碰撞与人物显示比例不变。后台读档只加载后台组，重玩再加载礼堂。导出方式与验收见 `docs/IMAGE_LOADING.md`。
+
 ### 5.2 关 2 · Kerosene（灯油与火焰）
 
 - **氛围**：昏暗的灯柱长廊，火焰点亮黑暗；Jiwoo 在入口迎接。

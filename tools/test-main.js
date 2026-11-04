@@ -2413,6 +2413,76 @@ test('附近互动：无节点或已播完的 NPC 不遮挡告示牌，可重复
   });
 });
 
+test('图片按场景加载：标题零请求、序章独立、套圈/后台延后，读档只取后台且共享图复用', () => {
+  const previousImage = sandbox.Image;
+  const requested = [];
+  sandbox.Image = class { set src(value) { requested.push(value); } };
+  try {
+    withGAME(prologueData(), () => {
+      const game = makeGame();
+      let backstageSave;
+      try {
+        assert.strictEqual(requested.length, 0);
+        game._startNewGame();
+        assert.strictEqual(requested.length, 1);
+        assert.strictEqual(game._sceneryImages.size, 0);
+        level1Run.finishDialogue(game);
+        const images = game.level.sceneryAssets;
+        assert.ok(!game._sceneryImages.has(images.ringsBooth));
+        assert.ok(!game._sceneryImages.has(images.vanityModules));
+        const shared = game._sceneryImages.get(images.museCostumes);
+        level1Run.playLevel1(game, {
+          onRecord(g) {
+            assert.ok(g._sceneryImages.has(images.ringsBooth));
+            assert.ok(!g._sceneryImages.has(images.vanityModules));
+          },
+          onBackstage(g) {
+            assert.ok(g._sceneryImages.has(images.vanityModules));
+            assert.strictEqual(g._sceneryImages.get(images.museCostumes), shared);
+            g._setState(STATE.PAUSED); g._saveAndQuit();
+            backstageSave = localStorageStub.getItem(main.SAVE_KEY);
+            g._continueGame();
+          },
+        });
+        assert.strictEqual(new Set(requested).size, requested.length, 'cached files must not be requested twice');
+      } finally { game.destroy(); }
+      localStorageStub.setItem(main.SAVE_KEY, backstageSave);
+      requested.length = 0;
+      const restored = makeGame({keepStorage: true});
+      try {
+        restored._continueGame();
+        assert.strictEqual(restored._currentArea().id, 'backstage');
+        assert.ok(!restored._sceneryImages.has(restored.level.sceneryAssets.birthdayHall));
+        assert.ok(!restored._sceneryImages.has(restored.level.sceneryAssets.ringsBooth));
+        assert.strictEqual(restored._sceneImages.size, 0);
+        const shared = restored._sceneryImages.get(restored.level.sceneryAssets.museCostumes);
+        restored._setState(STATE.PAUSED); restored._restartLevel();
+        assert.strictEqual(restored._currentArea().id, 'hall');
+        assert.strictEqual(restored._sceneryImages.get(restored.level.sceneryAssets.museCostumes), shared);
+      } finally { restored.destroy(); }
+    });
+  } finally { if (previousImage === undefined) delete sandbox.Image; else sandbox.Image = previousImage; }
+});
+
+test('运行小图：原坐标映射为实际裁切，目标位置不变，完整图片也使用全部运行像素', () => {
+  withGAME(prologueData(), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game);
+      const src = game.level.sceneryAssets.cover;
+      const image = {complete: true, naturalWidth: 128, naturalHeight: 128, _mixxSourceWidth: 3000, _mixxSourceHeight: 3000};
+      game._sceneryImages.set(src, image);
+      const calls = [];
+      game.renderer.ctx.drawImage = (...args) => calls.push(args);
+      game._drawSceneryAsset({art: 'cover', frame: [750, 1500, 1500, 750], x: 1, y: 2, w: 3, h: 4});
+      assert.deepStrictEqual(calls[0].slice(1, 5), [32, 64, 64, 32]);
+      game._drawSceneryAsset({art: 'cover', x: 1, y: 2, w: 3, h: 4});
+      assert.deepStrictEqual(calls[1].slice(1, 5), [0, 0, 128, 128]);
+      assert.deepStrictEqual(calls[0].slice(5), calls[1].slice(5));
+    } finally { game.destroy(); }
+  });
+});
+
 test('场景素材：按源路径缓存、加载失败降级，礼物盒和星光门使用独立素材', () => {
   const prevImage = sandbox.Image;
   sandbox.Image = class { constructor() { this.complete = false; this.naturalWidth = 0; } };

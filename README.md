@@ -58,11 +58,16 @@ python3 -m http.server 8000 --directory _site
 # 打开 http://localhost:8000/beta/
 ```
 
-图片统一为 WebP；像素图、透明立绘与现有封面均无损转换，保持原尺寸与 RGBA 像素。
+美术源文件统一为 WebP，保留原尺寸与 RGBA 像素；运行时使用另行导出的小图，缩放取样会减少原始细节。
 新增图片请导出无损 WebP（保留透明通道），随后执行 `npm run test:build` 检查引用及产物。
 构建读取 HTML 中的脚本顺序，esbuild 合并压缩并生成内容哈希文件名；`build.json` 记录各入口文件和来源模块。
 三通道在打包前注入通道信息，旧 tag 保持自身的脚本与图片格式，不混入新版本资源。
 验收与体积对比见 [BUILD_OPTIMIZATION.md](docs/BUILD_OPTIMIZATION.md)。
+
+## 图片加载与美术导出
+
+标题页不预加载场景图片，序章、礼堂、套圈和后台按使用阶段加载。原始 WebP 作为美术资料保留，发布产物仅包含运行用小图。
+修改原图后使用 `npm run images:build` 重新生成（需 Pillow），再执行构建与验收；尺寸策略、字节数和验证记录见 [IMAGE_LOADING.md](docs/IMAGE_LOADING.md)。
 
 ## 声明
 
