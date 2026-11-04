@@ -2423,17 +2423,20 @@ test('场景素材：按源路径缓存、加载失败降级，礼物盒和星�
       ctx.drawImage = (...args) => draws.push(args);
       try {
         elt('btn-start').click(); level1Run.finishDialogue(game);
-        assert.strictEqual(game._sceneryImages.size, Object.keys(game.level.sceneryAssets).length);
+        // 按房间按需加载：进关卡只预载礼堂组，后台组在切换时再载入。
+        assert.strictEqual(game._sceneryImages.size, game.level.sceneryGroups.hall.length);
+        assert.ok(!game._sceneryImages.has(game.level.sceneryAssets.backstage));
         assert.strictEqual(game._drawGift(5, 4), false);
-        const props = game._sceneryImages.get(game.level.sceneryAssets.backstage);
-        props.complete = true; props.naturalWidth = 1536;
+        const props = {complete: true, naturalWidth: 1536, naturalHeight: 1024};
+        game._sceneryImages.set(game.level.sceneryAssets.backstage, props);
         assert.strictEqual(game._drawGift(5, 4), true);
         assert.strictEqual(draws[0][0], props);
         props.naturalWidth = 0;
         assert.strictEqual(game._drawGift(5, 4), false);
-        const portal = game._sceneryImages.get(game.level.sceneryAssets.portal);
+        game._loadSceneryAssets('backstage');
+        const portal = game._sceneryImages.get(game.level.sceneryAssets.portalEast);
         portal.complete = true; portal.naturalWidth = 1024; portal.naturalHeight = 1536;
-        assert.strictEqual(game._drawSceneryAsset({ art: 'portal', x: 48, y: 10, w: 3, h: 4 }), true);
+        assert.strictEqual(game._drawSceneryAsset({ art: 'portalEast', x: 48, y: 10, w: 3, h: 4 }), true);
         assert.strictEqual(draws[1][0], portal);
       } finally { ctx.drawImage = drawImage; game.destroy(); }
     });

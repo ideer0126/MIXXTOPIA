@@ -615,6 +615,11 @@
           "childPink": "assets/scenes/level1/party-pink-walk-v3.webp",
           "childYellow": "assets/scenes/level1/party-yellow-walk-v3.webp"
         },
+        "sceneryGroups": {
+          "hall": ["birthdayHall", "guests", "museCostumes", "haewonDrums", "kyujinGuitar", "adultBlue", "childBlue", "parent", "childPink", "childYellow", "cover"],
+          "rings": ["ringsBooth", "ringsToys", "ringsObstacles"],
+          "backstage": ["vanityModules", "fitting", "instruments", "games", "museCostumes", "guests", "parent", "portalEast"]
+        },
         "groundDecorations": [],
         "decorations": [
           {

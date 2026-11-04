@@ -53,7 +53,12 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✓ ' + nam
     vm.runInContext(fs.readFileSync(path.join(repo, 'js/data.js'), 'utf8'), sandbox);
     const refs = JSON.stringify(sandbox.GAME).match(/assets\/[a-zA-Z0-9/_-]+\.(?:webp|png|jpg|jpeg|gif)/g);
     assert.ok(refs.length);
-    for (const src of refs) { assert.ok(src.endsWith('.webp'), src); assert.ok(fs.existsSync(path.join(site, src)), src); }
+    const runtimeImages = JSON.parse(fs.readFileSync(path.join(site, 'assets/runtime/manifest.json'), 'utf8'));
+    for (const src of refs) {
+      assert.ok(src.endsWith('.webp'), src);
+      assert.ok(fs.existsSync(path.join(site, runtimeImages[src].src)), src);
+      assert.ok(!fs.existsSync(path.join(site, src)), 'Original must not ship: ' + src);
+    }
     for (const entry of fs.readdirSync(path.join(site, 'assets'), { recursive: true, withFileTypes: true })) {
       if (!entry.isFile()) continue;
       assert.ok(!/\.(?:png|jpg|jpeg|gif|bmp|svg)$/i.test(entry.name), entry.name);

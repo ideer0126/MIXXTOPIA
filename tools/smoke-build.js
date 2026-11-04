@@ -58,7 +58,7 @@ const output = process.env.MIXX_BUILD_OUTPUT || path.join(repo, '.ds/build-smoke
         game._startNewGame(); level1Playthrough.finishDialogue(game);
         await Promise.all(Array.from(game._sceneryImages.values(), image => image.decode()));
         for (const src of [GAME.avatarPresets[0].art, GAME.characters.haewon.portrait, GAME.characters.byeori.portrait]) {
-          const image = new Image(); image.src = src; await image.decode();
+          const image = new Image(); image.src = MIXX_RUNTIME_IMAGES?.[src]?.src || src; await image.decode();
           if (!image.naturalWidth || !image.naturalHeight) throw Error('Image failed: ' + src);
         }
         game._entryFade = 0; game._render();
