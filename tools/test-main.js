@@ -2288,6 +2288,32 @@ test('序章：背景加载完成才绘制；慢加载/损坏图片仍可读完�
   }
 });
 
+test('序章图片：失败后新游戏重试，加载中和成功图片继续复用', () => {
+  const previousImage = sandbox.Image;
+  sandbox.Image = class {};
+  try {
+    withGAME(prologueData(), () => {
+      const game = makeGame();
+      try {
+        game._startNewGame();
+        const failed = game._sceneImages.get('p0');
+        failed.onerror();
+        assert.strictEqual(game._sceneImages.has('p0'), false);
+        finishPrologue(game);
+        game._setState(STATE.PAUSED); game._quitToTitle(); game._startNewGame();
+        const retry = game._sceneImages.get('p0');
+        assert.notStrictEqual(retry, failed);
+        game._startPrologue();
+        assert.strictEqual(game._sceneImages.get('p0'), retry, '加载中不重复请求');
+        retry.complete = true; retry.naturalWidth = 960;
+        finishPrologue(game);
+        game._setState(STATE.PAUSED); game._quitToTitle(); game._startNewGame();
+        assert.strictEqual(game._sceneImages.get('p0'), retry, '成功图片跨新游戏复用');
+      } finally { game.destroy(); }
+    });
+  } finally { if (previousImage === undefined) delete sandbox.Image; else sandbox.Image = previousImage; }
+});
+
 test('序章：缺少场景或入口台词时直接进入第一关', () => {
   for (const missing of ['scene', 'dialogue']) {
     const data = prologueData();

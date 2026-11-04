@@ -134,7 +134,7 @@ const output = process.env.MIXX_BUILD_OUTPUT || path.join(repo, '.ds/build-smoke
       window.game = MIXX.main.boot(); game.stop(); game._startNewGame();
       level1Playthrough.finishDialogue(game); game.birthday.startRings();
     });
-    await brokenPage.waitForFunction(() => game._sceneryImages.size === 0);
+    await brokenPage.waitForFunction(() => game._sceneryImages.size === 0 && !game._sceneImages.has('p0'));
     const fallback = await brokenPage.evaluate(() => {
       game._update(.05); game._render();
       const time = game.birthday.rings.time;
@@ -155,7 +155,14 @@ const output = process.env.MIXX_BUILD_OUTPUT || path.join(repo, '.ds/build-smoke
     });
     assert.equal(retried.count, 3, 'Re-entering rings must retry only its three failed textures');
     assert.equal(retried.decoded, true, 'Textures must recover without reloading the page');
-    checks.push('missing textures: prologue / hall / visible ring fallback / pause-resume / retry after recovery');
+    const prologueRetry = await brokenPage.evaluate(async () => {
+      game._setState(MIXX.main.STATE.PAUSED); game._quitToTitle(); game._startNewGame();
+      const image = game._sceneImages.get('p0');
+      await image.decode(); game._render();
+      return {scene: game.scene.id, decoded: image.naturalWidth > 0};
+    });
+    assert.deepEqual(prologueRetry, {scene: 'p0', decoded: true}, 'A new game must retry its failed prologue background');
+    checks.push('missing textures: prologue / hall / visible ring fallback / pause-resume / rings and prologue retry after recovery');
     await missing.close();
     assert.deepEqual(errors, []);
     fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify({ passed: true, checks, errors }, null, 2) + '\n');
