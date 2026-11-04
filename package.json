@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node tools/build-site.js --out dist",
     "build:channels": "node tools/build-channels.js",
-    "test:build": "node tools/test-build.js"
+    "test:build": "node tools/test-build.js",
+    "images:build": "python3 tools/build-runtime-images.py"
   },
   "engines": {
     "node": ">=22"

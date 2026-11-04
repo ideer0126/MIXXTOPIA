@@ -91,7 +91,7 @@ const repo=path.resolve(__dirname,'..'),output=process.env.MIXX_VISUAL_OUTPUT||'
       assert.notDeepEqual(probes.giftStrings.actual[0],probes.giftStrings.uncovered[0],'细绳探针须覆盖主角');
       assert.deepEqual(probes.giftFront.actual,probes.giftFront.uncovered,'走到礼物台前方时，主角须盖住桌前沿');
       await page.evaluate(()=>{game.player={x:19*16,y:25*16};level1Playthrough.walkTo(game,33,11);level1Playthrough.walkTo(game,36,10);});
-      const scenarios=[['piano',16.5,5,-1,0],['bench',14.7,7.65,0,-1],['stage-front',24,7,0,1],['storage-plant',7,9.1,-1,0],['storage-floor',3.4,6.3,1,0],['ring-post',5.8,15.3,0,0],['west-plant',3,22,-1,0],['entry-whale',14.5,22.3,0,0],['west-stool',32,21,1,0],['east-stool',35.8,22,1,0],['curtain-left',31.9,7.2,0,-1],['curtain-right',35.1,7.2,0,-1],['right-balloons',29.5,6.8,0,1],['cake-gifts',7.3,10.4,-1,0],['cake-whale',9,12.7,-1,0],['gift-whale',36,10,0,0],['gift-strings',35.5,11.7,0,0],['gift-front',35.5,14.5,0,0]];
+      const scenarios=[['piano',16.5,5,-1,0],['bench',14.7,7.65,0,-1],['stage-front',24,7,0,1],['storage-plant',7,9.1,-1,0],['storage-floor',3.4,6.3,1,0],['ring-post',5.8,14.7,0,0],['west-plant',3,22,-1,0],['entry-whale',14.5,22.3,0,0],['west-stool',32,21,1,0],['east-stool',35.8,22,1,0],['curtain-left',31.9,7.2,0,-1],['curtain-right',36.2,7.2,0,-1],['right-balloons',29.5,6.8,0,1],['cake-gifts',7.3,10.4,-1,0],['cake-whale',9,12.7,-1,0],['gift-whale',36,10,0,0],['gift-strings',35.5,11.7,0,0],['gift-front',35.5,14.5,0,0]];
       for(const [label,x,y,dx,dy] of scenarios){
         const end=await page.evaluate(([x,y,dx,dy])=>{
           game.player={x:x*16,y:y*16};

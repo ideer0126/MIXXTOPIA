@@ -39,6 +39,15 @@ function bundleRuntime(dest) {
     manifest.entries[entry] = { page, file: output, sources, bytes: code.length };
     console.log('[bundle] ' + page + ': ' + sources.length + ' scripts -> ' + output + ' (' + code.length + ' bytes)');
   }
+  const runtimeManifest = path.join(dest, 'assets/runtime/manifest.json');
+  if (inputs.has('js/runtime-images.js') && fs.existsSync(runtimeManifest)) {
+    const images = JSON.parse(fs.readFileSync(runtimeManifest, 'utf8'));
+    // Original art stays in the repository; only derivatives belong in the site/ZIP.
+    for (const [original, image] of Object.entries(images)) {
+      if (!fs.existsSync(path.join(dest, image.src))) throw new Error('Missing runtime image: ' + image.src);
+      fs.unlinkSync(path.join(dest, original));
+    }
+  }
   for (const src of inputs) fs.unlinkSync(path.join(dest, src));
   fs.writeFileSync(path.join(dest, 'build.json'), JSON.stringify(manifest, null, 2) + '\n');
   return manifest;

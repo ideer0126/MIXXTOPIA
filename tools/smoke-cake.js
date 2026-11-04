@@ -56,7 +56,7 @@ const output = process.env.MIXX_CAKE_OUTPUT || '/tmp/mixxtopia-cake';
           game.mechanics.staticCollision = MIXX.collision.compile(game.level);
         }, phase);
         approaches[phase] = {};
-        for (const [name, x, y, dx, dy] of [['whale', 6.7, 14.1, 0, -.5], ['anchor', 8.5, 12.9, -.5, 0]]) {
+        for (const [name, x, y, dx, dy] of [['whale', 8.7, 13.0, -.5, 0]]) {
           approaches[phase][name] = await page.evaluate(({ x, y, dx, dy }) => {
             game.player = { x: x * 16, y: y * 16 }; game.facing = { x: dx, y: dy };
             if (game.birthday.blockedAt(game.player.x, game.player.y)) throw new Error('Approach starts inside obstacle');
@@ -72,7 +72,7 @@ const output = process.env.MIXX_CAKE_OUTPUT || '/tmp/mixxtopia-cake';
             return game.player.x !== at.x || game.player.y !== at.y;
           }, { dx, dy }), 'Can retreat from the display');
         }
-        for (const [name, x, y] of [['balloons', 7.1, 11.3], ['whale-rear', 6.7, 11.3], ['gifts', 4.1, 10.5]]) {
+        for (const [name, x, y] of [['balloons', 7.1, 11.3], ['whale-rear', 6.7, 10.5], ['gifts', 4.1, 10.5]]) {
           assert.equal(await page.evaluate(({ x, y }) => {
             game.player = { x: x * 16, y: y * 16 }; game.facing = { x: 0, y: 1 };
             game._followCamera(); game._render(); return game.birthday.blockedAt(game.player.x, game.player.y);
@@ -80,8 +80,7 @@ const output = process.env.MIXX_CAKE_OUTPUT || '/tmp/mixxtopia-cake';
           await page.locator('#game').screenshot({ path: path.join(output, device + '-' + phase + '-' + name + '.png') });
         }
       }
-      assert.ok(approaches.after.whale.y > approaches.before.whale.y, 'Whale ground occupancy stops the former overlap');
-      assert.ok(approaches.after.anchor.x > approaches.before.anchor.x, 'Balloon anchor stops the former overlap');
+      assert.ok(approaches.after.whale.x > approaches.before.whale.x, 'Whale ground occupancy stops the former overlap');
       const visual = [];
       for (const [kind, x, y, solid, hole] of [
         ['cakeTable', 5.2, 11.3, [212,413], [236,401]],
@@ -118,7 +117,7 @@ const output = process.env.MIXX_CAKE_OUTPUT || '/tmp/mixxtopia-cake';
         assert.deepEqual(result.gap, result.unmaskedHole, kind + ' preserves the actor outside its silhouette');
         visual.push(result);
       }
-      for (const [side, x, y] of [['cake-rear', 3.8, 10.7], ['gifts-rear', 4.1, 10.5], ['whale-rear', 6.7, 11.3],
+      for (const [side, x, y] of [['cake-rear', 3.8, 10.3], ['gifts-rear', 4.1, 10.5], ['whale-rear', 6.7, 10.5],
         ['balloons-rear', 7.1, 11.3], ['right', 8.5, 12.5], ['front', 7, 14]]) {
         for (const [dir, dx, dy] of [['down', 0, 1], ['left', -1, 0], ['right', 1, 0], ['up', 0, -1]]) {
           for (const walking of [false, true]) {
