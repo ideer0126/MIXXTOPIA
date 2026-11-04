@@ -119,9 +119,10 @@ const output = process.env.MIXX_BUILD_OUTPUT || path.join(repo, '.ds/build-smoke
     }
     const missing = await browser.newContext({viewport: {width: 1280, height: 900}});
     await missing.addInitScript(() => { window.MIXX_NO_BOOT = true; window.MIXX_CLOUD_CONFIG = {url: '', anonKey: ''}; });
+    let failTextures = true;
     await missing.route('**/*', route => {
       const url = route.request().url();
-      if (url.startsWith(base + '/') && url.endsWith('.webp')) return route.fulfill({status: 200, contentType: 'image/webp', body: 'broken image'});
+      if (failTextures && url.startsWith(base + '/') && url.endsWith('.webp')) return route.fulfill({status: 200, contentType: 'image/webp', body: 'broken image'});
       if (url.startsWith(base + '/')) return route.continue();
       return route.fulfill({status: 200, contentType: 'text/css', body: ''});
     });
@@ -144,7 +145,17 @@ const output = process.env.MIXX_BUILD_OUTPUT || path.join(repo, '.ds/build-smoke
     assert.ok(fallback.resumed > fallback.time);
     assert.equal(fallback.state, 'playing');
     await brokenPage.screenshot({path: path.join(output, 'missing-textures-rings.png')});
-    checks.push('missing textures: prologue / hall / visible ring fallback / pause-resume');
+    failTextures = false;
+    const retried = await brokenPage.evaluate(async () => {
+      game.birthday.startRings();
+      await Promise.all(Array.from(game._sceneryImages.values(), image => image.decode()));
+      const images = Array.from(game._sceneryImages.values());
+      game._render();
+      return {count: images.length, decoded: images.every(image => image.naturalWidth > 0)};
+    });
+    assert.equal(retried.count, 3, 'Re-entering rings must retry only its three failed textures');
+    assert.equal(retried.decoded, true, 'Textures must recover without reloading the page');
+    checks.push('missing textures: prologue / hall / visible ring fallback / pause-resume / retry after recovery');
     await missing.close();
     assert.deepEqual(errors, []);
     fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify({ passed: true, checks, errors }, null, 2) + '\n');

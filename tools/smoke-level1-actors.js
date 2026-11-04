@@ -46,7 +46,7 @@ const output = process.env.MIXX_ACTORS_OUTPUT || '/tmp/mixxtopia-71';
       });
       const clipping = await page.evaluate(() => {
         const result = [];
-        for (const [name,x,y,dx,dy] of [['plant',3,22,-4,0],['piano',16,5.5,-4,0],['stage',32,7,-4,0],['curtain',33,8,0,-4],['corner',37.5,5.7,-4,0],['eastWall',38,14,0,4]]) {
+        for (const [name,x,y,dx,dy] of [['plant',3,22,-4,0],['piano',16,5.5,-4,0],['stage',32,7,-4,0],['curtain',33,7,0,-4],['corner',37.5,5.7,-4,0],['eastWall',38,14,0,4]]) {
           game.player = {x:x*16,y:y*16};
           if (game.birthday.blockedAt(game.player.x,game.player.y)) throw new Error('起点被挡：'+name);
           for (let i=0;i<40;i++) game._moveAxis(dx,dy);

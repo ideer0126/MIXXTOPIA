@@ -171,12 +171,12 @@
         const sy=image._mixxSourceHeight?image.naturalHeight/image._mixxSourceHeight:1;
         c.drawImage(image,frame[0]*sx,frame[1]*sy,frame[2]*sx,frame[3]*sy,...target);
       };
+      const feedback=r.phase==='feedback',hit=feedback&&r.result==='hit';
       const drawRing=(x,y,w,h)=>{
         if(hasToys){draw(toys,RINGS.frames[4],x,y,w,h);return;}
         c.save();c.strokeStyle='#fff2ae';c.lineWidth=2;
         c.beginPath();c.ellipse(x+w/2,y+h/2,w/2-1,h/2-1,0,0,Math.PI*2);c.stroke();c.restore();
       };
-      const feedback=r.phase==='feedback',hit=feedback&&r.result==='hit';
       const effect=feedback?Math.min(1,(r.failures===3?1.65:.95)-r.feedback):0;
       c.save();
       c.fillStyle='#193e57';c.fillRect(0,0,320,224);
@@ -401,7 +401,10 @@
       const items=actors.concat(player).map(e=>({foot:e.y+14/T+(e.spriteOffsetY||0),actor:e}));
       if(this.inHall()){
         for(const d of g.level.decorations){
-          if(d.room==='hall'&&(d.collision||d.collisionRects||d.occlusionShape||d.occlusionShapes)){
+          // Only real foreground silhouettes redraw actors. Collision-only props stay
+          // in the baked background; otherwise their full sampling rectangle would
+          // erase everyone standing behind a thin post.
+          if(d.room==='hall'&&(d.occlusionShape||d.occlusionShapes)){
             const bottom=d.collision?d.collision.y+d.collision.h:d.collisionRects?d.y+Math.max(...d.collisionRects.map(r=>r.y+r.h)):d.y+d.h;
             items.push({foot:d.depth===undefined?bottom:d.depth,object:d});
           }

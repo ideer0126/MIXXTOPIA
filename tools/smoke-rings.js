@@ -60,6 +60,27 @@ const server=http.createServer((req,res)=>{
       assert.equal(await page.evaluate(()=>game.birthday.rings.shot),null);
       if(!touch)await page.keyboard.up('e');
       await page.evaluate(()=>{game._update(0);game.input.endFrame();game._render();});
+      // Missing, pending and failed toy atlases must all leave a visible ring.
+      const fallbackChecks=await page.evaluate(()=>{
+        const g=game,b=g.birthday,src=g.level.sceneryAssets.ringsToys,atlas=g._sceneryImages.get(src),rings=b.rings;
+        const c=g.renderer.ctx,scale=c.canvas.width/320,checks=[];
+        for(const status of ['missing','pending','failed']){
+          if(status==='missing')g._sceneryImages.delete(src);
+          else g._sceneryImages.set(src,{complete:status==='failed',naturalWidth:0});
+          for(const phase of ['ready','flight']){
+            b.rings={...rings,phase,shot:phase==='flight'?{y:160}:null};
+            g._render();
+            const y=phase==='ready'?164:150,pixels=c.getImageData(150*scale,y*scale,20*scale,30*scale).data;
+            let visible=0;
+            for(let i=0;i<pixels.length;i+=4)if(pixels[i]===255&&pixels[i+1]===242&&pixels[i+2]===174)visible++;
+            checks.push({status,phase,visible});
+          }
+        }
+        b.rings=rings;
+        if(atlas)g._sceneryImages.set(src,atlas);else g._sceneryImages.delete(src);
+        g._render();return checks;
+      });
+      for(const check of fallbackChecks)assert.ok(check.visible>=8,device+' '+check.status+' '+check.phase+' ring must be visible');
       await page.screenshot({path:path.join(output,device+'-ready.png')});
       const throwRing=async()=>{
         if(touch)await page.locator('#tbtn-a').tap();else await page.keyboard.press('e');
