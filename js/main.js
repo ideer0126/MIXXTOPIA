@@ -2546,8 +2546,9 @@
       if (scene.background && !this._sceneImages.has('p0') && typeof this.root.Image === 'function') {
         const img = new this.root.Image();
         img.decoding = 'async';
-        img.src = this._imageAsset(scene.background).src;
+        img.onerror = () => this._sceneImages.delete('p0');
         this._sceneImages.set('p0', img);
+        img.src = this._imageAsset(scene.background).src;
       }
       this.level = null;
       this.player = null;

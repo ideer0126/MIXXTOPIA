@@ -2288,6 +2288,32 @@ test('序章：背景加载完成才绘制；慢加载/损坏图片仍可读完�
   }
 });
 
+test('序章图片：失败后新游戏重试，加载中和成功图片继续复用', () => {
+  const previousImage = sandbox.Image;
+  sandbox.Image = class {};
+  try {
+    withGAME(prologueData(), () => {
+      const game = makeGame();
+      try {
+        game._startNewGame();
+        const failed = game._sceneImages.get('p0');
+        failed.onerror();
+        assert.strictEqual(game._sceneImages.has('p0'), false);
+        finishPrologue(game);
+        game._setState(STATE.PAUSED); game._quitToTitle(); game._startNewGame();
+        const retry = game._sceneImages.get('p0');
+        assert.notStrictEqual(retry, failed);
+        game._startPrologue();
+        assert.strictEqual(game._sceneImages.get('p0'), retry, '加载中不重复请求');
+        retry.complete = true; retry.naturalWidth = 960;
+        finishPrologue(game);
+        game._setState(STATE.PAUSED); game._quitToTitle(); game._startNewGame();
+        assert.strictEqual(game._sceneImages.get('p0'), retry, '成功图片跨新游戏复用');
+      } finally { game.destroy(); }
+    });
+  } finally { if (previousImage === undefined) delete sandbox.Image; else sandbox.Image = previousImage; }
+});
+
 test('序章：缺少场景或入口台词时直接进入第一关', () => {
   for (const missing of ['scene', 'dialogue']) {
     const data = prologueData();
@@ -2413,6 +2439,76 @@ test('附近互动：无节点或已播完的 NPC 不遮挡告示牌，可重复
   });
 });
 
+test('图片按场景加载：标题零请求、序章独立、套圈/后台延后，读档只取后台且共享图复用', () => {
+  const previousImage = sandbox.Image;
+  const requested = [];
+  sandbox.Image = class { set src(value) { requested.push(value); } };
+  try {
+    withGAME(prologueData(), () => {
+      const game = makeGame();
+      let backstageSave;
+      try {
+        assert.strictEqual(requested.length, 0);
+        game._startNewGame();
+        assert.strictEqual(requested.length, 1);
+        assert.strictEqual(game._sceneryImages.size, 0);
+        level1Run.finishDialogue(game);
+        const images = game.level.sceneryAssets;
+        assert.ok(!game._sceneryImages.has(images.ringsBooth));
+        assert.ok(!game._sceneryImages.has(images.vanityModules));
+        const shared = game._sceneryImages.get(images.museCostumes);
+        level1Run.playLevel1(game, {
+          onRecord(g) {
+            assert.ok(g._sceneryImages.has(images.ringsBooth));
+            assert.ok(!g._sceneryImages.has(images.vanityModules));
+          },
+          onBackstage(g) {
+            assert.ok(g._sceneryImages.has(images.vanityModules));
+            assert.strictEqual(g._sceneryImages.get(images.museCostumes), shared);
+            g._setState(STATE.PAUSED); g._saveAndQuit();
+            backstageSave = localStorageStub.getItem(main.SAVE_KEY);
+            g._continueGame();
+          },
+        });
+        assert.strictEqual(new Set(requested).size, requested.length, 'cached files must not be requested twice');
+      } finally { game.destroy(); }
+      localStorageStub.setItem(main.SAVE_KEY, backstageSave);
+      requested.length = 0;
+      const restored = makeGame({keepStorage: true});
+      try {
+        restored._continueGame();
+        assert.strictEqual(restored._currentArea().id, 'backstage');
+        assert.ok(!restored._sceneryImages.has(restored.level.sceneryAssets.birthdayHall));
+        assert.ok(!restored._sceneryImages.has(restored.level.sceneryAssets.ringsBooth));
+        assert.strictEqual(restored._sceneImages.size, 0);
+        const shared = restored._sceneryImages.get(restored.level.sceneryAssets.museCostumes);
+        restored._setState(STATE.PAUSED); restored._restartLevel();
+        assert.strictEqual(restored._currentArea().id, 'hall');
+        assert.strictEqual(restored._sceneryImages.get(restored.level.sceneryAssets.museCostumes), shared);
+      } finally { restored.destroy(); }
+    });
+  } finally { if (previousImage === undefined) delete sandbox.Image; else sandbox.Image = previousImage; }
+});
+
+test('运行小图：原坐标映射为实际裁切，目标位置不变，完整图片也使用全部运行像素', () => {
+  withGAME(prologueData(), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game);
+      const src = game.level.sceneryAssets.cover;
+      const image = {complete: true, naturalWidth: 128, naturalHeight: 128, _mixxSourceWidth: 3000, _mixxSourceHeight: 3000};
+      game._sceneryImages.set(src, image);
+      const calls = [];
+      game.renderer.ctx.drawImage = (...args) => calls.push(args);
+      game._drawSceneryAsset({art: 'cover', frame: [750, 1500, 1500, 750], x: 1, y: 2, w: 3, h: 4});
+      assert.deepStrictEqual(calls[0].slice(1, 5), [32, 64, 64, 32]);
+      game._drawSceneryAsset({art: 'cover', x: 1, y: 2, w: 3, h: 4});
+      assert.deepStrictEqual(calls[1].slice(1, 5), [0, 0, 128, 128]);
+      assert.deepStrictEqual(calls[0].slice(5), calls[1].slice(5));
+    } finally { game.destroy(); }
+  });
+});
+
 test('场景图片失败后移除缓存，下次进入可重试，加载中和成功图片仍复用', () => {
   const previousImage = sandbox.Image;
   const requested = [];
@@ -2467,9 +2563,10 @@ test('场景素材：按源路径缓存、加载失败降级，礼物盒和星�
         assert.strictEqual(draws[0][0], props);
         props.naturalWidth = 0;
         assert.strictEqual(game._drawGift(5, 4), false);
-        const portal = game._sceneryImages.get(game.level.sceneryAssets.portal);
+        game._loadSceneryAssets('backstage');
+        const portal = game._sceneryImages.get(game.level.sceneryAssets.portalEast);
         portal.complete = true; portal.naturalWidth = 1024; portal.naturalHeight = 1536;
-        assert.strictEqual(game._drawSceneryAsset({ art: 'portal', x: 48, y: 10, w: 3, h: 4 }), true);
+        assert.strictEqual(game._drawSceneryAsset({ art: 'portalEast', x: 48, y: 10, w: 3, h: 4 }), true);
         assert.strictEqual(draws[1][0], portal);
       } finally { ctx.drawImage = drawImage; game.destroy(); }
     });
