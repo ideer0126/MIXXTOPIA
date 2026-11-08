@@ -479,6 +479,11 @@ function rule5(game, R) {
         }
       }
       if (e.type === 'roomdoor') {
+        if (e.confirmation != null && (!e.confirmation
+          || typeof e.confirmation !== 'object'
+          || ['text', 'accept', 'cancel'].some(key => typeof e.confirmation[key] !== 'string' || !e.confirmation[key].trim()))) {
+          R.err('规则 5', tag + ' roomdoor "' + e.id + '" 的 confirmation 必须包含非空 text / accept / cancel 文案');
+        }
         const p = e.to;
         if (!p || !Number.isInteger(p.x) || !Number.isInteger(p.y)
           || p.x < 0 || p.y < 0 || p.x >= lv.map.w || p.y >= lv.map.h

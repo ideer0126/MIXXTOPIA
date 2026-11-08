@@ -110,7 +110,7 @@ class FakeElement {
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; }
   appendChild(c) { this.children.push(c); return c; }
-  click() { this._fire('click', {}); }
+  click() { this._fire('click', { stopPropagation() {} }); }
   _fire(type, ev) {
     for (const fn of (this._listeners[type] || []).slice()) fn(ev || {});
   }
@@ -1447,7 +1447,7 @@ test('#12 选项列表：↑↓ 移动 · E 确认 → goto 分支；check 节�
     const box = elt('dialog-options');
     assert.strictEqual(box.children.length, 2);
     assert.ok(box.children[0].className.indexOf('selected') >= 0, '默认选中第 1 项');
-    assert.strictEqual(text('dialog-hint'), '↑↓ 选择 · E 确认');
+    assert.strictEqual(text('dialog-hint'), '↑↓ 选择 · E / A 确认 · 可点选');
     // 按 ↑ 越界不移动；↓ 移到第 2 项
     press('ArrowUp'); tick(game);
     assert.ok(box.children[0].className.indexOf('selected') >= 0, '顶部越界保持');
@@ -1470,7 +1470,7 @@ test('#12 选项列表：↑↓ 移动 · E 确认 → goto 分支；check 节�
       for (const line of data.GAME.dialogue['l3.dj.check'].lines) advanceDialog(game);
       assert.ok(game._dialog.optionsShown);
       if (choice === 1) { press('ArrowDown'); tick(game); }
-      press('e'); tick(game);
+      box.children[choice].click();
       const branchId = data.GAME.dialogue['l3.dj.check'].options[choice].goto;
       assert.strictEqual(game._dialog.nodeId, branchId);
       for (const line of data.GAME.dialogue[branchId].lines) advanceDialog(game);
@@ -3154,6 +3154,27 @@ test('后台单向流程：仅向上进入，横向/向下不触发，保存继�
           assert.ok(!g._playedNodes.has('l1.backstage.arrived'));
           // 门测试结束后回到舞台走道，避免把合成位置留给后续正式路线。
           g.player={x:29*16,y:7*16};
+        },
+        onBackstageConfirm(g){
+          const door=g._entitiesOf('roomdoor')[0];
+          const progress=JSON.stringify({played:[...g._playedNodes],stars:g.collected,save:g.saveData});
+          const position={...g.player},time=g.runTime;
+          assert.ok(text('dialog-text').includes('暂时无法回到礼堂'));
+          key('keydown','w');tick(g,50);key('keyup','w');
+          assert.deepStrictEqual(g.player,position,'选项期间不能移动');
+          assert.strictEqual(g.runTime,time,'选项期间暂停计时');
+          press('ArrowDown');tick(g);press('e');tick(g);
+          assert.strictEqual(g.state,STATE.PLAYING);
+          assert.strictEqual(g._currentArea().id,'hall');
+          assert.strictEqual(JSON.stringify({played:[...g._playedNodes],stars:g.collected,save:g.saveData}),progress,'取消不改变进度');
+          key('keydown','w');for(let i=0;i<4;i++)tick(g,50);key('keyup','w');
+          assert.strictEqual(g.state,STATE.PLAYING,'继续朝入口移动不重复弹窗');
+          assert.ok(!g._playedNodes.has(door.arrivalNode));
+          g._setState(STATE.PAUSED);g._saveAndQuit();elt('btn-continue').click();
+          assert.strictEqual(g._currentArea().id,'hall','取消后读档仍留在礼堂');
+          level1Run.walkTo(g,door.x,door.y+1);level1Run.stepTo(g,door.x,door.y);
+          assert.strictEqual(g.state,STATE.DIALOGUE,'读档后再次尝试进入仍需确认');
+          while(!g._dialog.optionsShown)g._tapDialog();
         },
         onBackstage(g){
           assert.ok(g._playedNodes.has('l1.backstage.arrived'));

@@ -131,6 +131,10 @@
     walkTo(game, 19, 8);
     check(game._currentArea().id === 'hall', '尚未进入幕后');
     walkTo(game, backstage.x, backstage.y + 1); stepTo(game, backstage.x, backstage.y);
+    check(game.state === 'dialogue' && game._dialog.nodeId === 'roomdoor:' + backstage.id, '进入后台前缺少确认');
+    while (!game._dialog.optionsShown) game._tapDialog();
+    if (options.onBackstageConfirm && options.onBackstageConfirm(game) === false) return;
+    game._chooseDialogOption(0);
     check(game._currentArea().id === 'backstage', '蓝幕布入口向上走未进入化妆间');
     check(game._entryFade === game.level.entryFade, '进入后台应使用与关卡入场一致的渐亮');
     check(game.stars === 2 && !game._starAvailable(star3), '后台对话未完成不能提前出星');
