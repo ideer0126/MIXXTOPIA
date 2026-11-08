@@ -140,7 +140,9 @@
     check(game.stars === 2 && !game._starAvailable(star3), '后台对话未完成不能提前出星');
     check(game._entitiesOf('npc').filter(e => e.room === 'backstage').length === 7, '化妆间须有六位 Muse 与精灵');
     if (options.onBackstage) options.onBackstage(game);
-    talkTo(game, 'lily'); talkTo(game, 'sullyoon');
+    talkTo(game, 'lily');
+    if (options.onBackstageBlessing) options.onBackstageBlessing(game);
+    talkTo(game, 'sullyoon');
     check(!game._starAvailable(star3), '漏掉精灵时不能出星');
     talkTo(game, 'byeori');
     check(game._starAvailable(star3), '三位后台对话没有解锁最后一星');

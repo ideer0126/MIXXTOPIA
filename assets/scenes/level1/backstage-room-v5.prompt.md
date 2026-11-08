@@ -1,0 +1,16 @@
+# Backstage room v5 — correct the rear-facing vanity surfaces
+
+Source PNG drafts are preserved under `docs/previews/issue86/sources/`; the approved runtime source is `assets/scenes/level1/backstage-room-v5.webp`.
+
+Built-in `image_gen` local edit, 2026-11-08. Input was the crop (440,380,755,760) of `backstage-room-v4.png`, containing furniture only. Generated crop preserved as `backstage-vanities-v5.png`; it is mapped back to the 755×760 crop size with nearest-neighbor drawing. Final `backstage-room-v5.png` composites only world-source rectangles (451,474,735,116) and (451,949,735,186). Outside those rectangles, RGBA pixels remain identical to v4 (verified 0 changes outside; 221,660 changed pixels inside).
+
+Corrected the ten vanities seen from behind: the working surface is on the far side of the mirror, so cosmetics, towels, ribbons, cases, the crown and misplaced plant are removed from the viewer-facing rear ledges. Front-facing mirrors and their visible supplies, stools, posters, entrance and other room content remain from v4. The left Taylor Swift poster and restored whale / wave artwork are retained. The user approved this composition on 2026-11-08. It is now integrated through the pixel-identical lossless WebP source and runtime derivative; furniture grounding and foreground shapes are authored independently in js/data.js. The original PNG and edit crop stay in docs/previews/issue86/sources/.
+
+## Complete prompt
+
+```text
+Use case: precise-object-edit.
+Edit target: this cropped pixel-art furniture background from a top-down RPG dressing room. It shows FIFTEEN vanities: upper five with rectangular wooden mirror BACKS facing the viewer, middle five with blue reflective mirror FRONTS and bulbs, bottom five with rectangular wooden mirror BACKS facing the viewer. The upper five stools are north of the vanities, so the users sit on the opposite side of these wooden mirror backs. The same applies to the bottom five.
+Request: fix a physical staging mistake ONLY on the TEN BACK-FACING VANITIES (upper five and bottom five). All cosmetics, towels, ribbons, boxes, bottles, crowns, bags and plants have been incorrectly placed on the BACK SIDE of the mirror panels, on the viewer-facing rear ledge. REMOVE ALL of these accessories from the rear ledge and wooden mirror backs, revealing coherent bare warm wooden panels and empty narrow rear wood ledges. In this camera view, the real working tabletop and its cosmetics are on the far/north side, largely hidden by the tall mirror panel. Do not relocate any removed accessories onto the floor, stools or another furniture surface. Remove the upper-middle leafy plant as well because it is incorrectly on the rear side. The backs should read clearly as simple rectangular plain wooden panels with side supports.
+Preserve exactly the MIDDLE FIVE FRONT-FACING vanities, all their visible cosmetics and small flower vase and ribbons, their blue mirrors and perimeter bulbs. Also preserve all fifteen round stools, rectangular mirror silhouettes, their wooden frames and feet, desk drawers, aisle width, floorboards, camera, existing square-pixel style, scale and image dimensions. Do not redesign or move anything. NO NEW OBJECTS. Only clean the rear-facing sides of the ten wooden mirror-back vanities. Opaque background with original canvas aspect.
+```

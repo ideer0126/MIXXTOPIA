@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MIXXTOPIA · #86 后台构图评审</title>
+<style>
+  *{box-sizing:border-box}body{margin:0;background:#171b30;color:#f5e9d5;font:15px/1.65 system-ui,sans-serif}
+  main{max-width:1190px;margin:auto;padding:28px}h1{font-size:27px;margin:0 0 5px}p{margin:5px 0 16px;color:#c5c8d8}
+  .badge{color:#f0c77c;font-size:12px;letter-spacing:2px}.controls{display:flex;gap:24px;margin:16px 0}
+  .scenes{display:grid;grid-template-columns:640px 448px;gap:20px;align-items:start}figure{margin:0}figcaption{margin-bottom:9px;color:#e9c787}
+  canvas{display:block;max-width:100%;height:auto;image-rendering:pixelated;background:#353654;border-radius:4px}
+  .legend{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:20px;padding:18px 22px;border:1px solid #45475e;border-radius:8px}
+  strong{color:#fff0d7}ol{padding-left:22px;margin:5px 0}.note{font-size:13px;color:#c5c8d8}button{background:#f0c77c;color:#171b30;border:0;border-radius:5px;padding:7px 13px;cursor:pointer}
+  @media(max-width:1150px){.scenes{grid-template-columns:1fr}.legend{grid-template-columns:1fr}main{padding:18px}}
+</style>
+<main>
+  <div class="badge">ISSUE #86 · COMPOSITION REVIEW · 2026-11-08</div>
+  <h1>生日会之后，灯还亮着的化妆间</h1>
+  <p>礼堂与后台使用相同显示比例：1 格 = 16px，成人高 40px。人物、星光门、奖励和标注均为独立叠层。</p>
+  <div class="controls">
+    <label><input id="actors" type="checkbox" checked> 现有人物 / 星光门</label>
+    <label><input id="routes" type="checkbox" checked> 动线与关键位置</label>
+    <label><input id="grid" type="checkbox"> 16px 网格</label>
+    <button id="download">导出后台预览</button>
+  </div>
+  <div class="scenes">
+    <figure><figcaption>已确认礼堂 · 40 × 28 格</figcaption><canvas id="hall" width="1920" height="1344" style="width:640px"></canvas></figure>
+    <figure><figcaption>后台确认版 v5 · 构图参考 · 28 × 25 格</figcaption><canvas id="backstage" width="1344" height="1200" style="width:448px"></canvas></figure>
+  </div>
+  <div class="legend">
+    <div><strong>阅读路线</strong><ol><li>右侧蓝幕入口 → 下方横向主过道。</li><li>左侧 Lily、Sullyoon 与 Byeori 完成三段祝福。</li><li>第三星在左侧活动区出现 → 接触收集。</li><li>走入左侧朝右开启的星光门。</li></ol></div>
+    <div><strong>已确认的构图</strong><p class="note">整体画风、20 个梳妆位的构图、家具与成人比例，以及左侧活动区和两条主过道。编号：① 入口，② Lily，③ Sullyoon，④ Byeori，⑤ 第三星，⑥ 星光门。</p><p class="note">这是独立构图参考页；游戏已接入精确碰撞、轮廓遮挡与安全读档落点，实际站位以游戏为准。第三星和已亮星光门在此同时展示，仅用于标位置。</p></div>
+  </div>
+  <p id="status" class="note">正在载入预览素材…</p>
+</main>
+<script src="../js/data.js"></script>
+<script src="../js/birthday.js"></script>
+<script>
+'use strict';
+(async()=>{
+  const level=GAME.levels[0],images=new Map();
+  const paths=[level.sceneryAssets.birthdayHall,level.sceneryAssets.museCostumes,level.sceneryAssets.guests,
+    level.sceneryAssets.adultBlue,level.sceneryAssets.portalEast,'assets/scenes/level1/backstage-room-v5.webp'];
+  await Promise.all(paths.map(async path=>{const img=new Image();img.src='../'+path;await img.decode();images.set(path,img);}));
+  const game={level,doc:document,_sceneryImages:images};
+  const birthday=new MIXX.Birthday(game),hall=document.querySelector('#hall'),backstage=document.querySelector('#backstage');
+  const marks=[['① 入口',414,294],['② Lily',48,145],['③ Sullyoon',128,145],['④ Byeori',81,232],['⑤ 第三星',128,232],['⑥ 星光门',36,252]];
+  function render(){
+    for(const [canvas,w,h] of [[hall,640,448],[backstage,448,400]]){
+      const c=canvas.getContext('2d');c.setTransform(3,0,0,3,0,0);c.imageSmoothingEnabled=false;c.clearRect(0,0,w,h);
+      const bg=images.get(canvas===hall?level.sceneryAssets.birthdayHall:paths[5]);c.drawImage(bg,0,0,w,h);
+      if(document.querySelector('#grid').checked){c.strokeStyle='#b2dbe529';c.lineWidth=.35;c.beginPath();for(let x=0;x<w;x+=16){c.moveTo(x,0);c.lineTo(x,h);}for(let y=0;y<h;y+=16){c.moveTo(0,y);c.lineTo(w,y);}c.stroke();}
+      if(document.querySelector('#routes').checked&&canvas===backstage){
+        c.fillStyle='#80efff29';c.fillRect(142,106,274,32);c.fillRect(142,278,274,32);c.fillRect(138,106,24,204);
+        c.strokeStyle='#87e6ee';c.lineWidth=1.5;c.setLineDash([4,4]);c.beginPath();
+        c.moveTo(414,294);c.lineTo(96,294);c.lineTo(96,162);c.lineTo(48,162);c.moveTo(96,162);c.lineTo(128,162);
+        c.moveTo(96,162);c.lineTo(96,244);c.lineTo(128,244);c.moveTo(96,244);c.lineTo(52,244);c.stroke();c.setLineDash([]);
+      }
+      if(document.querySelector('#actors').checked){
+        if(canvas===backstage)c.drawImage(images.get(level.sceneryAssets.portalEast),20,176,48,72);
+        for(const [i,id] of ['lily','haewon','sullyoon','bae','jiwoo','kyujin'].entries()){
+          const frame=birthday.cachedFrames({style:level.party.muses[id],key:'muse:'+id})[0][0];
+          const e=level.entities.find(e=>e.id===id&&e.room==='hall');
+          const x=canvas===hall?e.x*16+8:[48,88,128][i%3],y=canvas===hall?e.y*16+14:(i<3?145:313);
+          c.drawImage(frame,x-20,y-40,40,40);
+        }
+        if(canvas===backstage){
+          // Byeori currently uses the existing adult guest sprite in the game.
+          const f=level.party.sprites[0][0],sw=40*f[2]/f[3];c.drawImage(images.get(level.sceneryAssets.guests),...f,81-sw/2,192,sw,40);
+          const player=birthday.cachedFrames({style:level.party.animations.adultBlue,key:'adultBlue'})[0][0];c.drawImage(player,380,254,40,40);
+          c.fillStyle='#ffe485';c.strokeStyle='#fff3c7';c.lineWidth=1;c.beginPath();
+          for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,r=i%2?3:7,x=128+Math.cos(a)*r,y=226+Math.sin(a)*r;if(i)c.lineTo(x,y);else c.moveTo(x,y);}c.closePath();c.fill();c.stroke();
+        }
+      }
+      if(document.querySelector('#routes').checked&&canvas===backstage){
+        c.font='bold 9px system-ui';c.textAlign='center';
+        for(const [label,x,y] of marks){const width=c.measureText(label).width+8;c.fillStyle='#171b30ed';c.fillRect(x-width/2,y+4,width,15);c.fillStyle='#ffdc91';c.fillText(label,x,y+15);}
+        c.textAlign='left';
+      }
+    }
+  }
+  for(const input of document.querySelectorAll('input'))input.addEventListener('change',render);
+  document.querySelector('#download').addEventListener('click',()=>{const link=document.createElement('a');link.download='backstage86-preview.png';link.href=backstage.toDataURL();link.click();});
+  render();document.querySelector('#status').textContent='素材载入完成。人物取样直接复用 party.muses 与 Birthday.cachedFrames；人物未烘焙进新底图。';
+  window.backstage86Ready=true;
+})();
+</script>
+</html>

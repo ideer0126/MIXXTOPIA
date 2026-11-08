@@ -286,10 +286,14 @@
       c.fillText(feedback?r.message:r.phase==='flight'?'咻——愿望出发！':'看准时机，让愿望落进圈里',160,194);
       c.restore();
     }
+    /**
+     * 绘制当前房间的完整底图；图片未就绪时交由调用方绘制瓦片降级背景。
+     * @returns {boolean} 当前房间底图是否已成功绘制。
+     */
     drawBackground(){
-      if(!this.inHall())return false;
       const g=this.g;
-      if(g._drawSceneryAsset(g.level.party.background))return true;
+      const background=this.inHall()?g.level.party.background:g.level.party.backstageBackground;
+      if(background&&g._drawSceneryAsset(background))return true;
       // 图片加载中保留可读的瓦片画面，场景碰撞不依赖图片状态。
       return false;
     }
@@ -394,38 +398,42 @@
       c.save();c.beginPath();c.rect(x,y,40,30);c.clip();
       this.drawSprite(actor,false);c.restore();
     }
+    /**
+     * 按脚底深度绘制当前房间的人物与家具轮廓，并保留唱片和鼓组的前景顺序。
+     * 家具从所属房间底图原位取样，仅覆盖轮廓内部，不重画周围地板。
+     * @returns {void}
+     */
     drawActors(){
       const g=this.g,area=g._currentArea().id;
       const actors=g.level.entities.filter(e=>['npc','guest'].includes(e.type)&&(!e.room||e.room===area));
       const player={type:'player',sprite:2,age:'adult',x:g.player.x/T,y:g.player.y/T,_walking:this.playerMotion.walking};
       const items=actors.concat(player).map(e=>({foot:e.y+14/T+(e.spriteOffsetY||0),actor:e}));
-      if(this.inHall()){
-        for(const d of g.level.decorations){
-          // Only real foreground silhouettes redraw actors. Collision-only props stay
-          // in the baked background; otherwise their full sampling rectangle would
-          // erase everyone standing behind a thin post.
-          if(d.room==='hall'&&(d.occlusionShape||d.occlusionShapes)){
-            const bottom=d.collision?d.collision.y+d.collision.h:d.collisionRects?d.y+Math.max(...d.collisionRects.map(r=>r.y+r.h)):d.y+d.h;
-            items.push({foot:d.depth===undefined?bottom:d.depth,object:d});
-          }
+      for(const d of g.level.decorations){
+        // Only real foreground silhouettes redraw actors. Collision-only props stay
+        // in the baked background; otherwise their full sampling rectangle would
+        // erase everyone standing behind a thin post.
+        if(d.room===area&&(d.occlusionShape||d.occlusionShapes)){
+          const bottom=d.collision?d.collision.y+d.collision.h:d.collisionRects?d.y+Math.max(...d.collisionRects.map(r=>r.y+r.h)):d.y+d.h;
+          items.push({foot:d.depth===undefined?bottom:d.depth,object:d});
         }
       }
       const record=this.inHall()&&g._entitiesOf('record')[0];
       if(record&&!record.taken){const cabinet=g.level.decorations.find(d=>d.room==='hall'&&d.kind==='recordCabinet');
         items.push({foot:cabinet.depth,record:true});}
       items.sort((a,b)=>a.foot-b.foot);
-      const img=g._sceneryImages.get(g.level.sceneryAssets.birthdayHall);
+      const background=this.inHall()?g.level.party.background:g.level.party.backstageBackground;
+      const img=background&&g._sceneryImages.get(g.level.sceneryAssets[background.art]);
       for(const item of items){
         if(item.record){const r=g.level.party.recordVisual;g._drawRecord(r.x,r.y,r.size);continue;}
         if(item.actor){this.drawSprite(item.actor,item.actor===player);continue;}
         if(!img||!img.complete||!img.naturalWidth)continue;
         const d=item.object;
         // 原图同位置取样，沿物体轮廓重画；悬空装饰也按地面锚点遮挡人物。
-        ctxDraw(g,img,d);
+        ctxDraw(g,img,d,background);
         if(d.kind==='drums'){
           this.drawDrummerUpperBody(actors.find(e=>e.performance==='drums'));
           // 前排通鼓和鼓沿在人物前方，不能被上半身补画抹去。
-          ctxDraw(g,img,{...d,occlusionShapes:d.foregroundShapes});
+          ctxDraw(g,img,{...d,occlusionShapes:d.foregroundShapes},background);
         }
       }
     }
@@ -459,7 +467,15 @@
       c.restore();
     }
   }
-  function ctxDraw(g,img,d){
+  /**
+   * 将世界瓦片坐标映射到房间底图，并按装饰的局部归一化轮廓裁切重画。
+   * @param {object} g 当前游戏实例，提供绘图上下文与摄像机像素偏移。
+   * @param {HTMLImageElement} img 已加载的房间运行底图。
+   * @param {object} d 装饰的世界瓦片范围及局部归一化遮挡轮廓。
+   * @param {{x:number,y:number,w:number,h:number}} background 底图对应的世界瓦片范围。
+   * @returns {void}
+   */
+  function ctxDraw(g,img,d,background){
     const ctx=g.renderer.ctx,shapes=d.occlusionShapes||(d.occlusionShape?[d.occlusionShape]:null);
     if(shapes && typeof ctx.clip==='function'){
       ctx.save();ctx.beginPath();
@@ -469,7 +485,7 @@
       }
       ctx.clip();
     }
-    g.renderer.ctx.drawImage(img,d.x/40*img.naturalWidth,d.y/28*img.naturalHeight,d.w/40*img.naturalWidth,d.h/28*img.naturalHeight,
+    g.renderer.ctx.drawImage(img,(d.x-background.x)/background.w*img.naturalWidth,(d.y-background.y)/background.h*img.naturalHeight,d.w/background.w*img.naturalWidth,d.h/background.h*img.naturalHeight,
       Math.round(d.x*T-g.camera.x),Math.round(d.y*T-g.camera.y),d.w*T,d.h*T);
     if(shapes && typeof ctx.clip==='function')ctx.restore();
   }
