@@ -21,8 +21,8 @@ for source in sorted((repo / 'assets').rglob('*.webp')):
         if name == 'strange-muse-cover.webp':
             limit = 128
             sampling = Image.Resampling.LANCZOS
-        elif name.startswith('birthday-hall-'):
-            limit = 1920  # 40x28 room in the existing three-times detail buffer.
+        elif name.startswith(('birthday-hall-', 'backstage-room-')):
+            limit = 1920  # Whole-room art in the existing three-times detail buffer.
         elif name in ('p0-bedroom.webp', 'rings-booth-v1.webp'):
             limit = 960
         elif name == 'muse-portraits-v1.webp':

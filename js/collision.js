@@ -14,7 +14,6 @@
     if(!Array.isArray(walls)){errors.push('墙脚 colliders 必须是数组');walls=[];}
     const entries=walls.map((r,i)=>({r,x:0,y:0,source:null,label:'墙脚 '+i}));
     for(const d of level.decorations||[]){
-      if(d.room!=='hall')continue; // Backstage keeps its authored blocking tiles.
       if(d.collisionRects!==undefined){
         if(d.collision||!Array.isArray(d.collisionRects)||!d.collisionRects.length){
           errors.push('家具 '+d.kind+' collisionRects 必须是非空数组且不能与 collision 并用');continue;

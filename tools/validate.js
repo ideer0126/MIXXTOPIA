@@ -323,7 +323,7 @@ function rule2(game, R) {
     }
     for(const error of Collision.compile(lv).errors) R.err('规则 2',tag+' '+error);
     for (const d of lv.decorations || []) {
-      if(lv.party && lv.party.preciseCollision && d.room === 'hall') continue;
+      if(lv.party && lv.party.preciseCollision) continue;
       if (!d.collision) continue;
       const r = d.collision;
       if (![r.x, r.y, r.w, r.h].every(Number.isInteger) || r.w <= 0 || r.h <= 0
@@ -337,10 +337,10 @@ function rule2(game, R) {
       }
       if (missing) R.err('规则 2', tag + ' 家具 ' + d.kind + ' 的碰撞范围存在可通行瓦片');
     }
-    // 礼堂轮廓碰撞由 1px 小方块合并成大块：坐标必须落在 1/16 格，块之间不能重叠或还能再并。
+    // 精确轮廓碰撞使用逻辑像素网格：坐标落在 1/16 格，块之间不能重叠或还能再并。
     if (lv.party && lv.party.preciseCollision) {
       for (const d of lv.decorations || []) {
-        if (d.room !== 'hall' || !Array.isArray(d.collisionRects)) continue;
+        if (!Array.isArray(d.collisionRects)) continue;
         const name = '家具 ' + d.kind + '@(' + d.x + ',' + d.y + ')';
         for (const [i, r] of d.collisionRects.entries()) {
           if (!r || !['x', 'y', 'w', 'h'].every(k => Number.isFinite(r[k])) || r.w <= 0 || r.h <= 0) {
