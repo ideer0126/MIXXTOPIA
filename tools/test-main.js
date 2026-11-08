@@ -2455,15 +2455,15 @@ test('图片按场景加载：标题零请求、序章独立、套圈/后台延�
         level1Run.finishDialogue(game);
         const images = game.level.sceneryAssets;
         assert.ok(!game._sceneryImages.has(images.ringsBooth));
-        assert.ok(!game._sceneryImages.has(images.vanityModules));
+        assert.ok(!game._sceneryImages.has(images.backstageRoom));
         const shared = game._sceneryImages.get(images.museCostumes);
         level1Run.playLevel1(game, {
           onRecord(g) {
             assert.ok(g._sceneryImages.has(images.ringsBooth));
-            assert.ok(!g._sceneryImages.has(images.vanityModules));
+            assert.ok(!g._sceneryImages.has(images.backstageRoom));
           },
           onBackstage(g) {
-            assert.ok(g._sceneryImages.has(images.vanityModules));
+            assert.ok(g._sceneryImages.has(images.backstageRoom));
             assert.strictEqual(g._sceneryImages.get(images.museCostumes), shared);
             g._setState(STATE.PAUSED); g._saveAndQuit();
             backstageSave = localStorageStub.getItem(main.SAVE_KEY);
@@ -2541,7 +2541,7 @@ test('场景图片失败后移除缓存，下次进入可重试，加载中和�
   } finally { if (previousImage === undefined) delete sandbox.Image; else sandbox.Image = previousImage; }
 });
 
-test('场景素材：按源路径缓存、加载失败降级，礼物盒和星光门使用独立素材', () => {
+test('场景素材：按源路径缓存、加载失败降级，整图和星光门使用独立素材', () => {
   const prevImage = sandbox.Image;
   sandbox.Image = class { constructor() { this.complete = false; this.naturalWidth = 0; } };
   try {
@@ -2553,16 +2553,16 @@ test('场景素材：按源路径缓存、加载失败降级，礼物盒和星�
         elt('btn-start').click(); level1Run.finishDialogue(game);
         // 按房间按需加载：进关卡只预载礼堂组，后台组在切换时再载入。
         assert.strictEqual(game._sceneryImages.size, game.level.sceneryGroups.hall.length);
-        assert.ok(!game._sceneryImages.has(game.level.sceneryAssets.backstage));
-        assert.strictEqual(game._drawGift(5, 4), false);
+        assert.ok(!game._sceneryImages.has(game.level.sceneryAssets.backstageRoom));
+        assert.strictEqual(game._drawSceneryAsset(game.level.party.backstageBackground), false);
         game._loadSceneryAssets('backstage');
-        assert.ok(game._sceneryImages.has(game.level.sceneryAssets.backstage));
-        const props = game._sceneryImages.get(game.level.sceneryAssets.backstage);
+        assert.ok(game._sceneryImages.has(game.level.sceneryAssets.backstageRoom));
+        const props = game._sceneryImages.get(game.level.sceneryAssets.backstageRoom);
         props.complete = true; props.naturalWidth = 1536;
-        assert.strictEqual(game._drawGift(5, 4), true);
+        assert.strictEqual(game._drawSceneryAsset(game.level.party.backstageBackground), true);
         assert.strictEqual(draws[0][0], props);
         props.naturalWidth = 0;
-        assert.strictEqual(game._drawGift(5, 4), false);
+        assert.strictEqual(game._drawSceneryAsset(game.level.party.backstageBackground), false);
         game._loadSceneryAssets('backstage');
         const portal = game._sceneryImages.get(game.level.sceneryAssets.portalEast);
         portal.complete = true; portal.naturalWidth = 1024; portal.naturalHeight = 1536;
@@ -2616,7 +2616,7 @@ test('舞台阶梯与乐器碰撞：向上穿过幕布渐亮进入后台，不�
           assert.ok(g.camera.x>=bounds.x*16 && g.camera.x+320<=(bounds.x+bounds.w)*16);
           assert.ok(g.camera.y>=bounds.y*16 && g.camera.y+224<=(bounds.y+bounds.h)*16);
           level1Run.walkTo(g,65,11);level1Run.walkTo(g,48,11); // 北侧过道完整可走。
-          level1Run.walkTo(g,49,12);
+          level1Run.walkTo(g,50,13.25);
           const before={...g.player};
           g._moveAxis(0,4);
           assert.ok(g.player.y<before.y+4,'只能移动到镜子前最后一个可站立位置');
@@ -2626,7 +2626,8 @@ test('舞台阶梯与乐器碰撞：向上穿过幕布渐亮进入后台，不�
           level1Run.walkTo(g,41,15);
           assert.strictEqual(g._currentArea().id,'backstage','后台西侧不能被礼堂的摄像机留白抢走');
           assert.strictEqual(g._entitiesOf('roomdoor').some(e=>e.id==='to-hall'),false);
-          level1Run.walkTo(g,66,20);
+          assert.ok(g.birthday.blockedAt(66*16,20*16),'不能穿过确认版东墙');
+          level1Run.walkTo(g,65,20);
           assert.strictEqual(g._checkRoomDoors({...g.player}),false);
           assert.strictEqual(g._currentArea().id,'backstage');
         },

@@ -27,6 +27,13 @@
     "runtimeWidth": 768,
     "runtimeHeight": 512
   },
+  "assets/scenes/level1/backstage-room-v5.webp": {
+    "src": "assets/runtime/scenes/level1/backstage-room-v5.webp",
+    "width": 1327,
+    "height": 1185,
+    "runtimeWidth": 1327,
+    "runtimeHeight": 1185
+  },
   "assets/scenes/level1/birthday-hall-v2.webp": {
     "src": "assets/runtime/scenes/level1/birthday-hall-v2.webp",
     "width": 1500,

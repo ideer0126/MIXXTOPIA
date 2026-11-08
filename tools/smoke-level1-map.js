@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// Level 1 hall audit: reachable furniture approaches, silhouette gaps,
+// Level 1 hall + backstage audit: reachable furniture approaches, silhouette gaps,
 // and the real story route. External requests are stubbed; no account writes.
 const assert=require('node:assert/strict'),fs=require('node:fs'),http=require('node:http'),path=require('node:path');
 const {chromium}=require(process.env.MIXX_PLAYWRIGHT_MODULE||'playwright');
@@ -18,8 +18,8 @@ const repo=path.resolve(__dirname,'..'),output=process.env.MIXX_MAP_OUTPUT||'/tm
   const base='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({executablePath:process.env.MIXX_CHROME||'/opt/google/chrome/chrome',headless:true,args:['--no-sandbox']});
   const results=[],errors=[];
   try{
-    for(const touch of [false,true]){
-      const name=touch?'touch':'desktop',context=await browser.newContext(touch?{viewport:{width:390,height:844},isMobile:true,hasTouch:true}:{viewport:{width:1280,height:900}});
+    for(const [name,options] of [['desktop',{viewport:{width:1280,height:900}}],['touch',{viewport:{width:390,height:844},isMobile:true,hasTouch:true}],['landscape',{viewport:{width:844,height:390},isMobile:true,hasTouch:true}]]){
+      const context=await browser.newContext(options);
       await context.addInitScript(()=>window.MIXX_NO_BOOT=true);
       await context.route('**/*',r=>r.request().url().startsWith(base+'/')?r.continue():r.fulfill({body:''}));
       const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
@@ -95,12 +95,75 @@ const repo=path.resolve(__dirname,'..'),output=process.env.MIXX_MAP_OUTPUT||'/tm
         assert.notDeepEqual(probe.actual[1],probe.background[1],probe.name+' probe overlaps the gap');
       }
       const hall=await page.evaluate(()=>auditRoom());
-      const run=await page.evaluate(()=>level1Playthrough.playLevel1(game));
+      await page.evaluate(async()=>{game._loadSceneryAssets('backstage');await Promise.all([...game._sceneryImages.values()].map(i=>i.decode()));});
+      const {run,backstage,backstagePixels}=await page.evaluate(()=>{
+        let backstage,backstagePixels;
+        const run=level1Playthrough.playLevel1(game,{
+          onBackstage(g){
+            backstage=auditRoom();
+            const c=g.renderer.ctx,scale=c.canvas.width/320,draw=g.birthday.drawSprite,seed={...g.player};backstagePixels=[];
+            for(const probe of [
+              {name:'back-mirror-gap',cx:558,foot:530,solid:[550,500],gap:[595,500]},
+              {name:'south-mirror-gap',cx:558,foot:1035,solid:[550,990],gap:[595,990]},
+              {name:'stool-leg-gap',cx:509,foot:320,solid:[490,318],gap:[509,318]},
+              {name:'table-leg-gap',cx:480,foot:750,solid:[475,747],gap:[489,747]}
+            ]){
+              g.player={x:40*16+probe.cx/1327*448-8,y:3*16+probe.foot/1185*400-14};g._followCamera();g._entryFade=0;
+              const sample=()=>[probe.solid,probe.gap].map(([x,y])=>Array.from(c.getImageData(Math.round((40*16+x/1327*448-g.camera.x)*scale),Math.round((3*16+y/1185*400-g.camera.y)*scale),1,1).data));
+              g.birthday.drawSprite=function(e,p){if(!p)draw.call(this,e,p);};g._render();const background=sample();
+              g.birthday.drawSprite=function(e,p){if(!p){draw.call(this,e,p);return;}c.fillStyle='#ff00ff';c.fillRect(g.player.x+8-20-g.camera.x,g.player.y+14-40-g.camera.y,40,40);};g._render();const actual=sample();
+              const actors=g.birthday.drawActors;g.birthday.drawActors=function(){this.drawSprite(g.player,true);};g._render();const uncovered=sample();g.birthday.drawActors=actors;
+              backstagePixels.push({name:probe.name,background,actual,uncovered});
+            }
+            g.birthday.drawSprite=draw;g.player=seed;
+            for(const id of ['haewon','bae','jiwoo','kyujin'])level1Playthrough.talkTo(g,id);
+            g._setState('paused');g._saveAndQuit();window.entrySave=localStorage.getItem(MIXX.main.SAVE_KEY);g._continueGame();
+            if(g._currentArea().id!=='backstage'||g.birthday.blockedAt(g.player.x,g.player.y))throw Error('Backstage resume landing');
+          },
+          onBackstageBlessing(g){
+            g._setState('paused');g._saveAndQuit();g._continueGame();
+            if(!g._playedNodes.has('l1.backstage.lily')||g._starAvailable(g.level.entities.find(e=>e.id==='s3')))throw Error('Partial blessing save');
+          },
+          beforePortal(g){
+            g._setState('paused');g._saveAndQuit();g._continueGame();
+            if(g.stars!==3||!g._portalActive())throw Error('Collected s3 save');
+          }
+        });return{run,backstage,backstagePixels};
+      });
       assert.deepEqual(run,{stars:3,sheep:1,gateOpen:true,state:'clear'});
+      await page.evaluate(()=>{localStorage.setItem(MIXX.main.SAVE_KEY,entrySave);game._setState('title');game._continueGame();game._entryFade=0;});
+      for(const fps of [15,30,60,144])for(const [key,x,y] of [['ArrowRight',65,20],['ArrowLeft',50,20],['ArrowDown',50,20],['ArrowUp',50,13.25]]){
+        await page.evaluate(([x,y])=>{game.player={x:x*16,y:y*16};},[x,y]);
+        await page.keyboard.down(key);
+        const moved=await page.evaluate(fps=>{
+          const start={...game.player};for(let i=0;i<fps*2;i++){game._update(1/fps);if(game.birthday.blockedAt(game.player.x,game.player.y))throw Error('Backstage keyboard entered solid');}
+          return Math.hypot(game.player.x-start.x,game.player.y-start.y);
+        },fps);
+        await page.keyboard.up(key);assert.ok(moved>1,key+' backstage input moves');
+      }
+      await page.evaluate(()=>{game.player={x:50*16,y:13.25*16};});
+      await page.keyboard.down('ArrowRight');await page.keyboard.down('ArrowDown');
+      await page.evaluate(()=>{for(let i=0;i<120;i++){game._update(1/60);if(game.birthday.blockedAt(game.player.x,game.player.y))throw Error('Backstage diagonal entered solid');}});
+      await page.keyboard.up('ArrowRight');await page.keyboard.up('ArrowDown');
+      if(name!=='desktop'){
+        await page.evaluate(()=>{game.player={x:65*16,y:20*16};});
+        await page.locator('[data-key=left]').dispatchEvent('pointerdown',{pointerId:1,pointerType:'touch',isPrimary:true});
+        const x=await page.evaluate(()=>{for(let i=0;i<60;i++){game._update(1/60);if(game.birthday.blockedAt(game.player.x,game.player.y))throw Error('Backstage touch entered solid');}return game.player.x;});
+        await page.locator('[data-key=left]').dispatchEvent('pointerup',{pointerId:1,pointerType:'touch',isPrimary:true});
+        assert.ok(x<65*16-40,'backstage touch pad moves left');
+      }
+      await page.evaluate(()=>{game._setState('paused');game._restartLevel();if(game._currentArea().id!=='hall'||game._playedNodes.has('l1.backstage.arrived'))throw Error('Replay must return to hall');});
+      for(const probe of backstagePixels){
+        assert.deepEqual(probe.actual[0],probe.background[0],probe.name+' foreground covers actors');
+        assert.notDeepEqual(probe.actual[0],probe.uncovered[0],probe.name+' probe overlaps the silhouette');
+        assert.deepEqual(probe.actual[1],probe.uncovered[1],probe.name+' gap preserves actors');
+        assert.notDeepEqual(probe.actual[1],probe.background[1],probe.name+' probe overlaps the gap');
+      }
       hall.images.forEach((data,i)=>fs.writeFileSync(path.join(output,name+'-hall-'+i+'.png'),Buffer.from(data.split(',')[1],'base64')));delete hall.images;
-      results.push({name,hall,hallPixels,run});await context.close();
+      backstage.images.forEach((data,i)=>fs.writeFileSync(path.join(output,name+'-backstage-'+i+'.png'),Buffer.from(data.split(',')[1],'base64')));delete backstage.images;
+      results.push({name,hall,backstage,hallPixels,backstagePixels,run});await context.close();
     }
     assert.deepEqual(errors,[]);fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({results,errors},null,2));
-    console.log(results.map(r=>r.name+': '+r.hall.objects.length+' hall objects, '+r.hall.objects.reduce((n,o)=>n+o.approaches.length,0)+' reachable approaches; silhouette pixels and full route passed').join('\n'));
+    console.log(results.map(r=>r.name+': '+r.hall.objects.length+' hall + '+r.backstage.objects.length+' backstage objects; '+r.backstage.objects.reduce((n,o)=>n+o.approaches.length,0)+' backstage approaches; silhouette pixels, real inputs, saves, replay and full route passed').join('\n'));
   }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

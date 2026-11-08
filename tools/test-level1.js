@@ -40,7 +40,7 @@ test('场景图集路径有效、透明 alpha 保留、所有取样框均在原�
     assert.equal(webp[offset + 8], 0x2f);
     const bits = webp.readUInt32LE(offset + 9);
     dims[key] = [(bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1];
-    if (!['cover','mural','birthdayHall','ringsBooth'].includes(key)) assert.equal((bits >>> 28) & 1, 1, '透明图集必须保留 alpha');
+    if (!['cover','mural','birthdayHall','backstageRoom','ringsBooth'].includes(key)) assert.equal((bits >>> 28) & 1, 1, '透明图集必须保留 alpha');
   }
   for (const d of level.decorations) {
     for (const [key, frame] of [[d.art, d.frame], [d.litArt, d.litFrame]]) {
@@ -129,7 +129,7 @@ test('礼堂 / 后台对话与角色齐全；出口落点不能指向墙体或�
     const r = v.makeReport(); v.rule5(bad, r); assert.ok(r.errors.length);
   }
 });
-test('后台修整：20 个等比例单人梳妆位与椅子、右向传送门、成组舞台道具', () => {
+test('后台确认版：20 个独立桌镜与圆凳、右向星光门、整图与轮廓分开', () => {
   const l = game.levels[0];
   const chairs = l.decorations.filter(d => d.kind === 'chair');
   assert.equal(chairs.length, 24);
@@ -143,23 +143,27 @@ test('后台修整：20 个等比例单人梳妆位与椅子、右向传送门�
   assert.equal(stations.length,20);
   assert.equal(stations.filter(d=>d.facing==='south').length,10);
   assert.equal(stations.filter(d=>d.facing==='north').length,10);
-  assert.ok(stations.every(d=>d.stations===1 && d.w/d.h===d.frame[2]/d.frame[3]));
+  assert.ok(stations.every(d=>d.stations===1 && d.baked && d.collisionRects.length && d.occlusionShapes.length));
+  assert.equal(l.party.backstageBackground.art,'backstageRoom');
+  assert.ok(l.sceneryAssets.backstageRoom.endsWith('backstage-room-v5.webp'));
   assert.equal(l.entities.find(e=>e.type==='portal').facing,'east');
   assert.ok(l.sceneryAssets.portalEast);
-  assert.ok(l.decorations.filter(d=>d.room==='backstage' && ['stageProps','storageTrunk','instrumentBench','makeupTrolley','costumeRail','guitars'].includes(d.kind)).length>=6);
+  assert.ok(['stageProps','storageTrunk','makeupTrolley','costumeRail'].every(kind=>l.decorations.some(d=>d.room==='backstage'&&d.kind===kind)));
   const room = l.areas.find(a => a.id === 'backstage').rect;
   for (const e of l.entities.filter(e => e.id === 's3' || e.type === 'portal')) {
     assert.ok(e.x > room.x && e.x < room.x + room.w && e.y > room.y && e.y < room.y + room.h);
   }
   assert.ok(l.entities.find(e=>e.type==='portal').x < l.decorations.find(d=>d.kind==='vanity').x);
 });
-test('家具碰撞覆盖整个桌镜；删掉背面镜子的碰撞瓦片会失败',()=>{
+test('后台桌身实心、镜背上部仅遮挡，非法脚底矩形由共享边界拒绝',()=>{
   const g=clone(v.selectLevel(game,1)), l=g.levels[0];
   const mirror=l.decorations.find(d=>d.kind==='vanity'&&d.facing==='north');
-  const r=mirror.collision;
-  assert.equal(r.w,3);assert.equal(r.h,3);
-  const rows=l.map.rows.map(row=>row.split(''));rows[r.y][r.x]='·';l.map.rows=rows.map(row=>row.join(''));
-  const R=v.makeReport();v.rule2(g,R);assert.ok(R.errors.some(e=>e.msg.includes('碰撞范围')));
+  const C=require('../js/collision.js'),compiled=C.compile(l),r=compiled.rects.find(r=>r.source===mirror);
+  assert.ok(r);
+  assert.equal(C.blockedAt(compiled.rects,r.x+1,r.y+1,2,2),true);
+  assert.equal(C.blockedAt(compiled.rects,r.x+1,mirror.y*16+1,2,2),false,'镜背顶端不能作为地面大矩形');
+  mirror.collisionRects[0].w=0;
+  const R=v.makeReport();v.rule2(g,R);assert.ok(R.errors.some(e=>e.msg.includes('碰撞')));
 });
 test('唱片机状态图：唱片被封死时不能直接播放开后台，道具引用缺失会报错', () => {
   const rows=Array.from({length:28},()=>Array(40).fill('#'));
@@ -200,7 +204,7 @@ test('精确家具搜索复用静态列表；同一关卡修改后重新搜索�
     decorations.push({ room: 'hall', collision: { x: 3, y: 1, w: 1, h: 1 } });
     assert.ok(!reachable(search(level)), '新增家具阻断通路');
     decorations[0].room = 'backstage';
-    assert.ok(reachable(search(level)), '后台家具不加入礼堂碰撞');
+    assert.ok(!reachable(search(level)), '所有房间使用世界坐标，room 标签不使碰撞失效');
     level.party.colliders = [{ x: 3, y: 1, w: 1, h: 1 }];
     assert.ok(!reachable(search(level)), '替换静态碰撞列表后重新搜索不能使用旧缓存');
     level.party.colliders = [];

@@ -60,6 +60,13 @@ test('持续位移与斜向移动在 15/30/60/144fps 下不能跨过亚像素薄
   assert.equal(C.trace(0,16,64,0,blocked).blocked,true,'大步长也检查中段');
 });
 
+test('#86 两条后台主过道扣除 5px 脚底后仍有 36px 连续净宽',()=>{
+  const level=v.loadGame().game.levels[0],mechanics=engine.createMechanics(level),f=level.party.footprint;
+  for(const top of [101,261])for(let y=top;y<=top+36;y++)for(let x=144;x<=406;x++){
+    assert.equal(mechanics.blockedAt(40*16+x+f.x,3*16+y+f.y,f.w,{height:f.h}),false,'横向主过道被家具或墙体封死');
+  }
+});
+
 test('相邻块接缝不漏，沿外边缘滑行不误挡',()=>{
   const rects=[{x:32,y:0,w:4,h:16},{x:32,y:16,w:4,h:16}];
   assert.equal(C.trace(16,13.5,32,0,(x,y)=>C.blockedAt(rects,x,y,8,5)).blocked,true);

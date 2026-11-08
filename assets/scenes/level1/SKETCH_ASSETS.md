@@ -1,5 +1,15 @@
 # 用户草图版场景素材（2026-10-26）
 
+## #86 后台确认版（2026-11-08，已本地接入）
+
+- 当前运行与预览使用 `backstage-room-v5.webp`：清理十个背向镜面台子后沿的用品，正面镜台用品保留；PNG 原稿与生成局部保存在 `docs/previews/issue86/sources/`，不随站点发布。[编辑记录与合成范围](backstage-room-v5.prompt.md)。
+- `backstage-room-v4.png`：保留 Taylor Swift 海报，中间鲸鱼和右侧海浪取自 v2 并放入现有画框；两个取样框外像素与 v3 完全一致。[还原记录与取样框](backstage-room-v4.prompt.md)。
+- `backstage-room-v3.png`：20 个镜面及镜背改为矩形，北墙海报换成 Taylor Swift、Beyoncé、Adele 的像素风演唱肖像；圆凳与独立人物叠层沿用原方案。[完整编辑提示词](backstage-room-v3.prompt.md)。
+- `backstage-room-v2.png`：仅修订右侧入口，露出门洞、内侧墙框与地板门槛，蓝幕收在框内；原图 (1190,700,137,255) 区域外 RGBA 像素与 v1 完全一致。[完整编辑提示词](backstage-room-v2.prompt.md)。
+- `backstage-room-v1.png`：内置 image_gen 以当前 `birthday-hall-v3.webp` 为风格参考生成的独立后台底图，保留原输出；不含人物、星光门和奖励。未替换旧素材，旧版本未加入运行清单。
+- [完整提示词与取样方式](backstage-room-v1.prompt.md)。整张图对应 448×400 逻辑像素；预览中的实际人物由现有 `party.muses` 与 `Birthday.cachedFrames` 叠放，成人仍高 40px。
+- 对照、动线和候选位置见 [`docs/previews/issue86/README.md`](../../../docs/previews/issue86/README.md)。`js/data.js` 配置精确地面矩形和独立轮廓遮挡；沿用旧到达标记与 (65,20) 落点，未更改存档格式。
+
 根据用户提供的礼堂 / 后台两张草图布置。人物仍为占位标记。
 
 内置 `image_gen` 生成的素材现统一为无损 WebP，保持原始 RGBA 与透明 alpha，旧版素材同样转换保留。
