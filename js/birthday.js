@@ -286,6 +286,10 @@
       c.fillText(feedback?r.message:r.phase==='flight'?'咻——愿望出发！':'看准时机，让愿望落进圈里',160,194);
       c.restore();
     }
+    /**
+     * 绘制当前房间的完整底图；图片未就绪时交由调用方绘制瓦片降级背景。
+     * @returns {boolean} 当前房间底图是否已成功绘制。
+     */
     drawBackground(){
       const g=this.g;
       const background=this.inHall()?g.level.party.background:g.level.party.backstageBackground;
@@ -394,6 +398,11 @@
       c.save();c.beginPath();c.rect(x,y,40,30);c.clip();
       this.drawSprite(actor,false);c.restore();
     }
+    /**
+     * 按脚底深度绘制当前房间的人物与家具轮廓，并保留唱片和鼓组的前景顺序。
+     * 家具从所属房间底图原位取样，仅覆盖轮廓内部，不重画周围地板。
+     * @returns {void}
+     */
     drawActors(){
       const g=this.g,area=g._currentArea().id;
       const actors=g.level.entities.filter(e=>['npc','guest'].includes(e.type)&&(!e.room||e.room===area));
@@ -458,6 +467,14 @@
       c.restore();
     }
   }
+  /**
+   * 将世界瓦片坐标映射到房间底图，并按装饰的局部归一化轮廓裁切重画。
+   * @param {object} g 当前游戏实例，提供绘图上下文与摄像机像素偏移。
+   * @param {HTMLImageElement} img 已加载的房间运行底图。
+   * @param {object} d 装饰的世界瓦片范围及局部归一化遮挡轮廓。
+   * @param {{x:number,y:number,w:number,h:number}} background 底图对应的世界瓦片范围。
+   * @returns {void}
+   */
   function ctxDraw(g,img,d,background){
     const ctx=g.renderer.ctx,shapes=d.occlusionShapes||(d.occlusionShape?[d.occlusionShape]:null);
     if(shapes && typeof ctx.clip==='function'){
