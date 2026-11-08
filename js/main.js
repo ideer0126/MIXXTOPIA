@@ -1347,6 +1347,12 @@
       return false;
     }
 
+    /**
+     * 执行已通过入口条件与确认的房间切换，保留当前星星和对话进度。
+     * 同步场景素材、到达标记、入场渐亮、相机与 HUD，并发出 room 事件。
+     * @param {{id: string, to: {x: number, y: number}, arrivalNode?: string, fadeIn?: boolean}} door 当前关卡的房间入口实体，落点使用瓦片坐标。
+     * @returns {void}
+     */
     _enterRoom(door) {
       this.player.x = door.to.x * TILE; this.player.y = door.to.y * TILE;
       this._loadSceneryAssets();
@@ -3388,7 +3394,12 @@
       this._text(this._ui.dialogHint, '↑↓ 选择 · E / A 确认 · 可点选');
     }
 
-    /** 键盘、虚拟按键与点击共用同一选项处理。 */
+    /**
+     * 处理键盘、虚拟按键或点击选中的对话选项；非选项状态不执行任何操作。
+     * 直接选项先恢复游玩再调用 onChoice；剧情分支播放 goto 节点并保留完成回调。
+     * @param {number} index 当前对话选项数组中的有效下标，由选项光标或按钮提供。
+     * @returns {void}
+     */
     _chooseDialogOption(index) {
       const d = this._dialog;
       if (this.state !== STATE.DIALOGUE || !d || !d.optionsShown) return;
