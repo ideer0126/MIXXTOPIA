@@ -129,6 +129,14 @@ test('礼堂 / 后台对话与角色齐全；出口落点不能指向墙体或�
     const r = v.makeReport(); v.rule5(bad, r); assert.ok(r.errors.length);
   }
 });
+test('后台确认文案完整；缺失、空白或非字符串文案不能通过校验', () => {
+  for (const field of ['text', 'accept', 'cancel']) for (const invalid of [undefined, null, '', ' \t ', 42]) {
+    const g = clone(v.selectLevel(game, 1));
+    g.levels[0].entities.find(e => e.id === 'to-backstage').confirmation[field] = invalid;
+    const R = v.makeReport(); v.rule5(g, R);
+    assert.ok(R.errors.some(e => e.msg.includes('confirmation')), field + ' 应拒绝 ' + JSON.stringify(invalid));
+  }
+});
 test('后台确认版：20 个独立桌镜与圆凳、右向星光门、整图与轮廓分开', () => {
   const l = game.levels[0];
   const chairs = l.decorations.filter(d => d.kind === 'chair');

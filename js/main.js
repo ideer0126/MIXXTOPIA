@@ -1331,15 +1331,35 @@
           if (e.enterFrom === 'west' && this.facing.x <= 0) continue;
           if (e.enterFrom === 'south'
             && (this.facing.y >= 0 || beforeMove.y < (e.y + 1) * TILE)) continue;
-          this.player.x = e.to.x * TILE; this.player.y = e.to.y * TILE;
-          this._loadSceneryAssets();
-          if (e.arrivalNode) this._playedNodes.add(e.arrivalNode);
-          if (e.fadeIn) this._entryFade = Number(this.level.entryFade) || 0;
-          this._followCamera(); this._refreshHud();
-          this._emit('room', { id: e.id }); return true;
+          if (e.confirmation && !this._playedNodes.has(e.arrivalNode)) {
+            this._playNode('roomdoor:' + e.id, {
+              node: {
+                lines: [{ s: 'nar', t: e.confirmation.text }],
+                options: [{ label: e.confirmation.accept }, { label: e.confirmation.cancel }],
+              },
+              // 取消后留在入口重叠区；原有跨入判定要求先离开再向上走入。
+              onChoice: index => { if (index === 0) this._enterRoom(e); },
+            });
+          } else this._enterRoom(e);
+          return true;
         }
       }
       return false;
+    }
+
+    /**
+     * 执行已通过入口条件与确认的房间切换，保留当前星星和对话进度。
+     * 同步场景素材、到达标记、入场渐亮、相机与 HUD，并发出 room 事件。
+     * @param {{id: string, to: {x: number, y: number}, arrivalNode?: string, fadeIn?: boolean}} door 当前关卡的房间入口实体，落点使用瓦片坐标。
+     * @returns {void}
+     */
+    _enterRoom(door) {
+      this.player.x = door.to.x * TILE; this.player.y = door.to.y * TILE;
+      this._loadSceneryAssets();
+      if (door.arrivalNode) this._playedNodes.add(door.arrivalNode);
+      if (door.fadeIn) this._entryFade = Number(this.level.entryFade) || 0;
+      this._followCamera(); this._refreshHud();
+      this._emit('room', { id: door.id });
     }
 
     /** 集齐星星后传送门激活；接触传送门 → 先播过关台词（clear:<关卡id>，once），播完结算 */
@@ -3038,7 +3058,7 @@
     /**
      * 播放对话节点：进入对话态，从第一行开始打字机显示。
      * @param {string} nodeId 对话节点 id
-     * @param {object} [opts] { autoChain: 自动串联 next（自动事件用）, onEnd: 完成回调 }
+     * @param {object} [opts] { autoChain: 自动串联 next, onEnd: 完成回调, onChoice: 直接处理选项 }
      */
     _playNode(nodeId, opts) {
       opts = opts || {};
@@ -3065,6 +3085,7 @@
         next: node.next || null,      // intro 的后续指向 / 自动事件的串联节点
         autoChain: !!opts.autoChain,  // 自动事件才在节点结束后自动播放 next
         onEnd: opts.onEnd || null,    // 完成回调（如 clear 播完 → 结算）
+        onChoice: opts.onChoice || null,
       };
       this._setState(STATE.DIALOGUE);
       this._startDialogLine();
@@ -3254,10 +3275,7 @@
           d.optIdx++;
           this._renderOptions();
         } else if (pressed) {
-          const opt = d.options[d.optIdx];
-          const onEnd = d.onEnd;
-          this._clearOptionsBox();
-          this._playNode(opt.goto, { onEnd: onEnd });
+          this._chooseDialogOption(d.optIdx);
         }
         return;
       }
@@ -3363,12 +3381,36 @@
       this._clearOptionsBox();
       if (!d.options) return;
       for (let i = 0; i < d.options.length; i++) {
-        const el = this.doc.createElement('div');
+        const el = this.doc.createElement('button');
+        el.type = 'button';
         el.className = 'dialog-option' + (i === d.optIdx ? ' selected' : '');
         el.textContent = (i === d.optIdx ? '▸ ' : '　') + d.options[i].label;
+        el.addEventListener('click', event => {
+          event.stopPropagation();
+          this._chooseDialogOption(i);
+        });
         box.appendChild(el);
       }
-      this._text(this._ui.dialogHint, '↑↓ 选择 · E 确认');
+      this._text(this._ui.dialogHint, '↑↓ 选择 · E / A 确认 · 可点选');
+    }
+
+    /**
+     * 处理键盘、虚拟按键或点击选中的对话选项；非选项状态不执行任何操作。
+     * 直接选项先恢复游玩再调用 onChoice；剧情分支播放 goto 节点并保留完成回调。
+     * @param {number} index 当前对话选项数组中的有效下标，由选项光标或按钮提供。
+     * @returns {void}
+     */
+    _chooseDialogOption(index) {
+      const d = this._dialog;
+      if (this.state !== STATE.DIALOGUE || !d || !d.optionsShown) return;
+      const opt = d.options[index];
+      if (d.onChoice) {
+        this._setState(STATE.PLAYING);
+        d.onChoice(index);
+      } else {
+        this._clearOptionsBox();
+        this._playNode(opt.goto, { onEnd: d.onEnd });
+      }
     }
 
     /** 清空选项容器（textContent 与 children 都清，兼容真 DOM 与测试桩） */
@@ -3379,7 +3421,7 @@
       if (Array.isArray(box.children)) box.children.length = 0;
     }
 
-    /** 点击对话框 = 点按：打字中立即显示全文，显示完则翻页（GAME_DESIGN §7 点击翻页；选项模式仅键盘操作） */
+    /** 点击对话框 = 点按：打字中立即显示全文，显示完则翻页；选项由按钮处理。 */
     _tapDialog() {
       if (this.state !== STATE.DIALOGUE) return;
       const d = this._dialog;

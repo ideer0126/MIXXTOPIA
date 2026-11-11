@@ -1083,9 +1083,14 @@ body.recovery-page {
 }
 
 .dialog-option {
+  min-height: 44px;
   padding: 4px 8px;
+  font-family: inherit;
   font-size: 11px;
   line-height: 1.6;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
   color: #c9b8e8;
   border: 1px dashed rgba(201, 184, 232, 0.45);
   border-radius: 4px;

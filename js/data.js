@@ -245,7 +245,12 @@
             "visual": "curtain",
             "fadeIn": true,
             "enterFrom": "south",
-            "arrivalNode": "l1.backstage.arrived"
+            "arrivalNode": "l1.backstage.arrived",
+            "confirmation": {
+              "text": "蓝色幕布后，是生日会的下一幕。进入后台后，暂时无法回到礼堂。准备好继续了吗？",
+              "accept": "进入后台",
+              "cancel": "再逛一会儿"
+            }
           },
           {
             "type": "star",
