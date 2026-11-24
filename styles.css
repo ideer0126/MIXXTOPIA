@@ -176,6 +176,17 @@ body {
   background: rgba(255, 200, 87, 0.32);
 }
 
+#tbtn-d {
+  grid-area: 2 / 1;
+  justify-self: start;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border-color: #a6dadd;
+  background: rgba(94, 230, 184, 0.32);
+  pointer-events: auto;
+}
+
 /* ── 屏幕层与菜单（Issue #6）── */
 
 /* 全屏覆盖层：标题/帮助/暂停/结算/结局共用；叠在画布之上 */

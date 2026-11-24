@@ -598,9 +598,10 @@
       }
       const height = opts && opts.height > 0 ? opts.height : size;
       const inset = this.level.party && this.level.party.preciseCollision ? .001 : 1;
-      const x0 = Math.floor(px / TILE);
+      // 连续移动可能得到 303.9999999999999；吸收浮点误差，避免单格门口误碰相邻墙。
+      const x0 = Math.floor((px + 1e-7) / TILE);
       const x1 = Math.floor((px + size - inset) / TILE);
-      const y0 = Math.floor(py / TILE);
+      const y0 = Math.floor((py + 1e-7) / TILE);
       const y1 = Math.floor((py + height - inset) / TILE);
       for (let ty = y0; ty <= y1; ty++) {
         for (let tx = x0; tx <= x1; tx++) {
@@ -619,6 +620,7 @@
     /** 箱子能否落到目标瓦片：地形、关闭的门、其他箱子均阻挡 */
     _canPlaceBox(tx, ty, box) {
       if (tx < 0 || ty < 0 || tx >= this.map.w || ty >= this.map.h) return false;
+      if (box.rail && (tx < box.rail.x || tx >= box.rail.x + box.rail.w || ty < box.rail.y || ty >= box.rail.y + box.rail.h)) return false;
       if (this.isSolidTile(tx, ty)) return false;
       const gate = this.entityAtTile(tx, ty, 'gate');
       if (gate) return false; // 门格不接受箱子，避免箱子在门闭合后阻挡通路
@@ -772,6 +774,13 @@
       this.hurtFlash = 0;
       this.time = 0;
       this.down = false;
+      this.tactical = !!this.level.corridor;
+      this.vents = (this.level.corridor?.vents || []).map(v => ({ ...v, phase: v.offset, burned: new Set(), playerHit: false }));
+      this.traps = (this.level.corridor?.traps || []).map(t => ({ ...t, phase: 'idle', timer: 0,
+        disabled: false, playerHit: false, victims: new Set(), cycle: -1 }));
+      this.darts = [];
+      this.dashCooldown = 0;
+      this.dashTrail = null;
       this.attackRange = COMBAT_TUNING.attackRange;
       this.cannonRange = COMBAT_TUNING.cannon.range;
       this.enemies = [];
@@ -807,6 +816,7 @@
           dead: false,
           hurt: 0,
           moving: false,
+          tell: null, blast: null, recovery: 0,
         });
       }
     }
@@ -998,6 +1008,10 @@
         if (!this._hitsEnemy(player, dir, range, width, enemy, mechanics)) continue;
         enemy.hp -= spec.damage;
         enemy.hurt = 0.2;
+        if (this.tactical && (kind === 'heavy' || cannon)) {
+          enemy.tell = null;
+          enemy.recovery = 0.8;
+        }
         this._knockEnemy(enemy, dir, spec.knockback, mechanics);
         const dead = enemy.hp <= 0;
         if (dead) {
@@ -1064,6 +1078,23 @@
         && enemy.y < player.y + 16 && enemy.y + enemy.size > player.y;
     }
 
+    /** 长廊闪步：三格位移逐段检查墙 / 关闭的门，短暂无敌，独立冷却。 */
+    dash(player, mechanics) {
+      if (!this.tactical || this.down || this.dashCooldown > 0) return false;
+      const origin = { x: player.x, y: player.y };
+      const length = Math.hypot(this.facing.x, this.facing.y);
+      for (let step = 0; step < 12; step++) {
+        const x = player.x + this.facing.x / length * 4, y = player.y + this.facing.y / length * 4;
+        if (mechanics.blockedAt(x, y, 16)) break;
+        player.x = x; player.y = y;
+      }
+      if (player.x === origin.x && player.y === origin.y) return false;
+      this.dashCooldown = 1.1;
+      this.invuln = Math.max(this.invuln, 0.18);
+      this.dashTrail = { x: origin.x, y: origin.y, endX: player.x, endY: player.y, left: 0.18 };
+      return true;
+    }
+
     /**
      * 每帧推进：冷却/无敌帧/被动充能/敌人 AI/接触伤害。
      * @returns {Array<object>} 事件：energy-full / player-hit / player-down
@@ -1072,6 +1103,11 @@
       const d = clamp(Number(dt) || 0, 0, 0.05);
       const events = [];
       this.time += d;
+      this.dashCooldown = Math.max(0, this.dashCooldown - d);
+      if (this.dashTrail) {
+        this.dashTrail.left -= d;
+        if (this.dashTrail.left <= 0) this.dashTrail = null;
+      }
       if (this.cooldown > 0) this.cooldown = Math.max(0, this.cooldown - d);
       if (this.invuln > 0) this.invuln = Math.max(0, this.invuln - d);
       if (this.hurtFlash > 0) this.hurtFlash = Math.max(0, this.hurtFlash - d);
@@ -1093,30 +1129,166 @@
         const enemy = this.enemies[i];
         if (enemy.dead) continue;
         if (enemy.hurt > 0) enemy.hurt = Math.max(0, enemy.hurt - d);
-        this._moveEnemy(enemy, d, player, mechanics);
-        if (this.invuln <= 0 && this._enemyTouchesPlayer(enemy, player)) {
-          const dx = (player.x + 8) - (enemy.x + enemy.size / 2);
-          const dy = (player.y + 8) - (enemy.y + enemy.size / 2);
-          const len = Math.sqrt(dx * dx + dy * dy) || 1;
-          this.hp = Math.max(0, this.hp - enemy.damage);
-          this.invuln = COMBAT_TUNING.invuln;
-          this.hurtFlash = 0.25;
-          events.push({
-            type: 'player-hit',
-            damage: enemy.damage,
-            hp: this.hp,
-            enemy: enemy,
-            dir: { x: dx / len, y: dy / len },
-            knockback: COMBAT_TUNING.playerKnockback,
-          });
-          if (this.hp <= 0) {
-            this.down = true;
-            events.push({ type: 'player-down' });
-            break;
+        let hitsPlayer = false;
+        if (this.tactical) {
+          enemy.moving = false;
+          enemy.recovery = Math.max(0, enemy.recovery - d);
+          if (enemy.blast) {
+            enemy.blast.left -= d;
+            if (enemy.blast.left <= 0) enemy.blast = null;
           }
+          if (enemy.tell) {
+            enemy.tell.left -= d;
+            if (enemy.tell.left <= 0) {
+              const hit = enemy.tell;
+              enemy.blast = { ...hit, left: 0.2 };
+              enemy.tell = null;
+              enemy.recovery = enemy.kind === 'wisp' ? 1.1 : 0.8;
+              hitsPlayer = Math.hypot(player.x + 8 - hit.x, player.y + 8 - hit.y) <= hit.radius + 6
+                && this.hasLineOfSight(mechanics, enemy.x + enemy.size / 2, enemy.y + enemy.size / 2, player.x + 8, player.y + 8);
+            }
+          } else if (enemy.recovery <= 0) {
+            const distance = Math.hypot(player.x + 8 - enemy.x - enemy.size / 2, player.y + 8 - enemy.y - enemy.size / 2);
+            const ranged = enemy.kind === 'wisp';
+            if (distance <= (ranged ? 88 : 30) && this.hasLineOfSight(mechanics, enemy.x + enemy.size / 2, enemy.y + enemy.size / 2, player.x + 8, player.y + 8)) {
+              const duration = ranged ? 0.9 : 0.6;
+              enemy.tell = { x: ranged ? player.x + 8 : enemy.x + enemy.size / 2,
+                y: ranged ? player.y + 8 : enemy.y + enemy.size / 2,
+                radius: ranged ? 20 : 24, left: duration, duration };
+            } else this._moveEnemy(enemy, d, player, mechanics);
+          }
+        } else {
+          this._moveEnemy(enemy, d, player, mechanics);
+          hitsPlayer = this._enemyTouchesPlayer(enemy, player);
+        }
+        if (this.invuln <= 0 && hitsPlayer) {
+          this._hurtPlayer(enemy, player, events);
+          if (this.down) break;
         }
       }
+      if (this.down) return events;
+      // 喷口只占部分通道，预警后喷发；同次喷发对每只敌人结算一次。
+      for (const vent of this.vents) {
+        vent.phase = (this.time + vent.offset) % 5;
+        if (vent.phase < 4) { vent.burned.clear(); vent.playerHit = false; continue; }
+        const x = vent.x * TILE, y = vent.y * TILE, w = vent.w * TILE, h = vent.h * TILE;
+        const overlaps = (p, size) => p.x < x + w && p.x + size > x && p.y < y + h && p.y + size > y;
+        if (!this.down && !vent.playerHit && this.invuln <= 0 && overlaps(player, 16)) {
+          vent.playerHit = true;
+          this._hurtPlayer({ id: vent.id, kind: 'steam', x: x + w / 2, y: y + h / 2, size: 0, damage: 1 }, player, events);
+          if (this.down) break;
+        }
+        for (const enemy of this.enemies) {
+          if (enemy.dead || vent.burned.has(enemy.id) || !overlaps(enemy, enemy.size)) continue;
+          vent.burned.add(enemy.id); enemy.hp = Math.max(0, enemy.hp - 2);
+          enemy.hurt = 0.25; enemy.tell = null; enemy.recovery = 0.8;
+          enemy.dead = enemy.hp === 0;
+          events.push({ type: 'enemy-burn', enemy, dead: enemy.dead });
+        }
+      }
+      if (!this.down) this._updateTraps(d, player, mechanics, events);
       return events;
+    }
+
+    /** 箭阵自动周期发射；两道地刺定时升降；闸刃沿实体轨道往复。 */
+    _updateTraps(dt, player, mechanics, events) {
+      for (const t of this.traps) {
+        if (t.disabled) continue;
+        if (t.kind === 'blade') {
+          const cycle = Math.floor((this.time + t.offset) / 6);
+          if (t.cycle !== cycle) { t.cycle = cycle; t.playerHit = false; t.victims.clear(); }
+          const phase = (this.time + t.offset) % 6;
+          // 两端各停一秒，两秒匀速行进；普通步行也能利用空隙穿过。
+          const progress = phase < 1 ? 0 : phase < 3 ? (phase - 1) / 2 : phase < 4 ? 1 : (6 - phase) / 2;
+          const x = (t.x + .5) * TILE;
+          const y = (this.level.corridor.top + 1.5 + progress * (this.level.corridor.bottom - this.level.corridor.top - 2)) * TILE;
+          const px = t.bx ?? x, py = t.by ?? y;
+          const steps = Math.max(1, Math.ceil(Math.hypot(x-px,y-py)/3));
+          for (let i=0;i<=steps;i++) {
+            const bx=px+(x-px)*i/steps, by=py+(y-py)*i/steps;
+            if (!t.playerHit && this.invuln<=0 && Math.abs(player.x+8-bx)<=22 && Math.abs(player.y+8-by)<=18) {
+              t.playerHit=true; this._hurtPlayer({id:t.id,kind:t.kind,x:bx,y:by,size:0,damage:1},player,events);
+              if (this.down) break;
+            }
+            for (const enemy of this.enemies) if (!enemy.dead && !t.victims.has(enemy.id)
+              && Math.abs(enemy.x+enemy.size/2-bx)<=14+enemy.size/2 && Math.abs(enemy.y+enemy.size/2-by)<=10+enemy.size/2) {
+              t.victims.add(enemy.id); this._hurtTrapEnemy(enemy,2,events,t.kind);
+            }
+          }
+          t.bx=x;t.by=y;t.phase='active';
+        } else if (t.kind === 'spikes') {
+          const cycle = Math.floor((this.time + t.offset) / 4.6);
+          if (t.cycle !== cycle) { t.cycle = cycle; t.playerHit = false; t.victims.clear(); }
+          const phase = (this.time + t.offset) % 4.6;
+          const next = phase < 2.4 ? 'cooldown' : phase < 3.4 ? 'warning' : 'active';
+          if (next === 'warning' && t.phase !== next && Math.abs(player.x-(t.x+t.w/2)*TILE)<160)
+            events.push({ type: 'trap-trigger', id: t.id });
+          t.phase = next;
+          t.timer = (next === 'cooldown' ? 2.4 : next === 'warning' ? 3.4 : 4.6) - phase;
+          if (next !== 'active') continue;
+          const overlaps = (p, size) => p.x < (t.x + t.w) * TILE && p.x + size > t.x * TILE
+            && p.y < (t.y + t.h) * TILE && p.y + size > t.y * TILE;
+          if (!t.playerHit && this.invuln <= 0 && overlaps(player, 16)) {
+            t.playerHit = true;
+            this._hurtPlayer({ id: t.id, kind: t.kind, x: (t.x + t.w / 2) * TILE,
+              y: (t.y + t.h / 2) * TILE, size: 0, damage: 1 }, player, events);
+          }
+          for (const enemy of this.enemies) if (!enemy.dead && !t.victims.has(enemy.id) && overlaps(enemy, enemy.size)) {
+            t.victims.add(enemy.id); this._hurtTrapEnemy(enemy, 2, events, t.kind);
+          }
+        } else {
+          const cycle = Math.floor((this.time + t.offset) / 5);
+          const phase = (this.time + t.offset) % 5;
+          const next = phase < 2.5 ? 'cooldown' : phase < 3.5 ? 'warning' : 'active';
+          if (next === 'warning' && t.phase !== next && Math.abs(player.x-(t.x+t.w/2)*TILE)<160)
+            events.push({ type: 'trap-trigger', id: t.id });
+          if (next === 'active' && t.cycle !== cycle) {
+            t.cycle = cycle;
+            for (let col=0;col<t.w;col++) this.darts.push({trap:t.id,
+              x:(t.x+col+.5)*TILE,
+              y:t.dir>0?this.level.corridor.top*TILE+2:(this.level.corridor.bottom+1)*TILE-4,dir:t.dir});
+          }
+          t.phase = next;
+          t.timer = (next === 'cooldown' ? 2.5 : next === 'warning' ? 3.5 : 5) - phase;
+        }
+        if (this.down) return;
+      }
+      // 飞箭逐段推进，碰到墙、关闭门、玩家或敌人即停止，避免只画弹道却瞬间结算。
+      for (const dart of this.darts) {
+        const distance=160*dt, steps=Math.max(1,Math.ceil(distance/3));
+        for (let i=0;i<steps && !dart.dead;i++) {
+          dart.y+=distance/steps*dart.dir;
+          if (mechanics.blockedAt(dart.x,dart.y,2)) { dart.dead=true;break; }
+          if (dart.x>=player.x-2 && dart.x<=player.x+18 && dart.y>=player.y-2 && dart.y<=player.y+18) {
+            dart.dead=true;
+            if (this.invuln<=0) this._hurtPlayer({id:dart.trap,kind:'darts',x:dart.x,y:dart.y,size:0,damage:1},player,events);
+            if(this.down) return;
+            break;
+          }
+          const enemy=this.enemies.find(e=>!e.dead && dart.x>=e.x-2 && dart.x<=e.x+e.size+2 && dart.y>=e.y-2 && dart.y<=e.y+e.size+2);
+          if (enemy) { dart.dead=true;this._hurtTrapEnemy(enemy,2,events,'darts'); }
+        }
+      }
+      this.darts=this.darts.filter(d=>!d.dead);
+    }
+
+    _hurtTrapEnemy(enemy, damage, events, source) {
+      enemy.hp=Math.max(0,enemy.hp-damage);enemy.hurt=.25;enemy.tell=null;enemy.recovery=.8;
+      enemy.dead=enemy.hp===0;
+      events.push({type:'enemy-trap',enemy,dead:enemy.dead,source});
+    }
+
+    /** 敌人出招与环境共用受伤 / 无敌 / 倒下结算。 */
+    _hurtPlayer(source, player, events) {
+      const dx = player.x + 8 - source.x - source.size / 2;
+      const dy = player.y + 8 - source.y - source.size / 2;
+      const len = Math.hypot(dx, dy) || 1;
+      this.hp = Math.max(0, this.hp - source.damage);
+      this.invuln = COMBAT_TUNING.invuln;
+      this.hurtFlash = 0.25;
+      events.push({ type: 'player-hit', damage: source.damage, hp: this.hp, enemy: source,
+        dir: { x: dx / len, y: dy / len }, knockback: COMBAT_TUNING.playerKnockback });
+      if (this.hp <= 0) { this.down = true; events.push({ type: 'player-down' }); }
     }
 
     /** 倒下后复位：满血 + 无敌帧 + 敌人回到出生点（星星等进度不变） */
@@ -1125,6 +1297,8 @@
       this.down = false;
       this.cooldown = 0;
       this.swing = null;
+      this.dashCooldown = 0;
+      this.dashTrail = null;
       this.invuln = COMBAT_TUNING.respawnInvuln;
       this.hurtFlash = 0;
       this.resetEnemies();
@@ -1133,6 +1307,11 @@
 
     /** 敌人复位（重开关卡 / 玩家倒下共用；能量与星星进度保留） */
     resetEnemies() {
+      this.darts=[];
+      for(const t of this.traps) {
+        t.phase='idle';t.timer=0;t.playerHit=false;t.victims.clear();t.bx=undefined;t.by=undefined;t.cycle=-1;
+      }
+      for (const vent of this.vents) { vent.burned.clear(); vent.playerHit = false; }
       for (let i = 0; i < this.enemies.length; i++) {
         const e = this.enemies[i];
         e.x = e.spawnX;
@@ -1141,6 +1320,7 @@
         e.dead = false;
         e.hurt = 0;
         e.moving = false;
+        e.tell = null; e.blast = null; e.recovery = 0;
       }
     }
 
@@ -1167,6 +1347,9 @@
     confirm: ['e', ' ', 'enter'],
     light: ['f'],
     heavy: ['g'],
+    dash: ['shift'],
+    hint: ['h'],
+    assist: ['j'],
     pause: ['escape'],
     mute: ['m'],
   };
@@ -1176,7 +1359,7 @@
   /** 触屏按钮 data-key → 动作名（A 确认；B 轻击；C 重击；#18） */
   const TOUCH_ACTIONS = {
     up: 'up', down: 'down', left: 'left', right: 'right',
-    action: 'confirm', light: 'light', heavy: 'heavy',
+    action: 'confirm', light: 'light', heavy: 'heavy', dash: 'dash',
   };
 
   /** 粗指针（触屏）设备检测：pointer 媒体查询优先，触摸能力兜底 */

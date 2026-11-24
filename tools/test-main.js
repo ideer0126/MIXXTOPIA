@@ -38,7 +38,7 @@ const { FakeCanvas } = require('./stub-canvas.js');
 
 /** main.js _cacheUI 需要的全部 id（与 index.html 一致） */
 const UI_IDS = [
-  'hud', 'hud-level', 'hud-shards', 'hud-hp', 'hud-objective', 'tbtn-b', 'tbtn-c',
+  'hud', 'hud-level', 'hud-shards', 'hud-hp', 'hud-objective', 'tbtn-b', 'tbtn-c', 'tbtn-d',
   'hud-energy', 'hud-energy-fill', 'hud-energy-label',
   'title-screen', 'btn-start', 'btn-continue', 'btn-saves', 'btn-help', 'btn-sound',
   'save-screen', 'save-note', 'cloud-status', 'title-cloud-status', 'cloud-merge',
@@ -226,6 +226,7 @@ vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/account.js'), 'utf8'), s
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/cloud.js'), 'utf8'), sandbox, { filename: 'js/cloud.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/stats.js'), 'utf8'), sandbox, { filename: 'js/stats.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/birthday.js'), 'utf8'), sandbox, { filename: 'js/birthday.js' });
+vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/lantern.js'), 'utf8'), sandbox, { filename: 'js/lantern.js' });
 vm.runInContext(fs.readFileSync(path.join(repoRoot, 'js/main.js'), 'utf8'), sandbox, { filename: 'js/main.js' });
 
 const main = sandbox.MIXX.main;
@@ -420,11 +421,11 @@ function collectAll(game) {
 
 /* ─────────────────── 1. 常量与 API ─────────────────── */
 
-test('公开 API：STATE 六态齐全、Game/boot/formatTime 暴露', () => {
+test('公开 API：STATE 七态齐全、Game/boot/formatTime 暴露', () => {
   assert.ok(main, 'MIXX.main 未暴露');
   assert.deepStrictEqual(
     Object.keys(STATE).sort(),
-    ['CLEAR', 'DIALOGUE', 'ENDING', 'PAUSED', 'PLAYING', 'TITLE']
+    ['CLEAR', 'DIALOGUE', 'ENDING', 'PAUSED', 'PLAYING', 'PUZZLE', 'TITLE']
   );
   assert.strictEqual(STATE.TITLE, 'title');
   assert.strictEqual(STATE.PLAYING, 'playing');
@@ -2140,9 +2141,11 @@ testAsync('token 过期（#43/#44）：进入标题自动续期，登录态保�
 
 /* ─────────────────── 序章（#11 分步接入） ─────────────────── */
 
-function prologueData() {
+function prologueData(opts = {}) {
   const data = {};
   vm.runInNewContext(fs.readFileSync(path.join(repoRoot, 'js/data.js'), 'utf8'), data);
+  // 既有第一关用例保留“下一关未制作”的独立验收；跨关用例使用全部正式地图。
+  if (!opts.allLevels) data.GAME.levels = data.GAME.levels.filter(l => l.id === 1);
   return data.GAME;
 }
 
@@ -2334,6 +2337,369 @@ test('序章：缺少场景或入口台词时直接进入第一关', () => {
 /* ─────────────────── 第一关正式地图 ─────────────────── */
 
 const level1Run = require('./play-level1.js');
+const level2Run = require('./play-level2.js');
+
+test('第二关光路：独立画面冻结战斗，旋镜可恢复，退出不耗油，确认点灯与旧档兼容', () => {
+  withGAME(prologueData({ allLevels: true }), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game); game._loadLevel(1);
+      level2Run.walkToEntity(game, 'oil1'); level2Run.walkToEntity(game, 'lamp1'); game._interact();
+      assert.equal(game.state, STATE.PUZZLE); assert.ok(!shown('hud'));
+      const combat = JSON.stringify(game.combat), player = JSON.stringify(game.player);
+      game._update(.5);
+      assert.equal(JSON.stringify(game.combat), combat, '解题时敌人、伤害与充能冻结');
+      assert.equal(JSON.stringify(game.player), player);
+      const initial = Array.from(game.lantern.angles);
+      const progress = Array.from(game._playedNodes);
+      assert.equal(game.lantern.hint, null, '默认只提供规则，不泄露答案');
+      game.input._pressed.add('hint'); game._update(0); game.input.endFrame();
+      assert.ok(game.lantern.hint.action >= 0);
+      assert.equal(game.lantern.selected, 0, 'H 不替玩家改选');
+      assert.deepEqual(Array.from(game._playedNodes), progress);
+      game.input._pressed.add('assist'); game._update(0); game.input.endFrame();
+      assert.equal(game.lantern.moves, 1, '第一灯也可主动使用 J');
+      game.input._pressed.add('heavy'); game._update(0); game.input.endFrame();
+      for (let repeat = 0; repeat < 10; repeat++) {
+        game.input._pressed.add('confirm'); game._update(0); game.input.endFrame();
+        assert.equal(game.lantern.selected, 0); assert.equal(game.lantern.result.solved, false);
+      }
+      assert.deepEqual(Array.from(game.lantern.angles), initial, '连续 E 没有跟随求解器');
+      game.input._pressed.add('light'); game._update(0); game.input.endFrame();
+      assert.equal(game.carriedOil.id, 'oil1'); assert.ok(!game._entitiesOf('gate')[0].open);
+      game._rotateLantern(0);
+      assert.equal(game.lantern.hint, null);
+      assert.equal(game.lantern.angles.filter((a, i) => a !== initial[i]).length, 2);
+      game.input._pressed.add('heavy'); game._update(0); game.input.endFrame();
+      assert.deepEqual(Array.from(game.lantern.angles), initial, 'G 撤销整组联动');
+      game._rotateLantern(0); const partial = Array.from(game.lantern.angles);
+      assert.equal(game.lantern.result.solved, false);
+      game.input._pressed.add('pause'); game._update(0); game.input.endFrame();
+      assert.equal(game.state, STATE.PLAYING); assert.equal(game.carriedOil.id, 'oil1');
+      game._setState(STATE.PAUSED); game._saveAndQuit(); game._continueGame();
+      level2Run.walkToEntity(game, 'lamp1'); game._interact();
+      assert.deepEqual(Array.from(game.lantern.angles), partial); assert.equal(game.carriedOil.id, 'oil1');
+      game.input._pressed.add('light'); game._update(0); game.input.endFrame();
+      assert.deepEqual(Array.from(game.lantern.angles), initial, 'F 重置棋盘');
+      for (const i of game.lantern.constructor.solution(game.lantern.config)) game._rotateLantern(i);
+      assert.equal(game.lantern.result.solved, true); assert.ok(!game._entitiesOf('lamp')[0].lit);
+      game.input._pressed.add('confirm'); game._update(0); game.input.endFrame();
+      assert.equal(game.state, STATE.PLAYING); assert.equal(game.lantern, null);
+      assert.equal(game.carriedOil, null); assert.ok(game._entitiesOf('gate')[0].open);
+      game._setState(STATE.PAUSED); game._saveAndQuit();
+      const legacy = game.store.readSlot(0); legacy.played = legacy.played.filter(id => !id.startsWith('puzzle:2:mirror:') && !id.startsWith('puzzle:2:solved:'));
+      game.store.writeSlot(0, legacy); game._continueGame();
+      assert.equal(game._entitiesOf('lamp')[0].puzzleSolved, true, '旧已点灯存档不要求重解');
+      game._setState(STATE.PAUSED); game._restartLevel();
+      assert.ok(game._entitiesOf('lamp').every(l => !l.puzzleSolved));
+      assert.ok(!Array.from(game._playedNodes).some(id => id.startsWith('puzzle:2:mirror:') || id.startsWith('puzzle:2:solved:')));
+      game._playedNodes.add('puzzle:2:solved:lamp1'); game._playedNodes.add('puzzle:2:mirror:lamp1:0');
+      game._setState(STATE.PAUSED); game._saveAndQuit(); game._continueGame();
+      level2Run.walkToEntity(game, 'oil1'); level2Run.walkToEntity(game, 'lamp1'); game._interact();
+      assert.equal(game.state, STATE.PUZZLE, '旧版未点灯的解开标记不跳过新版机关');
+      assert.deepEqual(Array.from(game.lantern.angles), initial, '旧版部分旋镜不套入新棋盘');
+    } finally { game.destroy(); }
+  });
+});
+
+test('灯柱操作边界：三灯均可主动帮走，提示不改选，J 与 E 行为独立', () => {
+  withGAME(prologueData({ allLevels: true }), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game); game._loadLevel(1);
+      level2Run.playLevel2(game, { onOil(g, n) {
+        const lamp = g._entitiesOf('lamp').find(l => l.id === 'lamp' + n);
+        level1Run.walkTo(g, lamp.x, lamp.y); level2Run.fightNearby(g); g._interact();
+        assert.equal(g.state, STATE.PUZZLE); assert.equal(g.lantern.hint, null);
+        const board = g.lantern, before = Array.from(board.angles), selected = board.selected;
+        g.input._pressed.add('hint'); g._update(0); g.input.endFrame();
+        assert.equal(board.selected, selected);
+        g.input._pressed.add('assist'); g._update(0); g.input.endFrame();
+        assert.equal(board.moves, 1, '三个灯柱都提供 J');
+        assert.notDeepEqual(Array.from(board.angles), before);
+        const assistedIndex = board.selected;
+        g.input._pressed.add('confirm'); g._update(0); g.input.endFrame();
+        assert.equal(board.selected, assistedIndex);
+        assert.deepEqual(Array.from(board.angles), before, 'J 后按 E 只会再次转动同一组，不会接着求解');
+        g.input._pressed.add('heavy'); g._update(0); g.input.endFrame();
+        if (n === 3) {
+          assert.notDeepEqual(Array.from(board.angles), before);
+          g.input._pressed.add('heavy'); g._update(0); g.input.endFrame();
+          board.selected = 9;
+          g.input._pressed.add('hint'); g._update(0); g.input.endFrame();
+          assert.equal(board.selected, 9); assert.notEqual(board.hint.action, 9);
+          g.input._pressed.add('confirm'); g._update(0); g.input.endFrame();
+          assert.equal(board.selected, 9, 'E 旋转玩家所选，不跟随提示目标');
+        }
+        g._setState(STATE.PLAYING);
+      } });
+    } finally { game.destroy(); }
+  });
+});
+
+test('第二关战斗：轻重击/蓄能炮，暂停冻结，倒下保留携油/灯/星，读档重置战斗', () => {
+  withGAME(prologueData({ allLevels: true }), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game); game._loadLevel(1);
+      const source = JSON.stringify(game.levels[1]), c = game.combat, enemy = c.enemies[0];
+      assert.equal(c.enemies.length, 10); assert.equal(c.hp, 10);
+      assert.ok(shown('hud-hp') && shown('hud-energy'));
+      game.player = { x: enemy.x, y: enemy.y + 25 }; c.face(0, -1);
+      press('f'); game._update(0); game.input.endFrame(); assert.equal(enemy.hp, 2);
+      for (let i = 0; i < 90 && (c.cooldown > 0 || !c.findTarget(game.player, c.attackRange, game.mechanics)); i++) { game._update(1 / 60); game.input.endFrame(); }
+      press('g'); game._update(0); game.input.endFrame();
+      assert.equal(enemy.dead, true);
+      const other = c.enemies[1]; game.player = { x: other.x - 35, y: other.y }; c.face(1, 0); c.cooldown = 0; c.energy = c.maxEnergy;
+      press('f'); game._update(0); game.input.endFrame(); assert.equal(c.swing.kind, 'cannon'); assert.equal(other.dead, true); assert.equal(c.energy, 0);
+      const time = c.time, position = [c.enemies[2].x, c.enemies[2].y];
+      game._setState(STATE.PAUSED); game._update(1); assert.equal(c.time, time);
+      assert.deepEqual([c.enemies[2].x, c.enemies[2].y], position);
+      game._restartLevel();
+      level2Run.walkToEntity(game, 'oil1'); level2Run.solveLantern(game, 'lamp1'); level2Run.walkToEntity(game, 'lamp1'); game._interact();
+      level2Run.walkToEntity(game, 's2_1'); level2Run.walkToEntity(game, 'oil2');
+      assert.equal(game.carriedOil.id, 'oil2');
+      const current = game.combat; current.hp = 1; current.invuln = 0;
+      current.enemies[0].dead = true;
+      current.enemies[1].x = game.player.x; current.enemies[1].y = game.player.y;
+      for (let frame = 0; frame < 90 && current.hp === 1; frame++) { game._update(1 / 60); game.input.endFrame(); }
+      assert.equal(current.hp, 10); assert.equal(current.aliveCount(), 10);
+      const spawn = game._entitiesOf('spawn')[0];
+      assert.deepEqual([game.player.x, game.player.y], [spawn.x * 16, spawn.y * 16]);
+      assert.equal(game.carriedOil.id, 'oil2'); assert.equal(game.stars, 1);
+      assert.ok(game._entitiesOf('lamp')[0].lit && game._entitiesOf('gate')[0].open);
+      current.hp = 4; current.energy = 50;
+      game._setState(STATE.PAUSED); game._saveAndQuit(); game._continueGame();
+      assert.equal(game.combat.hp, 10); assert.equal(game.combat.energy, 0); assert.equal(game.combat.aliveCount(), 10);
+      assert.equal(game.carriedOil.id, 'oil2'); assert.equal(game.stars, 1);
+      assert.equal(JSON.stringify(game.levels[1]), source);
+    } finally { game.destroy(); }
+  });
+});
+
+test('长廊敌人：两侧敌人会向通道中线追击，移动不穿墙', () => {
+  withGAME(prologueData({ allLevels: true }), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game);
+      for (const side of ['north', 'south']) {
+        game._loadLevel(1);
+        const hall = game.level.corridor;
+        const enemy = game.combat.enemies.find(e => side === 'north' ? e.spawnY < hall.centerY * 16 : e.spawnY > hall.centerY * 16);
+        game.player = { x: enemy.spawnX, y: hall.centerY * 16 };
+        const targetY = (hall.centerY + (side === 'north' ? -1 : 1)) * 16;
+        for (let frame = 0; frame < 360 && (side === 'north' ? enemy.y < targetY : enemy.y > targetY); frame++) {
+          game._update(1 / 60); game.input.endFrame();
+          assert.equal(game.mechanics.blockedAt(enemy.x, enemy.y, enemy.size), false);
+        }
+        assert.ok(side === 'north' ? enemy.y >= targetY : enemy.y <= targetY, side + ' 敌人应从路边追向中线');
+      }
+    } finally { game.destroy(); }
+  });
+});
+
+test('长廊闪步与点灯休整：真实动作输入、暂停冻结、仅新点灯补给一次', () => {
+  withGAME(prologueData({ allLevels: true }), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game); game._loadLevel(1);
+      assert.ok(shown('tbtn-d'));
+      game.combat.face(1,0);const x=game.player.x;
+      game.input._pressed.add('dash');game._update(0);game.input.endFrame();
+      assert.equal(game.player.x,x+48);assert.ok(game.combat.dashCooldown>0);
+      const position=[game.player.x,game.player.y],time=game.combat.time;
+      game._setState(STATE.PAUSED);game.input._pressed.add('dash');game._update(.05);game.input.endFrame();
+      assert.deepEqual([game.player.x,game.player.y],position);assert.equal(game.combat.time,time);
+      game._setState(STATE.PLAYING);
+      level2Run.walkToEntity(game,'oil1');level2Run.solveLantern(game,'lamp1');level2Run.walkToEntity(game,'lamp1');
+      game.combat.hp=3;game.combat.energy=10;game._interact();
+      assert.equal(game.combat.hp,10);assert.equal(game.combat.energy,45);
+      game.combat.hp=4;game._interact();assert.equal(game.combat.hp,4,'亮灯后不能反复刷补给');
+      game._loadLevel(0);assert.ok(hidden('tbtn-d'),'第一关隐藏闪步');
+    } finally { game.destroy(); }
+  });
+});
+
+test('水渠机关：E 不能代替推筏与系绳，H 只观察；放水锁筏，排水后才能移动', () => {
+  withGAME(prologueData({allLevels:true}), () => {
+    const game=makeGame();
+    try {
+      game._startNewGame();level1Run.finishDialogue(game);game._loadLevel(1);
+      const raft=game._entitiesOf('box').find(e=>e.id==='ruins-raft'),r=game.ruins,star=game._entitiesOf('star').find(e=>e.id==='s2_4');
+      game.player={x:211*16,y:12*16};
+      for(let i=0;i<8;i++){game.input._pressed.add('confirm');game._update(0);game.input.endFrame();}
+      assert.equal(r.solved,false);assert.equal(raft.x,214);assert.equal(game._starAvailable(star),false);
+      game.input._pressed.add('hint');game._update(0);game.input.endFrame();assert.ok(r.message.includes('卡槽'));assert.equal(raft.x,214);
+      game._interact();game._update(.05);game.input.endFrame();
+      game.player={x:213*16,y:8*16};game._moveAxis(1,0);assert.equal(raft.x,214,'有水时不能推筏');
+      level2Run.walkToEntity(game,'ruins-reset');game._interact();
+      level2Run.walkToEntity(game,'ruins-rope');game._interact();assert.equal(r.tied,false);assert.ok(r.message.includes('卡槽'));
+      level2Run.solveRuins(game);assert.equal(r.solved,true);assert.ok(game._starAvailable(star));
+      level2Run.walkToEntity(game,'s2_4');assert.ok(game.collected.includes('s2_4'));
+    } finally {game.destroy();}
+  });
+});
+
+test('水渠机关：推筏 / 系绳 / 开闸进度保存恢复，暂停冻结水位，重玩清空，旧四星档兼容', () => {
+  withGAME(prologueData({allLevels:true}), () => {
+    const game=makeGame();
+    try {
+      game._startNewGame();level1Run.finishDialogue(game);game._loadLevel(1);
+      game.player={x:213*16,y:8*16};game._moveAxis(1,0);
+      game._setState(STATE.PAUSED);game._saveAndQuit();game._continueGame();
+      assert.equal(game._entitiesOf('box').find(e=>e.id==='ruins-raft').x,215);
+      game.player={x:214*16,y:8*16};game._moveAxis(1,0);level1Run.walkTo(game,215,8);game._moveAxis(1,0);
+      level2Run.walkToEntity(game,'ruins-rope');game._interact();assert.ok(game.ruins.tied);
+      game._setState(STATE.PAUSED);game._saveAndQuit();game._continueGame();assert.ok(game.ruins.tied);assert.equal(game.ruins.water,0);
+      game.player={x:211*16,y:12*16};game._interact();game._update(.05);game.input.endFrame();
+      const water=game.ruins.water;game._setState(STATE.PAUSED);game._update(.05);assert.equal(game.ruins.water,water);
+      game._saveAndQuit();game._continueGame();assert.equal(game.ruins.water,1);
+      game._update(.01);game.input.endFrame();assert.ok(game.ruins.solved);
+      game._setState(STATE.PAUSED);game._saveAndQuit();game._continueGame();assert.ok(game.ruins.solved);
+      const saved=game.store.readSlot(0);saved.stars['2']=['s2_1','s2_2','s2_3','s2_4'];saved.played=saved.played.filter(m=>!m.includes(':ruins:'));
+      game.store.writeSlot(0,saved);game._setState(STATE.PAUSED);game._quitToTitle();game._continueGame();
+      assert.ok(game.ruins.solved,'旧档已收第四星无需重新解机关');assert.equal(game.stars,4);
+      game._setState(STATE.PAUSED);game._restartLevel();assert.equal(game.ruins.solved,false);assert.equal(game.ruins.water,0);
+      assert.equal(game._entitiesOf('box').find(e=>e.id==='ruins-raft').x,214);
+      assert.ok(!Array.from(game._playedNodes).some(m=>m.includes(':ruins:')));
+    } finally {game.destroy();}
+  });
+});
+
+test('暗器制动杆：E 真实互动、存档 / 倒下保留、重玩重新启动，暂停冻结预警与摆刃', () => {
+  withGAME(prologueData({allLevels:true}),()=>{
+    const game=makeGame();
+    try {
+      game._startNewGame();level1Run.finishDialogue(game);game._loadLevel(1);
+      const c=game.combat,d=c.traps[0];c.time=2.5;game.player={x:26*16,y:10*16};game._update(.05);game.input.endFrame();
+      assert.equal(d.phase,'warning');const timer=d.timer,time=c.time;
+      game._setState(STATE.PAUSED);game._update(.05);assert.equal(d.timer,timer);assert.equal(c.time,time);
+      game._setState(STATE.PLAYING);game.player={x:170*16,y:6*16};game.input._pressed.add('confirm');game._update(0);game.input.endFrame();
+      assert.ok(c.traps.find(t=>t.kind==='blade').disabled);
+      game._setState(STATE.PAUSED);game._saveAndQuit();game._continueGame();
+      assert.ok(game.combat.traps.find(t=>t.kind==='blade').disabled);assert.equal(game.combat.darts.length,0);
+      game._onPlayerDown();assert.ok(game.combat.traps.find(t=>t.kind==='blade').disabled);
+      game._setState(STATE.PAUSED);game._restartLevel();assert.ok(!game.combat.traps.find(t=>t.kind==='blade').disabled);
+    } finally {game.destroy();}
+  });
+});
+
+test('第二关 BGM 接线：对话继续，暂停/隐藏/关闭声音/结算/销毁停止，恢复与同状态换关正确', () => {
+  withGAME(prologueData({ allLevels: true }), () => {
+    const calls = [], original = audio.setMusic;
+    audio.setMusic = (name, active) => { calls.push([name, active]); original(name, active); };
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game); game._loadLevel(1);
+      assert.deepEqual(calls.at(-1), ['l2_kerosene', true]);
+      game._playNode('l2.intro'); assert.deepEqual(calls.at(-1), ['l2_kerosene', true]);
+      level1Run.finishDialogue(game);
+      game._setState(STATE.PAUSED); assert.deepEqual(calls.at(-1), ['l2_kerosene', false]);
+      game._setState(STATE.PLAYING); assert.deepEqual(calls.at(-1), ['l2_kerosene', true]);
+      documentStub.hidden = true; game._syncMusic(); assert.deepEqual(calls.at(-1), ['l2_kerosene', false]);
+      documentStub.hidden = false; game._syncMusic(); assert.deepEqual(calls.at(-1), ['l2_kerosene', true]);
+      game._toggleSound(); assert.deepEqual(calls.at(-1), ['l2_kerosene', false]);
+      game._toggleSound(); assert.deepEqual(calls.at(-1), ['l2_kerosene', true]);
+      game._onLevelClear(); assert.deepEqual(calls.at(-1), ['l2_kerosene', false]);
+      game._setState(STATE.PLAYING); game._loadLevel(0);
+      assert.deepEqual(calls.at(-1), ['l1_candle', true]);
+      assert.equal(game.kerosene, null);
+      game._loadLevel(1); game.destroy(); assert.deepEqual(calls.at(-1), ['l2_kerosene', false]);
+    } finally { documentStub.hidden = false; game.destroy(); audio.setMusic = original; }
+  });
+});
+
+test('第一关衔接第二关：通关自动存档指向 2，下一关与继续冒险都进入 Kerosene', () => {
+  withGAME(prologueData({ allLevels: true }), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.playLevel1(game);
+      assert.equal(game.store.readSlot(0).current, 2);
+      assert.equal(text('btn-next'), '▶ 下一关');
+      game._nextFromClear();
+      assert.equal(game.level.id, 2); assert.equal(game.stars, 0);
+      assert.equal(game.combat.enemies.length, 10); assert.match(text('hud-objective'), /点灯 0\/3/);
+      game._setState(STATE.PAUSED); game._quitToTitle(); game._continueGame();
+      assert.equal(game.level.id, 2); assert.equal(game.carriedOil, null);
+      assert.equal(game._entitiesOf('gate').filter(e => e.open).length, 0);
+      // 升级前通关档仍指向关 1：继续后再进星光门即可衔接新关卡。
+      game._setState(STATE.PAUSED); game._quitToTitle();
+      const legacy = game.store.readSlot(0); legacy.current = 1; legacy.unlocked = 1;
+      assert.equal(game.store.writeSlot(0, legacy), true);
+      game._continueGame(); assert.equal(game.level.id, 1); assert.equal(game.stars, 3);
+      const portal = game._entitiesOf('portal')[0];
+      level1Run.walkTo(game, portal.x, portal.y);
+      assert.equal(game.state, STATE.CLEAR); assert.equal(game.store.readSlot(0).current, 2);
+    } finally { game.destroy(); }
+  });
+});
+
+test('第二关：无油提示、隔门不能点灯、携带上限一罐、重复按键不重复消耗', () => {
+  withGAME(prologueData({ allLevels: true }), () => {
+    const game = makeGame();
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game); game._loadLevel(1);
+      level2Run.walkToEntity(game, 'lamp1'); game._interact();
+      assert.equal(game.state, STATE.DIALOGUE); level1Run.finishDialogue(game);
+      assert.equal(game._entitiesOf('lamp')[0].lit, false);
+      const gate = game._entitiesOf('gate')[0];
+      assert.equal(game.mechanics.blockedAt(gate.x * 16, gate.y * 16, 16), true);
+      level2Run.walkToEntity(game, 'oil1');
+      const oil = game.carriedOil; assert.equal(oil.id, 'oil1');
+      // 第二罐放到同格，仅验证运行时的一罐上限；正式地图数据仍保持只读。
+      const extra = game._entitiesOf('oil')[1]; extra.x = oil.x; extra.y = oil.y;
+      game._checkPickups(); assert.equal(game.carriedOil, oil); assert.ok(!extra.taken);
+      const gate2 = game._entitiesOf('gate')[1];
+      game.player = { x: (gate2.x + 1) * 16, y: gate2.y * 16 }; // 隔着关闭的 G2 查看 L2
+      assert.equal(game._interactionVisible(game._entitiesOf('lamp')[1]), false);
+      game.player = { x: oil.x * 16, y: oil.y * 16 }; level2Run.solveLantern(game, 'lamp1');
+      level2Run.walkToEntity(game, 'lamp1'); game._interact();
+      assert.ok(oil.used && gate.open); assert.equal(game.carriedOil, null);
+      const marks = game._playedNodes.size;
+      game._interact(); assert.equal(game._playedNodes.size, marks);
+    } finally { game.destroy(); }
+  });
+});
+
+test('第二关：每次拾油/点灯后保存继续，恢复油与门、收齐四星结算；重玩仅清本关机关', () => {
+  withGAME(prologueData({ allLevels: true }), () => {
+    const game = makeGame();
+    const reload = g => {
+      g._setState(STATE.PAUSED); assert.equal(g._saveAndQuit(), true);
+      assert.equal(g.carriedOil, null); g._continueGame(); assert.equal(g.level.id, 2);
+    };
+    try {
+      game._startNewGame(); level1Run.finishDialogue(game); game._loadLevel(1);
+      game._playedNodes.add('puzzle:1:other:keep');
+      const result = level2Run.playLevel2(game, {
+        onOil(g, n) {
+          reload(g); assert.equal(g.carriedOil.id, 'oil' + n);
+          assert.equal(g._entitiesOf('lamp').filter(e => e.lit).length, n - 1);
+          assert.match(text('hud-objective'), /已携带灯油/);
+        },
+        onLamp(g, n) {
+          reload(g); assert.equal(g.carriedOil, null);
+          assert.equal(g._entitiesOf('lamp').filter(e => e.lit).length, n);
+          assert.equal(g._entitiesOf('gate').filter(e => e.open).length, n);
+        },
+      });
+      assert.deepEqual(result, { stars: 4, lamps: 3, state: STATE.CLEAR });
+      assert.equal(game.store.readSlot(0).current, 2);
+      assert.equal(game.store.readSlot(0).stars['2'].length, 4);
+      assert.ok(game.store.readSlot(0).cleared.includes(2));
+      game._nextFromClear(); assert.equal(game.state, STATE.TITLE);
+      game._continueGame(); assert.equal(game.stars, 4); assert.ok(game._portalActive());
+      game._setState(STATE.PAUSED); game._restartLevel();
+      assert.equal(game.stars, 0); assert.equal(game.carriedOil, null);
+      assert.ok(game._entitiesOf('oil').every(e => !e.taken && !e.used));
+      assert.ok(game._entitiesOf('lamp').every(e => !e.lit));
+      assert.ok(game._entitiesOf('gate').every(e => !e.open));
+      assert.ok(!Array.from(game._playedNodes).some(id => id.startsWith('puzzle:2:')));
+      assert.ok(game._playedNodes.has('puzzle:1:other:keep'));
+      assert.deepEqual(level2Run.playLevel2(game), result);
+    } finally { game.destroy(); }
+  });
+});
 
 test('第一关：序章 → 敞口杂物间/找唱片/舞台播放/后台对话/三星/黑羊 → 过关保存 → 返回标题（真实地图）', () => {
   withGAME(prologueData(), () => {

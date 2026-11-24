@@ -39,7 +39,7 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✓ ' + nam
     const game = vm.createContext({});
     vm.runInContext(fs.readFileSync(path.join(site, manifest.entries.game.file), 'utf8'), game);
     assert.equal(JSON.stringify(game.GAME), JSON.stringify(original.GAME));
-    for (const name of ['engine', 'main', 'auth', 'account', 'cloud', 'stats', 'audio', 'Birthday']) assert.ok(game.MIXX[name], name);
+    for (const name of ['engine', 'main', 'auth', 'account', 'cloud', 'stats', 'audio', 'Birthday', 'Kerosene']) assert.ok(game.MIXX[name], name);
     vm.runInContext("MIXX.engine.registerTileset('build-test', { floor: ['1'] });", game);
     assert.equal(game.MIXX.engine._tilesets['build-test'].floor[0], '1');
     const recovery = vm.createContext({ URLSearchParams });

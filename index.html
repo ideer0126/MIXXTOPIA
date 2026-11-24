@@ -222,6 +222,9 @@
         <p><b>移动</b>　WASD / 方向键　（手机：屏幕方向键）</p>
         <p><b>对话 / 确认</b>　E 或 空格　（手机：A 键）</p>
         <p><b>攻击</b>　F 轻击 / G 重击　（手机：B / C 键）；轻击与重击射程相同，只锁定正面 180° 扇形内、视线可达的敌人；无敌人时朝移动方向</p>
+        <p><b>灯火长廊</b>　Shift 闪步（手机 D）；橙圈是近身蓄力，蓝圈锁定火灵落点，离开圈再反击。G 重击可打断蓄力。喷口先闪黄再喷发，也会伤害敌人。每次点亮新灯柱补满生命并补充能量。</p>
+        <p><b>水渠遗迹</b>　在场景内观察水位、浮台和配重绳的联动。方向键推动干槽里的浮台，E / A 操作水闸与绳柱；H 或点击「观察」查看当前提示，南侧可复位。机关进度随手动存档保存。</p>
+        <p><b>暗器</b>　墙面箭阵每处四排，每 5 秒自动齐射一轮，发射前墙孔亮起预警 1 秒；在箭痕列外观察，等箭通过后利用间隙穿行。两道地刺按固定节奏升降：绿边收回、黄边预警，中间三格地面可停稳等待。轨道闸刃在通道两侧往复，看准它远离你这一排时通过；出口侧 E / A 拉杆可永久停机。暗器每次扣 1 HP，也会伤害敌人。</p>
         <p><b>能量炮</b>　被动能量条自动充能；攒满后按 F 或 G 释放，射程为普攻的 2.2 倍</p>
         <p><b>倒下</b>　HP 归零会满血回到出生点，已收集星星与用时保留（无惩罚）</p>
         <p><b>对话快进</b>　打字中按住加速 · 点按显示全文 · 点击对话框翻页</p>
@@ -272,6 +275,7 @@
         <button type="button" id="tbtn-a" class="tbtn a" data-key="action" aria-label="确认">A</button>
         <button type="button" id="tbtn-b" class="tbtn b" data-key="light" aria-label="轻击">B</button>
         <button type="button" id="tbtn-c" class="tbtn c" data-key="heavy" aria-label="重击">C</button>
+        <button type="button" id="tbtn-d" class="tbtn d" data-key="dash" aria-label="闪步">D</button>
       </div>
     </div>
   </div>
@@ -288,6 +292,7 @@
   <script src="js/cloud.js"></script>
   <script src="js/stats.js"></script>
   <script src="js/birthday.js"></script>
+  <script src="js/lantern.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>
