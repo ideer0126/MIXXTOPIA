@@ -106,15 +106,15 @@ test('状态搜索要求在可互动位置完成自我介绍，隔墙且无法�
   level.map.rows[2] = '#'.repeat(40); // 与 NPC 相隔一格墙，不能隔空对话
   assert.equal(v.stateSearch(level, dialogue).status, 'fail');
 });
-test('全量模式仍拒绝缺少其余五关和 22 星，不把单关通过当成项目完工', () => {
+test('全量模式仍拒绝缺少其余四关和 18 星，不把单关通过当成项目完工', () => {
   const R = report(game, false);
-  assert.ok(R.errors.some(e => e.msg.includes('levels 数量 1')));
-  assert.ok(R.errors.some(e => e.msg.includes('总星数 3')));
-  assert.ok(R.errors.some(e => e.msg.includes('portal.to=2')));
+  assert.ok(R.errors.some(e => e.msg.includes('levels 数量 2')));
+  assert.ok(R.errors.some(e => e.msg.includes('总星数 7')));
+  assert.ok(R.errors.some(e => e.msg.includes('portal.to=3')));
 });
 test('CLI：--level 1 通过；未制作关卡、非法编号与全量模式返回失败', () => {
   const file = path.join(__dirname, 'validate.js');
-  for (const [args, status] of [[['--level', '1'], 0], [['--level', '2'], 1], [['--level', 'x'], 1], [[], 1]]) {
+  for (const [args, status] of [[['--level', '1'], 0], [['--level', '2'], 0], [['--level', '3'], 1], [['--level', 'x'], 1], [[], 1]]) {
     const result = spawnSync(process.execPath, [file, ...args], { encoding: 'utf8' });
     assert.equal(result.status, status, result.stdout + result.stderr);
   }

@@ -35,6 +35,15 @@
       { f: 988, d: 0.06, at: 0, v: 0.10, type: 'square' },
       { f: 1319, d: 0.10, at: 0.05, v: 0.09, type: 'square' },
     ],
+    oil: [
+      { f: 440, d: .07, at: 0, v: .07, type: 'triangle' },
+      { f: 660, d: .10, at: .06, v: .06, type: 'triangle' },
+    ],
+    lamp: [
+      { f: 196, d: .12, at: 0, v: .06, type: 'sawtooth' },
+      { f: 392, d: .16, at: .08, v: .06, type: 'triangle' },
+      { f: 784, d: .18, at: .16, v: .05, type: 'triangle' },
+    ],
     box: [
       { f: 147, d: 0.05, at: 0, v: 0.08, type: 'triangle' },
       { f: 110, d: 0.06, at: 0.03, v: 0.06, type: 'triangle' },
@@ -103,6 +112,64 @@
   let ctx = null;
   let master = null;
   let enabled = true;
+  let musicTrack = null;
+  let musicActive = false;
+  let musicSource = null;
+  let musicOffset = 0;
+  let musicStartedAt = 0;
+  let musicBuffer = null;
+
+  /** 原创 8 小节灯笼爵士：96 BPM，Dm9 → G13 → Cmaj7 → A7，摇摆八分音符。 */
+  function createLanternLoop(c) {
+    const rate = 22050, beat = 60 / 96;
+    const buffer = c.createBuffer(1, Math.round(32 * beat * rate), rate);
+    const samples = buffer.getChannelData(0);
+    const chords = [[50, 57, 60, 64, 69], [43, 53, 59, 64, 69], [48, 55, 59, 62, 67], [45, 55, 61, 64, 67]];
+    const melody = [
+      [69, 72, 76, 74, 72, 69, 67, 65], [67, 71, 74, 76, 74, 71, 69, 67],
+      [67, 71, 74, 72, 71, 67, 64, 62], [64, 67, 73, 76, 73, 70, 67, 64],
+      [65, 69, 72, 76, 74, 72, 69, 65], [67, 69, 71, 74, 76, 74, 71, 67],
+      [64, 67, 71, 74, 72, 71, 67, 64], [67, 64, 61, 64, 69, 67, 64, 61],
+    ];
+    // 全部音符离线混成一个内存缓冲，循环不需要定时器，也不加载音频文件。
+    function note(midi, at, duration, volume, instrument) {
+      const start = Math.round(at * beat * rate), length = Math.round(duration * beat * rate);
+      const frequency = 440 * Math.pow(2, (midi - 69) / 12);
+      for (let i = 0; i < length; i++) {
+        const t = i / rate, phase = 2 * Math.PI * frequency * t;
+        const envelope = Math.min(1, t / .008) * Math.pow(1 - i / length, 2);
+        const wave = instrument === 'bass' ? Math.sin(phase) + .22 * Math.sin(phase * 2)
+          : instrument === 'brush' ? Math.sin(i * 2.37) * Math.sin(i * .137) + .3 * Math.sin(i * .913)
+          : Math.sin(phase) + .3 * Math.sin(phase * 2) * Math.exp(-t * 8) + .12 * Math.sin(phase * 3);
+        samples[(start + i) % samples.length] += wave * volume * envelope;
+      }
+    }
+    for (let bar = 0; bar < 8; bar++) {
+      const chord = chords[bar % 4];
+      for (const at of [.5, 2 + 2 / 3]) for (const pitch of chord.slice(1)) note(pitch + 12, bar * 4 + at, .55, .018, 'keys');
+      for (let b = 0; b < 4; b++) {
+        note(chord[0] + (b % 2 ? 7 : 0), bar * 4 + b, .62, .09, 'bass');
+        note(30, bar * 4 + b + (b % 2 ? 0 : 2 / 3), .16, .018, 'brush');
+      }
+      for (let n = 0; n < 8; n++) note(melody[bar][n], bar * 4 + n / 2 + (n % 2 ? 1 / 6 : 0), .42, .046, 'keys');
+    }
+    return buffer;
+  }
+
+  /** 启停共用入口：暂停/静音/隐藏时保存位置，恢复时从该处继续。 */
+  function syncMusic() {
+    const shouldPlay = musicTrack === 'l2_kerosene' && musicActive && enabled && !!ctx;
+    if (musicSource && !shouldPlay) {
+      musicOffset = (musicOffset + ctx.currentTime - musicStartedAt) % musicBuffer.duration;
+      musicSource.stop(); musicSource.disconnect(); musicSource = null;
+    }
+    if (!shouldPlay || musicSource) return;
+    if (!musicBuffer) musicBuffer = createLanternLoop(ctx);
+    musicSource = ctx.createBufferSource();
+    musicSource.buffer = musicBuffer; musicSource.loop = true;
+    musicSource.connect(master); musicStartedAt = ctx.currentTime;
+    musicSource.start(0, musicOffset);
+  }
 
   function AudioCtor() {
     return root.AudioContext || root.webkitAudioContext || null;
@@ -157,7 +224,7 @@
     /** 首次用户手势时调用：创建并恢复 AudioContext（自动播放策略） */
     unlock() {
       const c = ensureContext();
-      if (c) resume();
+      if (c) { resume(); syncMusic(); }
       return !!c;
     },
 
@@ -165,10 +232,25 @@
     setEnabled(v) {
       enabled = !!v;
       if (master) master.gain.value = enabled ? 0.5 : 0;
+      syncMusic();
     },
 
     isEnabled() {
       return enabled;
+    },
+
+    /** 仅已制作的主题播放 BGM；无音频能力时保留游玩，首次手势解锁后再启动。 */
+    setMusic(name, active = true) {
+      const next = name === 'l2_kerosene' ? name : null;
+      if (next !== musicTrack) {
+        musicActive = false; syncMusic(); musicOffset = 0; musicTrack = next;
+      }
+      musicActive = !!active;
+      syncMusic();
+    },
+
+    musicState() {
+      return { track: musicTrack, playing: !!musicSource, offset: musicOffset, duration: musicBuffer ? musicBuffer.duration : 0 };
     },
 
     /**

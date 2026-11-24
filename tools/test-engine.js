@@ -544,7 +544,7 @@ test('输入 API：createInput 暴露、初始状态、动作常量', () => {
   assert.strictEqual(input.wasPressed('confirm'), false);
   assert.strictEqual(input.wasReleased('mute'), false);
   assert.deepStrictEqual(Object.keys(engine.KEY_BINDINGS),
-    ['up', 'down', 'left', 'right', 'confirm', 'light', 'heavy', 'pause', 'mute']);
+    ['up', 'down', 'left', 'right', 'confirm', 'light', 'heavy', 'dash', 'hint', 'assist', 'pause', 'mute']);
   input.destroy();
 });
 
@@ -906,6 +906,19 @@ test('机制 API：createMechanics / createParticles 暴露，非法关卡抛错
   assert.strictEqual(typeof engine.Mechanics, 'function');
   assert.strictEqual(typeof engine.Particles, 'function');
   assert.throws(() => engine.createMechanics(null), /level\.map/);
+});
+
+test('单格门口：累计浮点误差不误碰邻墙，真实越界和关闭的门仍阻挡', () => {
+  for (const vertical of [true, false]) {
+    const rows = vertical ? ['#####', '##·##', '##·##', '##·##', '#####']
+      : ['#####', '#####', '#···#', '#####', '#####'];
+    const gate = { type: 'gate', id: 'g', x: 2, y: 2, open: false };
+    const mech = engine.createMechanics({ map: { w: 5, h: 5, rows }, entities: [gate] });
+    assert.equal(mech.blockedAt(32 - 1e-13, 32 - 1e-13, 16), true);
+    gate.open = true;
+    assert.equal(mech.blockedAt(32 - 1e-13, 32 - 1e-13, 16), false);
+    assert.equal(mech.blockedAt(vertical ? 31.99 : 32, vertical ? 32 : 31.99, 16), true);
+  }
 });
 
 test('碰撞：墙/水阻挡、关闭的门与箱子阻挡、开门与忽略箱子可通行', () => {
@@ -1332,6 +1345,117 @@ test('战斗：敌人追击、接触伤害、无敌帧、倒下与复活复位',
   assert.strictEqual(enemy.hp, enemy.maxHp, '复活时敌人重置');
   assert.strictEqual(enemy.x, enemy.spawnX);
   assert.strictEqual(enemy.y, enemy.spawnY);
+});
+
+test('长廊闪步：独立冷却、短暂无敌，不能越过关闭门，斜向距离一致', () => {
+  const level = mechanicsLevel([{type:'gate',id:'g',x:4,y:2,open:false}]); level.corridor = {};
+  const mech = engine.createMechanics(level), c = engine.createCombat(level), p = {x:32,y:32};
+  c.face(1,0); assert.equal(c.dash(p,mech),true); assert.equal(p.x,48,'逐段移动停在门前');
+  assert.ok(c.invuln>0); assert.equal(c.dash(p,mech),false,'不能连按跳过冷却');
+  for(let i=0;i<24;i++)c.update(.05,p,mech);
+  level.entities[0].open=true; assert.equal(c.dash(p,mech),true); assert.equal(p.x,96);
+  c.dashCooldown=0;p.x=16;p.y=16;c.face(1,1);c.dash(p,mech);
+  assert.ok(Math.abs(Math.hypot(p.x-16,p.y-16)-48)<1e-6);
+  c.revive();assert.equal(c.dashCooldown,0);assert.equal(c.dashTrail,null);
+  const peaceful=engine.createCombat(mechanicsLevel([]));assert.equal(peaceful.dash(p,mech),false);
+});
+
+test('长廊攻击预告：蓄力不碰伤，范围锁定，离圈躲开，站在圈内受伤', () => {
+  for(const kind of ['dreamling','wisp'])for(const evade of [true,false]){
+    const level=mechanicsLevel([{type:'enemy',id:'e',kind,x:3,y:2}]);level.corridor={};
+    const c=engine.createCombat(level),m=engine.createMechanics(level),p={x:48,y:32};
+    const e=c.enemies[0];c.update(.01,p,m);assert.ok(e.tell);assert.equal(c.hp,10);
+    const target=JSON.stringify(e.tell); if(evade)p.x=80;
+    c.update(.05,p,m);assert.equal(e.tell.x,JSON.parse(target).x,'预警点不追着玩家移动');
+    for(let i=0;i<20;i++)c.update(.05,p,m);
+    assert.equal(c.hp,evade?10:9,kind+' 的预告应可通过走位躲开');
+    assert.equal(e.tell,null);assert.ok(e.recovery>0,'出招后有反击窗口');
+  }
+});
+
+test('长廊重击 / 能量炮能打断蓄力，轻击不会；墙后火灵不施法', () => {
+  for(const kind of ['light','heavy','cannon']){
+    const level=mechanicsLevel([{type:'enemy',id:'e',kind:'dreamling',x:3,y:2,hp:10}]);level.corridor={};
+    const c=engine.createCombat(level),m=engine.createMechanics(level),p={x:32,y:32};c.face(1,0);
+    c.update(.01,p,m);assert.ok(c.enemies[0].tell);
+    if(kind==='cannon')c.energy=100;
+    const result=c.attack(kind==='cannon'?'light':kind,p,m);assert.equal(result.hits.length,1);
+    assert.equal(!!c.enemies[0].tell,kind==='light');
+    if(kind!=='light')assert.ok(c.enemies[0].recovery>0);
+  }
+  const level=mechanicsLevel([{type:'enemy',id:'w',kind:'wisp',x:5,y:2}]);level.corridor={};
+  level.map.rows[2]='#...#..#';const c=engine.createCombat(level),m=engine.createMechanics(level);
+  c.update(.05,{x:32,y:32},m);assert.equal(c.enemies[0].tell,null);
+});
+
+test('蒸汽：预警不伤人，喷发同时伤敌，单次只结算一次，下一轮重置', () => {
+  const level=mechanicsLevel([{type:'enemy',id:'e',kind:'dreamling',x:3,y:2,hp:4,speed:1}]);
+  level.corridor={vents:[{id:'v',x:3,y:2,w:2,h:2,offset:0}]};
+  const c=engine.createCombat(level),m=engine.createMechanics(level),p={x:48,y:32};c.enemies[0].recovery=20;
+  c.time=3;c.update(.01,p,m);assert.equal(c.hp,10);assert.equal(c.enemies[0].hp,4);
+  c.time=4;c.update(.01,p,m);assert.equal(c.hp,9);assert.equal(c.enemies[0].hp,2);
+  c.invuln=0;c.update(.05,p,m);assert.equal(c.hp,9);assert.equal(c.enemies[0].hp,2);
+  c.time=5.1;c.update(.01,p,m);c.time=9;c.invuln=0;
+  const events=c.update(.01,p,m);assert.equal(c.hp,8);assert.ok(c.enemies[0].dead);
+  assert.ok(events.some(e=>e.type==='enemy-burn'&&e.dead));
+});
+
+test('浮台滑轨：只能水平推行，轨道两端不越界，系绳 / 浮起时不能移动', () => {
+  const level=mechanicsLevel([{type:'box',id:'raft',x:2,y:2,rail:{x:2,y:2,w:4,h:1}}]);
+  const m=engine.createMechanics(level),b=level.entities[0];
+  assert.equal(m.pushBox(32,16,16,0,1),null);
+  for(let x=2;x<5;x++)assert.ok(m.pushBox((x-1)*16,32,16,1,0));
+  assert.equal(b.x,5);assert.equal(m.pushBox(64,32,16,1,0),null);
+  b.locked=true;assert.equal(m.pushBox(96,32,16,-1,0),null);
+  b.locked=false;assert.ok(m.pushBox(96,32,16,-1,0));assert.equal(b.x,4);
+});
+
+test('自动箭阵：无人踩踏也定时发射，先预警、按周期重复，双方箭向和墙体遮挡正确', () => {
+  for(const dir of [1,-1]) {
+    const lv=mechanicsLevel([]);lv.corridor={top:1,bottom:4,traps:[{id:'d',kind:'darts',x:3,y:1,w:1,h:4,dir,offset:0}]};
+    const c=engine.createCombat(lv),m=engine.createMechanics(lv),p={x:16,y:48},shots=[];
+    for(let frame=0;frame<200;frame++) {
+      c.update(.05,p,m);
+      if(c.darts.length && shots.at(-1)?.cycle!==c.traps[0].cycle)shots.push({cycle:c.traps[0].cycle,time:c.time});
+      if(c.time<3.49)assert.equal(c.darts.length,0,'预警结束前不得发箭');
+    }
+    assert.equal(shots.length,2,'玩家始终在箭路外且没有输入，仍自动发射两轮');
+    assert.ok(Math.abs(shots[1].time-shots[0].time-5)<.06,'重复周期稳定为五秒');
+    assert.equal(c.hp,10);
+    for(const avoid of [false,true]) {
+      const combat=engine.createCombat(lv),player={x:48,y:48};
+      for(let i=0;i<55;i++)combat.update(.05,player,m);
+      assert.equal(combat.traps[0].phase,'warning');assert.equal(combat.hp,10);
+      if(avoid)player.x=16;
+      for(let i=0;i<45;i++)combat.update(.05,player,m);
+      assert.equal(combat.hp,avoid?10:9,'发射前离开弹道安全，留下会受伤');
+    }
+  }
+  const lv=mechanicsLevel([]);lv.corridor={top:1,bottom:4,traps:[{id:'d',kind:'darts',x:3,y:1,w:1,h:4,dir:1,offset:0}]};
+  lv.map.rows[2]='#..#...#';const c=engine.createCombat(lv),m=engine.createMechanics(lv),p={x:48,y:48};
+  for(let i=0;i<200;i++)c.update(.05,p,m);assert.equal(c.hp,10,'自动箭同样不能穿墙');
+});
+
+test('定时地刺：先预警再弹起、每轮仅一次伤害、收回窗口足够步行通过', () => {
+  const lv=mechanicsLevel([{type:'enemy',id:'e',kind:'dreamling',x:3,y:3,hp:4}]);
+  lv.corridor={top:1,bottom:4,traps:[{id:'s',kind:'spikes',x:3,y:3,w:2,h:1,offset:0}]};
+  const c=engine.createCombat(lv),m=engine.createMechanics(lv),p={x:48,y:48};c.enemies[0].recovery=100;c.time=2.45;
+  c.update(.05,p,m);assert.equal(c.traps[0].phase,'warning');assert.equal(c.hp,10);
+  let events=[];for(let i=0;i<24;i++)events=events.concat(c.update(.05,p,m));
+  assert.equal(c.hp,9);assert.equal(c.enemies[0].hp,2);assert.ok(events.some(e=>e.type==='enemy-trap'&&e.source==='spikes'));
+  c.invuln=0;c.update(.05,p,m);assert.equal(c.hp,9,'同次弹起不重复伤害');
+  c.revive();assert.equal(c.traps[0].phase,'idle');assert.equal(c.darts.length,0);
+});
+
+test('轨道闸刃：沿轨道扫动、两端停留，制动后不伤人，复活保留制动', () => {
+  const v=require('./validate.js'),lv=v.loadGame().game.levels.find(l=>l.id===2);
+  const level=JSON.parse(JSON.stringify(lv));level.entities=level.entities.filter(e=>e.type!=='enemy');level.corridor.vents=[];
+  const c=engine.createCombat(level),m=engine.createMechanics(level),p={x:166*16,y:12*16};
+  const t=c.traps.find(t=>t.kind==='blade');
+  for(let i=0;i<80;i++)c.update(.05,p,m);assert.ok(c.hp<10,'在闸刃轨道内站住会受伤');
+  t.disabled=true;c.hp=10;c.invuln=0;
+  for(let i=0;i<100;i++)c.update(.05,p,m);assert.equal(c.hp,10);
+  c.revive();assert.ok(t.disabled,'死亡不撤销已经锁住的制动杆');
 });
 
 /* ─────────────────── 汇总 ─────────────────── */

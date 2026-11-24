@@ -148,7 +148,8 @@
     const portal = game._entitiesOf('portal')[0];
     walkTo(game, portal.x, portal.y);
     check(game.state === 'clear', '左侧星光门未触发结算');
-    check(!game._pendingNextIsEnding && game._pendingNextUnavailable, '第二关未制作不能误播终章');
+    check(!game._pendingNextIsEnding, '生日会结算不能误播终章');
+    check(game._pendingNextUnavailable === !game.levels.some(l => l.id === 2), '生日会出口应与第二关是否存在一致');
     check(JSON.stringify(game.levels[0]) === source, '流程改写了共享关卡数据');
     return { stars: game.stars, sheep: game.sheepCount, gateOpen: gate.open, state: game.state };
   }

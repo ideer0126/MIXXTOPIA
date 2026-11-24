@@ -2,8 +2,9 @@
  * js/main.js —— 游戏状态机与 UI 接线（Issue #6）+ 对话系统（Issue #7）
  *   + 收集解谜（#9）+ 战斗接线（#18）
  *
- * 六态状态机：
+ * 七态状态机：
  *   TITLE(标题) ⇄ PLAYING(游玩) ⇄ DIALOGUE(对话) ⇄ PLAYING
+ *   PLAYING ⇄ PUZZLE(独立灯芯机关)
  *   PLAYING ⇄ PAUSED(暂停) → PLAYING / TITLE
  *   PLAYING → CLEAR(结算) → 下一关 PLAYING / ENDING(结局) → TITLE
  *
@@ -78,9 +79,9 @@
  *   - 单游戏循环：start() 防重复启动，destroy() 解绑全部 UI 监听、输入与渲染器。
  *
  * 数据来源：window.GAME（js/data.js，Issue #11/#12）就位后自动采用；
- * data.js 已接入序章与关 1；仅在 levels 缺失/为空时使用内置占位关卡兜底，
+ * data.js 已接入序章与关 1–2；仅在 levels 缺失/为空时使用内置占位关卡兜底，
  * 便于无数据的引擎/UI 测试。指向未制作关卡的显式出口结算后回标题，不提前播放终章。
- * 后续接入：#11 关 2–6 地图、#13 正式人物美术、#15 演出。
+ * 后续接入：#11 关 3–6 地图、#13 正式人物美术、#15 演出。
  *
  * 启用方式：index.html 在 engine.js 之后加载本文件；本文件立即设置
  * MIXX_NO_DEMO = true 停用引擎演示模式，并在 DOMContentLoaded 后自启动。
@@ -135,6 +136,7 @@
     TITLE: 'title',
     PLAYING: 'playing',
     DIALOGUE: 'dialogue',
+    PUZZLE: 'puzzle',
     PAUSED: 'paused',
     CLEAR: 'clear',
     ENDING: 'ending',
@@ -609,6 +611,10 @@
       this.player = null;      // { x, y } 世界坐标（px，左上角）
       this.stars = 0;          // 本关已收集星数
       this.collected = [];     // 本关已收集星 id（运行时记录）
+      this.carriedOil = null;  // 一次携带一罐；拾取/消耗/点灯标记沿用存档 played
+      this.lantern = null;     // 独立灯芯棋盘；长廊、敌人与战斗在此期间冻结
+      this.ruins = null;       // 场景内水闸、浮台、配重绳联动
+      this._lanternLamp = null;
       this.runTime = 0;        // 本关用时（秒，仅 PLAYING 累计）
       this._dialog = null;     // 对话进行态 { lines, idx, shown, t, typing, holdTyping, holdTime }，离开对话态即清空
       this.particles = engine.createParticles(); // #9 拾取/传送门粒子
@@ -710,6 +716,7 @@
     destroy() {
       this.stop();
       this._destroyed = true;
+      this._syncMusic();
       this._resetPasswordForm();
       // 对话态下销毁时，对话框与背景虚化层只在 _leaveState(DIALOGUE) 隐藏；
       // 这里显式清理，避免复用同一 DOM 时残留暗化/模糊遮罩（PR #33 评审）
@@ -748,6 +755,7 @@
       this._leaveState(prev);
       this.state = next;
       this._enterState(next);
+      this._syncMusic();
       if (this.onEvent) {
         try { this.onEvent('state', { from: prev, to: next }); } catch (e) { /* 钩子异常不阻断游戏 */ }
       }
@@ -775,6 +783,12 @@
           this._show(this._ui.dialogBackdrop); // 背景虚化：只突出对话框与头像
           if (this._ui.dialogBackdrop) this._ui.dialogBackdrop.classList.toggle('scene-art', !!this.scene);
           break;
+        case STATE.PUZZLE:
+          this._hideAllScreens();
+          this._hide(this._ui.hud);
+          this.input.setEnabled(true);
+          this.input.setTouchVisible(false); // 棋盘可直接点击 / 触摸
+          break;
         case STATE.PAUSED:
           this._show(this._ui.pauseScreen);
           this._hide(this._ui.hud);
@@ -801,6 +815,10 @@
 
     _leaveState(s) {
       switch (s) {
+        case STATE.PUZZLE:
+          this.lantern = null;
+          this._lanternLamp = null;
+          break;
         case STATE.TITLE:
           this._hide(this._ui.titleScreen);
           break;
@@ -842,6 +860,9 @@
         case STATE.DIALOGUE:
           this._updateDialog(dt);
           break;
+        case STATE.PUZZLE:
+          this._updateLantern(dt);
+          break;
         case STATE.PAUSED:
           if (this.input.wasPressed('pause')) this._setState(STATE.PLAYING);
           break;
@@ -855,6 +876,60 @@
       if (this.input.wasPressed('mute')) this._toggleSound();
     }
 
+    _updateLantern(dt) {
+      const board = this.lantern;
+      board.time += dt;
+      this.runTime += dt;
+      if (this.stats) this.stats.tick(dt);
+      if (this.input.wasPressed('pause')) { this._setState(STATE.PLAYING); return; }
+      if (this.input.wasPressed('hint')) { board.requestHint(); return; }
+      if (this.input.wasPressed('assist')) { this._rotateLantern(0, 'assist'); return; }
+      if (this.input.wasPressed('confirm')) {
+        if (board.result.solved) { this._setState(STATE.PLAYING); this._interact(); }
+        else this._rotateLantern(board.selected);
+        return;
+      }
+      if (this.input.wasPressed('light') && !board.result.solved) {
+        this._rotateLantern(0, 'reset');
+      }
+      if (this.input.wasPressed('heavy')) this._rotateLantern(0, 'undo');
+      // 按空间方向选择最近镜面，避免把棋盘当成一串菜单条目。
+      for (const [key, dx, dy] of [['left', -1, 0], ['right', 1, 0], ['up', 0, -1], ['down', 0, 1]]) {
+        if (!this.input.wasPressed(key)) continue;
+        const current = board.config.mirrors[board.selected];
+        const next = board.config.mirrors.map((m, i) => ({ i, dx: m.x - current.x, dy: m.y - current.y }))
+          .filter(m => m.dx * dx + m.dy * dy > 0)
+          .sort((a, b) => (Math.abs(a.dx * dy - a.dy * dx) * 10 + Math.hypot(a.dx, a.dy))
+            - (Math.abs(b.dx * dy - b.dy * dx) * 10 + Math.hypot(b.dx, b.dy)))[0];
+        if (next) board.selected = next.i;
+      }
+    }
+
+    /** 键盘与指针共用旋镜入口，光路接通即记内存进度，点灯仍须确认。 */
+    _rotateLantern(index, action = 'rotate') {
+      const board = this.lantern, lamp = this._lanternLamp;
+      if (!board || board.result.solved) return;
+      if (action === 'assist') {
+        if (!board.config.assist) return;
+        board.requestHint();
+        if (!board.hint || board.hint.action < 0) return;
+        index = board.hint.action;
+      }
+      if (action === 'undo') board.undo();
+      else if (action === 'reset') board.reset();
+      else board.rotate(index);
+      for (let i = 0; i < board.angles.length; i++) {
+        const mark = 'puzzle:' + this.level.id + ':mirror:' + lamp.puzzle.version + ':' + lamp.id + ':' + i;
+        if (board.angles[i] !== board.config.mirrors[i].angle) this._playedNodes.add(mark);
+        else this._playedNodes.delete(mark);
+      }
+      if (board.result.solved) {
+        lamp.puzzleSolved = true;
+        this._playedNodes.add('puzzle:' + this.level.id + ':solved:' + lamp.puzzle.version + ':' + lamp.id);
+        this._sfx('star');
+      } else this._sfx('switch');
+    }
+
     _updatePlaying(dt) {
       if (this.input.wasPressed('pause')) { this._setState(STATE.PAUSED); return; }
       if (this.birthday && this.birthday.rings) {
@@ -866,11 +941,20 @@
         return;
       }
       if (this.birthday) this.birthday.update(dt);
+      if (this.ruins) {
+        this._updateRuins(dt);
+        if (this.input.wasPressed('hint')) this._useRuins('hint');
+      }
       this._syncProgressLocks();
       if (this._checkTriggers()) return;
       const axis = this.input.getAxis();
       const beforeMove = { x: this.player.x, y: this.player.y };
       if (this.combat && (axis.x || axis.y)) this.combat.face(axis.x, axis.y);
+      if (this.combat && this.input.wasPressed('dash') && this.combat.dash(this.player, this.mechanics)) {
+        this._sfx('switch');
+        this.particles.burst(this.player.x + 8, this.player.y + 8,
+          { count: 6, colors: [[94, 230, 184], [255, 209, 102]], speed: 26, life: 0.2, gravity: 0, size: 1 });
+      }
       // #18 攻击：F 轻击 / G 重击；能量满时两者都由 Combat 升级为能量炮
       const light = this.input.wasPressed('light');
       const heavy = this.input.wasPressed('heavy');
@@ -980,6 +1064,13 @@
         const ev = events[i];
         if (ev.type === 'energy-full') {
           this._onEnergyFull();
+        } else if (ev.type === 'trap-trigger') {
+          this._sfx('switch');
+        } else if (ev.type === 'enemy-burn' || ev.type === 'enemy-trap') {
+          this.particles.burst(ev.enemy.x + 6, ev.enemy.y + 6,
+            { count: ev.dead ? 12 : 5, colors: [[255, 209, 102], [166, 218, 221]], speed: 36, life: 0.4, gravity: -10, size: 1 });
+          this._sfx(ev.dead ? 'enemy-down' : 'hit');
+          this._emit(ev.dead ? 'enemy-down' : 'enemy-hit', { level: this.level.id, id: ev.enemy.id, kind: ev.enemy.kind, source: ev.source || 'steam' });
         } else if (ev.type === 'player-hit') {
           this._sfx('hurt');
           this.particles.burst(
@@ -1072,6 +1163,7 @@
       this._sfx('box');
       this._emit('push', { level: this.level.id, x: box.x, y: box.y });
       this._syncSwitches();
+      if (this.ruins) this._updateRuins(0);
       return false;
     }
 
@@ -1124,6 +1216,64 @@
 
     /* ── 互动 ── */
 
+    /** 水机关始终留在世界画面：改变水位 / 系绳 / 复位，H 只观察当前缺失条件。 */
+    _useRuins(action) {
+      const r = this.ruins, cfg = this.level.ruins;
+      if (!r || Math.abs(this.player.x / TILE - cfg.basin.x) > 18) return;
+      const raft = this._entitiesOf('box').find(e => e.id === cfg.raft);
+      const prefix = 'puzzle:' + this.level.id + ':ruins:' + cfg.version + ':';
+      if (r.solved) r.message = '配重已锁定，石罩升起了。去北侧收下愿望星。';
+      else if (action === 'valve') {
+        r.valve = !r.valve;
+        if (r.valve) this._playedNodes.add(prefix + 'valve'); else this._playedNodes.delete(prefix + 'valve');
+        r.message = r.valve ? '水正在上涨。观察浮台和配重绳的变化。' : '水正在排出。水退净后，可以沿滑轨推浮台。';
+      } else if (action === 'rope') {
+        if (r.water > 0) r.message = '浮台在水上晃动。先关闭水闸，把水排净再系绳。';
+        else if (raft.x !== cfg.dockX) r.message = '绳子够不到浮台。把浮台推到金色卡槽正下方。';
+        else {
+          r.tied = !r.tied;
+          if (r.tied) this._playedNodes.add(prefix + 'tied'); else this._playedNodes.delete(prefix + 'tied');
+          r.message = r.tied ? '绳子系好了。浮台升起时，就会拉动石罩。' : '已解开绳子，浮台可以继续移动。';
+        }
+      } else if (action === 'reset') {
+        r.valve = false; r.water = 0; r.tied = false;
+        raft.x = raft.rail.x;
+        for (const mark of this._playedNodes) if (mark.startsWith(prefix)) this._playedNodes.delete(mark);
+        r.message = '水已排净，浮台已回到滑轨起点。';
+      } else if (action === 'hint') {
+        r.message = r.water > 0 && !r.tied ? '先关闭左下水闸排水，再移动浮台。'
+          : raft.x !== cfg.dockX ? '沿滑轨推动浮台，对齐地上的金色卡槽。'
+          : !r.tied ? '浮台已对齐。到上方绳柱按 E / A，把浮台与石罩连接。'
+          : !r.valve ? '绳子连接好了。打开左下水闸，水会托起浮台。' : '等水位升高，浮台会通过绳子拉起石罩。';
+      }
+      r.messageTime = 8;
+      if (action !== 'hint') this._sfx('switch');
+      this._updateRuins(0);
+      this._syncProgressLocks();
+    }
+
+    _updateRuins(dt) {
+      const r = this.ruins, cfg = this.level.ruins;
+      const raft = this._entitiesOf('box').find(e => e.id === cfg.raft);
+      r.water = r.valve ? Math.min(1, r.water + dt * .6) : Math.max(0, r.water - dt * .6);
+      r.messageTime = Math.max(0, r.messageTime - dt);
+      const prefix = 'puzzle:' + this.level.id + ':ruins:' + cfg.version + ':';
+      if (raft.x !== r.savedX) {
+        for (let x = raft.rail.x; x < raft.rail.x + raft.rail.w; x++) this._playedNodes.delete(prefix + 'raft:' + x);
+        if (raft.x !== raft.rail.x) this._playedNodes.add(prefix + 'raft:' + raft.x);
+        r.savedX = raft.x;
+      }
+      if (!r.solved && r.water >= 1 && r.tied && raft.x === cfg.dockX) {
+        r.solved = true;
+        this._playedNodes.add(prefix + 'solved');
+        r.message = '浮台拉起了石罩！愿望星就在北侧。'; r.messageTime = 8;
+        this._sfx('gate-open');
+        const star = this._entitiesOf('star').find(e => e.id === cfg.reward);
+        this.particles.burst((star.x + .5) * TILE, (star.y + .5) * TILE,
+          { count: 14, colors: [[255, 200, 87], [126, 224, 239]], speed: 35, life: .7, gravity: 30, size: 1 });
+      }
+    }
+
     /** 附近最近的可互动实体（NPC / 黑羊 / 告示牌）。 */
     _nearInteractable() {
       const cx = this.player.x + PLAYER_SIZE / 2;
@@ -1131,10 +1281,11 @@
       const area = this._currentArea();
       let nearest = null;
       let distance = Infinity;
-      for (const type of ['door', 'record', 'gramophone', 'minigame', 'npc', 'guest', 'sheep', 'sign', 'box']) {
+      for (const type of ['door', 'record', 'gramophone', 'minigame', 'lamp', 'ruincontrol', 'trapcontrol', 'npc', 'guest', 'sheep', 'sign', 'box']) {
         for (const e of this._entitiesOf(type)) {
           if (area && e.room && e.room !== area.id) continue;
           if (e.carried || e.taken || (type === 'door' && e.open) || (type === 'box' && !e.carryable)) continue;
+          if (type === 'lamp' && e.lit) continue;
           if (type === 'npc' && this._resolveNpcNode(e, true) === null) continue;
           if (type === 'sheep' && (!this.dialogue[e.dialogue] || this._playedNodes.has(e.dialogue))) continue;
           const ex = e.x * TILE + TILE / 2;
@@ -1165,7 +1316,47 @@
       if (this.carriedBox) return this._dropBox();
       const ent = this._nearInteractable();
       if (!ent) return false;
+      if (ent.type === 'ruincontrol') { this._useRuins(ent.action); return true; }
+      if (ent.type === 'trapcontrol') {
+        const trap = this.combat.traps.find(t => t.id === ent.target);
+        if (!trap.disabled) {
+          trap.disabled = true;
+          this._playedNodes.add('puzzle:' + this.level.id + ':trap:' + trap.id);
+          this._sfx('gate-close');
+        }
+        return true;
+      }
       if (this.birthday && this.birthday.interact(ent)) return true;
+      if (ent.type === 'lamp') {
+        if (!this.carriedOil) {
+          this._playNode('lamp.hint', { node: { lines: [{ s: 'nar', t: '灯柱还没有点亮。先找到一罐灯油，再靠近按 E / A 点灯。' }] } });
+          return true;
+        }
+        if (ent.puzzle && !ent.puzzleSolved) {
+          const flipped = ent.puzzle.mirrors.map((m, i) => i).filter(i => this._playedNodes.has('puzzle:' + this.level.id + ':mirror:' + ent.puzzle.version + ':' + ent.id + ':' + i));
+          this.lantern = new root.MIXX.LanternPuzzle(ent.puzzle, flipped);
+          this._lanternLamp = ent;
+          this._setState(STATE.PUZZLE);
+          return true;
+        }
+        const prefix = 'puzzle:' + this.level.id + ':';
+        this.carriedOil.used = true;
+        this._playedNodes.add(prefix + 'used:' + this.carriedOil.id);
+        this._playedNodes.add(prefix + 'lamp:' + ent.id);
+        this.carriedOil = null;
+        ent.lit = true;
+        if (this.combat && this.combat.tactical) {
+          this.combat.hp = this.combat.maxHp;
+          this.combat.energy = Math.min(this.combat.maxEnergy, this.combat.energy + 35);
+        }
+        this._sfx('lamp');
+        this.particles.burst((ent.x + .5) * TILE, (ent.y + .25) * TILE,
+          { count: 12, colors: [[255, 122, 0], [255, 209, 102]], speed: 28, life: .5, gravity: -20, size: 1 });
+        this._syncSwitches();
+        this._refreshHud();
+        this._emit('lamp', { id: ent.id, target: ent.target, lit: true });
+        return true;
+      }
       if (ent.type === 'door') {
         if (!ent.open) { ent.open = true; this._sfx('gate-open'); this._emit('door', { id: ent.id }); }
         return true;
@@ -1222,6 +1413,18 @@
     _checkPickups() {
       const px = this.player.x;
       const py = this.player.y;
+      if (!this.carriedOil) {
+        for (const oil of this._entitiesOf('oil')) {
+          if (oil.taken || !this.mechanics.overlapsTile(px, py, PLAYER_SIZE, oil.x, oil.y)) continue;
+          oil.taken = true;
+          this.carriedOil = oil;
+          this._playedNodes.add('puzzle:' + this.level.id + ':oil:' + oil.id);
+          this._sfx('oil');
+          this._refreshHud();
+          this._emit('oil', { id: oil.id, carried: true });
+          break;
+        }
+      }
       for (const e of this._entitiesOf('star')) {
         if (e.collected || !this._starAvailable(e)) continue;
         const rx = e.x * TILE;
@@ -1252,7 +1455,7 @@
 
     /** 条件星只在指定的自我介绍全部播完后出现；存档沿用 played，不添加新字段。 */
     _starAvailable(star) {
-      return this._requirementsMet(star);
+      return this._requirementsMet(star) && (!star.requiresRuins || !!(this.ruins && this.ruins.solved));
     }
 
     _requirementsMet(entity) {
@@ -1264,7 +1467,8 @@
     _syncProgressLocks() {
       if (!this.level) return;
       for (const e of this.level.entities) {
-        if (e.type === 'box') e.locked = !this._requirementsMet(e);
+        if (e.type === 'box') e.locked = !this._requirementsMet(e)
+          || !!(this.ruins && e.id === this.level.ruins.raft && (this.ruins.tied || this.ruins.water > 0));
         if (e.type === 'switch') e.hidden = !this._requirementsMet(e);
         if (e.type === 'record') e.taken = this._playedNodes.has(e.dialogue)
           && (!this._dialog || this._dialog.nodeId !== e.dialogue);
@@ -1315,7 +1519,11 @@
       const area = this._currentArea(), r = area && area.rect;
       const ox = r ? r.x * TILE : 0, oy = r ? r.y * TILE : 0;
       this.camera.x -= ox; this.camera.y -= oy;
-      this.camera.follow(this.player.x + 8 - ox, this.player.y + 8 - oy,
+      const basin = this.level.ruins && this.level.ruins.basin;
+      const puzzleView = this.ruins && this.player.x / TILE >= basin.x - 6 && this.player.x / TILE <= basin.x + basin.w + 5;
+      const trapView = this.level.corridor?.traps?.some(t => Math.abs(this.player.x / TILE - t.x) <= 8);
+      this.camera.follow(this.player.x + 8 - ox, (trapView ? this.level.corridor.centerY * TILE + 16
+        : puzzleView ? this.level.corridor.centerY * TILE + 8 : this.player.y + 8) - oy,
         (r ? r.w : this.level.map.w) * TILE, (r ? r.h : this.level.map.h) * TILE);
       this.camera.x += ox; this.camera.y += oy;
     }
@@ -2543,6 +2751,7 @@
         return;
       }
       this.scene = Object.assign({ id: 'p0' }, scene);
+      this.ruins = null;
       if (scene.background && !this._sceneImages.has('p0') && typeof this.root.Image === 'function') {
         const img = new this.root.Image();
         img.decoding = 'async';
@@ -2782,6 +2991,14 @@
       if (audio && typeof audio.setEnabled === 'function') {
         try { audio.setEnabled(this.soundOn); } catch (e) { /* 音频不可用不阻断游戏 */ }
       }
+      this._syncMusic();
+    }
+
+    /** 关卡/状态/可见性共同决定背景音乐；对话继续，暂停和离开关卡停止。 */
+    _syncMusic() {
+      const audio = this.root.MIXX && this.root.MIXX.audio;
+      if (audio && audio.setMusic) audio.setMusic(this.level && this.level.bgm,
+        !this._destroyed && this.soundOn && !this.doc.hidden && (this.state === STATE.PLAYING || this.state === STATE.DIALOGUE || this.state === STATE.PUZZLE));
     }
 
     /**
@@ -2843,6 +3060,7 @@
       this.mechanics = engine.createMechanics(this.level); // #9 碰撞/推箱/开关门
       this.combat = this.level.combat === false ? null : engine.createCombat(this.level);
       this.birthday = this.level.party && root.MIXX.Birthday ? new root.MIXX.Birthday(this) : null;
+      this.kerosene = this.level.tileset === 'kerosene' ? new root.MIXX.Kerosene(this) : null;
       this._hudEnergyPct = -1;
       this._hudHp = -1;
       this._hudEnergyReady = false;
@@ -2852,6 +3070,25 @@
       this._pendingNextUnavailable = false;
       this.player = { x: spawn.x * TILE, y: spawn.y * TILE };
       this.carriedBox = null;
+      this.carriedOil = null;
+      this.lantern = null;
+      this._lanternLamp = null;
+      const puzzlePrefix = 'puzzle:' + this.level.id + ':';
+      if (!restore) {
+        for (const mark of this._playedNodes) if (mark.startsWith(puzzlePrefix)) this._playedNodes.delete(mark);
+      }
+      if (this.combat) for (const trap of this.combat.traps) {
+        trap.disabled = restore && this._playedNodes.has(puzzlePrefix + 'trap:' + trap.id);
+      }
+      for (const oil of this._entitiesOf('oil')) {
+        oil.taken = restore && this._playedNodes.has(puzzlePrefix + 'oil:' + oil.id);
+        oil.used = restore && this._playedNodes.has(puzzlePrefix + 'used:' + oil.id);
+        if (oil.taken && !oil.used) this.carriedOil = oil;
+      }
+      for (const lamp of this._entitiesOf('lamp')) {
+        lamp.lit = lamp.lit === true || (restore && this._playedNodes.has(puzzlePrefix + 'lamp:' + lamp.id));
+        lamp.puzzleSolved = lamp.lit || !!(restore && lamp.puzzle && this._playedNodes.has(puzzlePrefix + 'solved:' + lamp.puzzle.version + ':' + lamp.id));
+      }
       this.facing = { x: 0, y: -1 };
       this.stars = 0;
       this.collected = [];
@@ -2865,6 +3102,20 @@
         }
         this.stars = this.collected.length;
         this.saveData.current = this.level.id;
+      }
+      this.ruins = null;
+      if (this.level.ruins) {
+        const cfg = this.level.ruins, raft = this._entitiesOf('box').find(e => e.id === cfg.raft);
+        const prefix = puzzlePrefix + 'ruins:' + cfg.version + ':';
+        if (restore) for (let x = raft.rail.x; x < raft.rail.x + raft.rail.w; x++) {
+          if (this._playedNodes.has(prefix + 'raft:' + x)) raft.x = x;
+        }
+        const solved = this.collected.includes(cfg.reward) || (restore && this._playedNodes.has(prefix + 'solved'));
+        const valve = solved || (restore && this._playedNodes.has(prefix + 'valve'));
+        if (solved) raft.x = cfg.dockX;
+        this.ruins = { valve, water: valve ? 1 : 0, solved,
+          tied: solved || (restore && raft.x === cfg.dockX && this._playedNodes.has(prefix + 'tied')),
+          savedX: raft.x, message: '', messageTime: 0 };
       }
       this._portalWasActive = this._portalActive(); // 读档已集齐时不重播激活演出
       this.runTime = 0;
@@ -2886,6 +3137,7 @@
       this._syncSwitches(true); // 初始化开关/门状态（spawn 压住开关等边界情况）
       this._refreshHud();
       this._setState(STATE.PLAYING);
+      this._syncMusic();
       if (this.onEvent) {
         try { this.onEvent('restart', { level: this.levelIndex }); } catch (e) { /* 忽略钩子异常 */ }
       }
@@ -2907,6 +3159,7 @@
       this.level = null;
       this.player = null;
       this.carriedBox = null;
+      this.carriedOil = null;
       this.stars = 0;
       this.collected = [];
       this.runTime = 0;
@@ -2914,6 +3167,8 @@
       this.mechanics = null;
       this.combat = null;
       this.birthday = null;
+      this.kerosene = null;
+      this.ruins = null;
       this.particles.clear();
       this._portalWasActive = false;
       this._pendingNextIndex = -1;
@@ -3420,7 +3675,20 @@
     }
 
     _objectiveText() {
-      if (this.scene || !this.level || this.level.id !== 1) return '';
+      if (this.scene || !this.level) return '';
+      if (this.level.id === 2) {
+        const lamps = this._entitiesOf('lamp');
+        if (!lamps.length) return '';
+        const lit = lamps.filter(l => l.lit).length;
+        if (this._portalActive()) return '四颗愿望之星已集齐 · 走进右侧星光门';
+        if (this.carriedOil) {
+          const next = lamps.find(l => !l.lit);
+          return (next && next.puzzle && !next.puzzleSolved ? '已携带灯油 · 到灯柱挑战光路机关' : '已携带灯油 · 去点灯') + ' · 点灯 ' + lit + '/' + lamps.length;
+        }
+        if (lit < lamps.length) return '寻找灯油，点亮前路 · 点灯 ' + lit + '/' + lamps.length;
+        return '灯柱已全部点亮 · 找齐四颗星，留意出口西侧的暗角';
+      }
+      if (this.level.id !== 1) return '';
       const record = this._entitiesOf('record')[0];
       const music = this._entitiesOf('gramophone')[0];
       const star = this._entitiesOf('star').find(e => (e.requiresDialogue || []).some(id =>
@@ -3483,6 +3751,10 @@
         }
         if (this._ui.touchLight) this._ui.touchLight.disabled = !c;
         if (this._ui.touchHeavy) this._ui.touchHeavy.disabled = !c;
+        if (this._ui.touchDash) {
+          if (c && c.tactical) this._show(this._ui.touchDash); else this._hide(this._ui.touchDash);
+          this._ui.touchDash.disabled = !c || !c.tactical;
+        }
       }
       if (!c) return;
       const pct = Math.round((c.energy / c.maxEnergy) * 100);
@@ -3585,6 +3857,7 @@
         'hud-objective': 'hudObjective',
         'tbtn-b': 'touchLight',
         'tbtn-c': 'touchHeavy',
+        'tbtn-d': 'touchDash',
         'hud-hp': 'hudHp',
         'hud-energy': 'hudEnergy',
         'hud-energy-fill': 'hudEnergyFill',
@@ -3702,6 +3975,38 @@
     /** 统一绑定菜单、账户设置与对话事件；通过 _on 登记，供销毁时解绑。 */
     _bindUI() {
       const ui = this._ui;
+      this._on(this.canvas, 'pointerdown', ev => {
+        if (![STATE.PUZZLE, STATE.PLAYING].includes(this.state) || ev.button > 0) return;
+        const rect = this.canvas.getBoundingClientRect();
+        const x = (ev.clientX - rect.left) * VIEW_W / rect.width, y = (ev.clientY - rect.top) * VIEW_H / rect.height;
+        if (this.state === STATE.PLAYING) {
+          if (this.ruins && x >= 268 && x <= 315 && y >= 179 && y <= 192) this._useRuins('hint');
+          return;
+        }
+        if (this.lantern.config.assist && y >= 12 && y <= 35) {
+          if (x >= 213 && x <= 254) { this.lantern.requestHint(); return; }
+          if (x >= 258 && x <= 303) { this._rotateLantern(0, 'assist'); return; }
+        }
+        if (x >= 220 && y >= 148 && y <= 164) {
+          if (x >= 220 && x <= 260) this._rotateLantern(0, 'undo');
+          else if (x >= 263 && x <= 303) this._rotateLantern(0, 'reset');
+          return;
+        }
+        if (x >= 218 && x <= 303 && y >= 170 && y <= 197) {
+          const solved = this.lantern.result.solved;
+          this._setState(STATE.PLAYING);
+          if (solved) this._interact();
+          return;
+        }
+        const index = this.lantern.hit(x, y);
+        if (index >= 0) { ev.preventDefault(); this._rotateLantern(index); }
+      });
+      this._on(this.canvas, 'pointermove', ev => {
+        if (this.state !== STATE.PUZZLE) return;
+        const rect = this.canvas.getBoundingClientRect();
+        const i = this.lantern.hit((ev.clientX - rect.left) * VIEW_W / rect.width, (ev.clientY - rect.top) * VIEW_H / rect.height);
+        if (i >= 0) this.lantern.selected = i;
+      });
       this._on(ui.btnStart, 'click', () => this._startNewGame());
       this._on(ui.btnContinue, 'click', () => this._continueGame());
       this._on(ui.btnSaves, 'click', () => this._openSaveScreen('load'));
@@ -3755,6 +4060,7 @@
       this._on(this.root, 'pagehide', () => this._resetPasswordForm());
       this._on(this.doc, 'visibilitychange', () => {
         if (this.doc.hidden && this.stats) this.stats.flush();
+        this._syncMusic();
       });
       this._on(this.root, 'storage', ev => {
         if (ev.key === ACCOUNT_KEY || ev.key === null) this._resetPasswordForm();
@@ -3793,6 +4099,10 @@
 
     _render() {
       const ctx = this.renderer.ctx;
+      if (this.state === STATE.PUZZLE) {
+        this.lantern.draw(ctx, this._entitiesOf('lamp').indexOf(this._lanternLamp) + 1);
+        return;
+      }
       if (this.scene && this.state === STATE.DIALOGUE) {
         ctx.fillStyle = 'rgb(43,33,64)';
         ctx.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -3807,13 +4117,24 @@
         ctx.fillRect(0, 0, VIEW_W, VIEW_H);
         return;
       }
-      this.renderer.renderLevel(this.level, this.camera);
+      if (!this.kerosene) this.renderer.renderLevel(this.level, this.camera);
       this._drawDecorations();
+      if (typeof ctx.createRadialGradient === 'function') {
+        for (const lamp of this._entitiesOf('lamp').filter(l => l.lit)) {
+          const x = (lamp.x + .5) * TILE - this.camera.x, y = lamp.y * TILE - this.camera.y;
+          const glow = ctx.createRadialGradient(x, y, 2, x, y, 56);
+          glow.addColorStop(0, 'rgba(255,170,65,.28)');
+          glow.addColorStop(1, 'rgba(255,122,0,0)');
+          ctx.fillStyle = glow; ctx.fillRect(x - 56, y - 56, 112, 112);
+        }
+      }
+      if (this.kerosene) this.kerosene.drawRuins();
       this._drawEntities();
       this._drawCombat();  // #18 敌人（在玩家/攻击特效之下）
       this._drawPlayer();
       this._drawForegroundDecorations();
       if (this.carriedBox) this._drawGift(this.player.x / TILE - 0.2, this.player.y / TILE - 1.1);
+      if (this.carriedOil) this._drawOil(this.player.x / TILE + .65, this.player.y / TILE - .45);
       if (this._playedNodes.has('l1.record.take') && !this._playedNodes.has('l1.music.play')) {
         this._drawRecord(this.camera.x / TILE + 0.4, this.camera.y / TILE + 0.5, 0.8);
       }
@@ -3853,7 +4174,28 @@
         const sx = Math.round(e.x * TILE - camX);
         const sy = Math.round(e.y * TILE - camY);
         if (sx < -TILE || sy < -TILE || sx > VIEW_W || sy > VIEW_H) continue;
+        if (this.kerosene && this.kerosene.drawEntity(e)) continue;
         switch (e.type) {
+          case 'oil': {
+            if (!e.taken) this._drawOil(e.x, e.y);
+            break;
+          }
+          case 'lamp': {
+            if (!e.lit && e.puzzle) {
+              ctx.fillStyle = e.puzzleSolved ? 'rgb(139,222,188)' : 'rgb(113,103,80)';
+              ctx.fillRect(sx + 1, sy + 10, 2, 3);
+            }
+            ctx.fillStyle = 'rgb(90,104,120)'; ctx.fillRect(sx + 3, sy + 12, 10, 3);
+            ctx.fillStyle = 'rgb(133,144,153)'; ctx.fillRect(sx + 7, sy + 3, 2, 10);
+            ctx.fillStyle = 'rgb(70,83,102)'; ctx.fillRect(sx + 3, sy - 6, 10, 11);
+            ctx.fillStyle = e.lit ? 'rgb(255,122,0)' : 'rgb(28,39,55)'; ctx.fillRect(sx + 5, sy - 4, 6, 7);
+            if (e.lit) {
+              ctx.fillStyle = 'rgb(255,235,158)';
+              ctx.fillRect(sx + 7, sy - 3 + Math.floor(this.runTime * 6) % 2, 2, 5);
+            }
+            ctx.fillStyle = 'rgb(164,140,99)'; ctx.fillRect(sx + 3, sy - 7, 10, 2); ctx.fillRect(sx + 3, sy + 4, 10, 2);
+            break;
+          }
           case 'star': {
             if (e.collected || !this._starAvailable(e)) continue;
             ctx.fillStyle = 'rgb(255,200,87)';
@@ -4059,7 +4401,10 @@
         const label = this.carriedBox ? '放下礼物盒' : actor.type === 'npc' ? (this.characters[actor.id] || {}).name
           : actor.type === 'minigame' ? '套圈集星' : actor.type === 'guest' ? '聊聊'
           : actor.type === 'sheep' ? '黑羊' : actor.type === 'door' ? '打开杂物间'
+          : actor.type === 'lamp' ? this.carriedOil ? actor.puzzle && !actor.puzzleSolved ? '进入光路机关' : '点燃灯柱' : '灯柱需要灯油'
           : actor.type === 'record' ? '取走唱片' : actor.type === 'gramophone' ? '唱片机'
+          : actor.type === 'ruincontrol' ? actor.label
+          : actor.type === 'trapcontrol' ? actor.label
           : actor.type === 'box' ? actor.locked ? '礼物盒尚未解锁' : '拿起礼物盒' : '告示牌';
         const text = (label || '') + ' · E / A';
         const px = this.carriedBox ? this.player.x : actor.x * TILE;
@@ -4075,10 +4420,43 @@
         ctx.font = '8px monospace';
         ctx.fillText(text, x, y);
       }
+      const cfg = this.level.ruins;
+      const trap = this.combat && this.combat.traps.filter(t => Math.abs(this.player.x / TILE - t.x) <= 8)
+        .sort((a,b) => Math.abs(this.player.x / TILE-a.x)-Math.abs(this.player.x / TILE-b.x))[0];
+      if (trap && !(this.ruins && this.player.x / TILE >= cfg.basin.x - 6)) {
+        const message = trap.disabled ? '闸刃已收回，回程可直接通过。'
+          : trap.kind === 'blade' ? '等闸刃远离你这一排再穿过 · 右侧拉杆可停机'
+          : trap.kind === 'spikes' ? '绿边收回可走 · 黄边将升起 · 两道之间可停稳'
+          : trap.phase === 'warning' ? '墙孔亮起，即将自动发箭！先在箭痕列外等候。'
+          : trap.phase === 'active' ? '箭阵发射中 · 等这一轮箭通过，再穿过箭痕列'
+          : '箭阵每五秒自动发射 · 趁间隙通过，不用触发';
+        ctx.fillStyle='rgb(26,29,34)';ctx.fillRect(2,208,316,16);
+        ctx.fillStyle='rgb(255,218,155)';ctx.font='8px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText(message,6,211);
+      }
+      if (this.ruins && this.player.x / TILE >= cfg.basin.x - 6 && this.player.x / TILE <= cfg.basin.x + cfg.basin.w + 5) {
+        ctx.fillStyle = 'rgb(15,29,38)'; ctx.fillRect(2, 178, 316, 28);
+        ctx.fillStyle = 'rgb(255,209,102)'; ctx.font = '8px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.fillText('水渠遗迹 · E/A 操纵 · 南侧可复位', 6, 181);
+        ctx.fillStyle = 'rgb(68,98,105)'; ctx.fillRect(268, 179, 47, 13);
+        ctx.fillStyle = 'rgb(255,229,168)'; ctx.fillText('观察 H', 276, 181);
+        ctx.fillStyle = 'rgb(207,228,224)';
+        ctx.fillText(this.ruins.messageTime > 0 ? this.ruins.message : this.ruins.solved
+          ? '石罩已升起，北侧的愿望星可以取出了。' : '浮台随水升降，绳索可以把它与石罩连接。', 6, 193);
+      }
     }
 
     _drawGift(x, y) {
       return this._drawSceneryAsset({ art: 'backstage', frame: [540, 30, 480, 510], x, y, w: 1.5, h: 1.6 });
+    }
+
+    /** 地面与携带状态共用的灯油罐像素图。 */
+    _drawOil(x, y) {
+      const ctx = this.renderer.ctx;
+      const sx = Math.round(x * TILE - this.camera.x), sy = Math.round(y * TILE - this.camera.y);
+      ctx.fillStyle = 'rgb(154,112,63)'; ctx.fillRect(sx + 3, sy + 4, 10, 11);
+      ctx.fillStyle = 'rgb(255,209,102)'; ctx.fillRect(sx + 4, sy + 5, 8, 8); ctx.fillRect(sx + 4, sy + 2, 4, 2);
+      ctx.fillStyle = 'rgb(66,55,48)'; ctx.fillRect(sx + 5, sy + 7, 6, 4);
+      ctx.fillStyle = 'rgb(255,154,44)'; ctx.fillRect(sx + 7, sy + 7, 2, 4);
     }
 
     /** 官方封套原图与黑胶分开绘制，保留封面，不让生成图改写专辑设计。 */
@@ -4126,6 +4504,7 @@
 
     /** 场景地面与家具；尚未加载的图片可降级，不阻塞移动或剧情。 */
     _drawDecorations() {
+      if (this.kerosene) { this.kerosene.drawBackground(); return; }
       if (this.birthday && this.birthday.drawBackground()) return;
       const ctx = this.renderer.ctx;
       if (this.level.stageRect) {
@@ -4255,7 +4634,8 @@
 
     /**
      * 敌人绘制（#18）：梦蚀团=紫粉方块、梦蚀灵=薄荷绿漂浮方块；
-     * 受击白闪、受伤后显示血条。运行时坐标来自 combat.enemies（非实体出生点）。
+     * 第二关复用战斗数值，改用灰烬团 / 火灵造型；受击白闪、受伤后显示血条。
+     * 运行时坐标来自 combat.enemies（非实体出生点）。
      */
     _drawCombat() {
       const c = this.combat;
@@ -4263,9 +4643,39 @@
       const ctx = this.renderer.ctx;
       const camX = this.camera.x;
       const camY = this.camera.y;
+      if (this.kerosene) this.kerosene.drawTraps();
+      for (const vent of c.vents) {
+        const vx = vent.x * TILE - camX, vy = vent.y * TILE - camY;
+        if (vx + vent.w * TILE < 0 || vx > VIEW_W) continue;
+        const active = vent.phase >= 4, warning = vent.phase >= 2.8;
+        if (!active && !warning) continue;
+        ctx.fillStyle = active ? 'rgb(184,228,231)' : Math.floor(c.time * 8) % 2 ? 'rgb(255,209,102)' : 'rgb(145,107,52)';
+        for (let y = 2; y < vent.h * TILE; y += 6) for (let x = 2; x < vent.w * TILE; x += 8) {
+          const lift = active ? Math.floor(c.time * 24 + x) % 5 : 0;
+          ctx.fillRect(Math.round(vx + x), Math.round(vy + y - lift), 3, active ? 5 : 2);
+        }
+      }
+      if (c.dashTrail) {
+        ctx.fillStyle = 'rgb(94,230,184)';
+        for (let i = 0; i < 5; i++) {
+          ctx.fillRect(Math.round(c.dashTrail.x + (c.dashTrail.endX - c.dashTrail.x) * i / 5 - camX + 5),
+            Math.round(c.dashTrail.y + (c.dashTrail.endY - c.dashTrail.y) * i / 5 - camY + 5), 5, 5);
+        }
+      }
       for (let i = 0; i < c.enemies.length; i++) {
         const e = c.enemies[i];
         if (e.dead) continue;
+        const warning = e.tell || e.blast;
+        if (warning) {
+          const r = warning.radius;
+          ctx.fillStyle = e.blast ? 'rgb(255,239,201)' : e.kind === 'wisp' ? 'rgb(126,224,239)' : 'rgb(255,162,92)';
+          for (let y = -r; y <= r; y += 2) for (let x = -r; x <= r; x += 2) {
+            const distance = Math.hypot(x, y);
+            if (distance > r || (!e.blast && distance < r - 2 && (x + y) % 8 !== 0)) continue;
+            const wx = Math.round(warning.x + x), wy = Math.round(warning.y + y);
+            if (!this.mechanics.blockedAt(wx, wy, 1)) ctx.fillRect(wx - camX, wy - camY, 2, 2);
+          }
+        }
         const bob = e.kind === 'wisp' ? Math.round(Math.sin(c.time * 5 + e.spawnX * 0.1)) : 0;
         const sx = Math.round(e.x - camX);
         const sy = Math.round(e.y - camY) + bob;
@@ -4273,19 +4683,22 @@
         // 影子
         ctx.fillStyle = 'rgb(26,16,51)';
         ctx.fillRect(sx + 1, sy + e.size - 2, e.size - 2, 2);
-        // 身体 + 描边
-        const flash = e.hurt > 0;
-        ctx.fillStyle = flash ? 'rgb(255,255,255)' : (e.kind === 'wisp' ? 'rgb(94,230,184)' : 'rgb(180,155,255)');
-        ctx.fillRect(sx, sy, e.size, e.size);
-        ctx.fillStyle = 'rgb(40,24,70)';
-        ctx.fillRect(sx, sy, e.size, 1);
-        ctx.fillRect(sx, sy + e.size - 1, e.size, 1);
-        ctx.fillRect(sx, sy, 1, e.size);
-        ctx.fillRect(sx + e.size - 1, sy, 1, e.size);
-        // 眼睛
-        ctx.fillStyle = flash ? 'rgb(255,143,163)' : 'rgb(26,16,51)';
-        ctx.fillRect(sx + 3, sy + 4, 2, 2);
-        ctx.fillRect(sx + 7, sy + 4, 2, 2);
+        if (this.kerosene) this.kerosene.drawEnemy(e, sx, sy);
+        else {
+          // 身体 + 描边
+          const flash = e.hurt > 0;
+          ctx.fillStyle = flash ? 'rgb(255,255,255)' : (e.kind === 'wisp' ? 'rgb(94,230,184)' : 'rgb(180,155,255)');
+          ctx.fillRect(sx, sy, e.size, e.size);
+          ctx.fillStyle = 'rgb(40,24,70)';
+          ctx.fillRect(sx, sy, e.size, 1);
+          ctx.fillRect(sx, sy + e.size - 1, e.size, 1);
+          ctx.fillRect(sx, sy, 1, e.size);
+          ctx.fillRect(sx + e.size - 1, sy, 1, e.size);
+          // 眼睛
+          ctx.fillStyle = flash ? 'rgb(255,143,163)' : 'rgb(26,16,51)';
+          ctx.fillRect(sx + 3, sy + 4, 2, 2);
+          ctx.fillRect(sx + 7, sy + 4, 2, 2);
+        }
         // 血条（满血不显示，减少视觉噪音）
         if (e.hp < e.maxHp) {
           ctx.fillStyle = 'rgb(26,16,51)';
@@ -4293,6 +4706,15 @@
           ctx.fillStyle = 'rgb(255,143,163)';
           ctx.fillRect(sx, sy - 4, Math.max(1, Math.round(e.size * (e.hp / e.maxHp))), 2);
         }
+        if (e.tell) {
+          ctx.fillStyle = 'rgb(255,209,102)';
+          ctx.fillRect(sx, sy - 7, Math.ceil(e.size * (1 - e.tell.left / e.tell.duration)), 2);
+        }
+      }
+      if (c.tactical) {
+        ctx.fillStyle = 'rgb(10,22,31)'; ctx.fillRect(0, VIEW_H - 12, VIEW_W, 12);
+        ctx.fillStyle = 'rgb(208,229,222)'; ctx.font = '8px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.fillText((this.input.coarse ? 'D' : 'Shift') + ' 闪步' + (c.dashCooldown > 0 ? ' ' + c.dashCooldown.toFixed(1) + 's' : '就绪') + ' · G 打断 · 喷口黄闪后喷发', 4, VIEW_H - 10);
       }
     }
 
@@ -4375,6 +4797,7 @@
     _drawPlayer() {
       if (!this.player) return;
       if (this.birthday) { this.birthday.drawActors(); return; }
+      if (this.kerosene) { this.kerosene.drawActor('player', this.player.x, this.player.y); return; }
       const ctx = this.renderer.ctx;
       const px = Math.round(this.player.x - this.camera.x);
       const py = Math.round(this.player.y - this.camera.y);
